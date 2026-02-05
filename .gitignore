@@ -1,0 +1,78 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environment
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+.conda/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# PyCharm
+.idea/
+
+# 项目特定
+output/
+*.pkl
+*.log
+*.csv
+
+# 模型缓存（HuggingFace）
+.cache/
+models/
+*.bin
+*.safetensors
+
+# 数据文件
+repo/**/*.cpp
+repo/**/*.h
+repo/**/*.hpp
+repo/**/*.py
+repo/**/*.java
+repo/**/*.js
+!repo/.gitkeep
+
+# 临时文件
+*.tmp
+*.bak
+*.swp
+nohup.out
+
+# 系统文件
+Thumbs.db
+.DS_Store
+
