@@ -102,26 +102,3 @@ class LLMConfig:
             raise ValueError("max_tokens 必须为正数")
         
         return True
-
-
-@dataclass
-class AgentConfig:
-    """
-    Agent 配置
-    
-    属性:
-        name: Agent 名称
-        system_message: 系统消息/提示词
-        llm_config: LLM 配置（可选，默认 gpt-4o）
-    """
-    
-    name: str
-    system_message: str
-    llm_config: Optional[LLMConfig] = None
-    
-    def __post_init__(self):
-        """后初始化：创建默认配置"""
-        if self.llm_config is None:
-            self.llm_config = LLMConfig()
-    
-
