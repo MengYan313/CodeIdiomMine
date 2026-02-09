@@ -167,7 +167,8 @@ class ASTParser:
                 "type_spelling": None,
                 "spelling": self._get_node_name(node),
                 "displayname": self._get_node_name(node),
-                "code_snippet": code_snippet
+                "code_snippet": code_snippet,
+                "ast_num": 0  # 先设为 0，后续会更新
             }
             
             node_info_list.append(node_info)
@@ -179,6 +180,39 @@ class ASTParser:
             count += self.traverse_ast(child, file_path, node_info_list, depth + 1)
         
         return count
+    
+    def calculate_ast_num(self, node_info_list: List[Dict]) -> None:
+        """
+        计算每个节点的直接子节点数量，更新 ast_num 字段
+        
+        Args:
+            node_info_list: 节点信息列表（按深度优先顺序）
+        """
+        if not node_info_list:
+            return
+        
+        # 为每个节点计算其直接子节点数量
+        for i, node_info in enumerate(node_info_list):
+            current_depth = node_info["depth"]
+            child_count = 0
+            
+            # 查找下一个节点，统计深度为 current_depth + 1 的连续节点数量
+            j = i + 1
+            while j < len(node_info_list):
+                next_depth = node_info_list[j]["depth"]
+                
+                # 如果是直接子节点（深度为当前深度 + 1）
+                if next_depth == current_depth + 1:
+                    child_count += 1
+                    j += 1
+                # 如果深度更深，跳过（孙节点及更深层）
+                elif next_depth > current_depth + 1:
+                    j += 1
+                # 如果深度回退到当前层或更浅，停止
+                else:
+                    break
+            
+            node_info["ast_num"] = child_count
     
     def _get_node_name(self, node: tree_sitter.Node) -> Optional[str]:
         """获取节点的名称（如果存在）"""

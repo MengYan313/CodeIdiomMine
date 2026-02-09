@@ -90,6 +90,9 @@ def parse_repository(input_path: str, output_path: str, language: str = "cpp"):
                     node_info_list = []
                     parser.traverse_ast(func_node, file_path, node_info_list)
                     
+                    # 计算每个节点的子节点数量
+                    parser.calculate_ast_num(node_info_list)
+                    
                     if node_info_list:
                         file_func_asts.append(node_info_list)
                         # 提取函数源代码

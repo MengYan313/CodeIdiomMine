@@ -100,7 +100,7 @@ class CodeEmbedder:
                     self.model = AutoModel.from_pretrained(
                         self.model_name,
                         trust_remote_code=True,
-                        torch_dtype=torch.float16
+                        dtype=torch.float16
                     )
                     self.model.to(self.device)
                     logger.info("模型已加载到 GPU（半精度）")
@@ -220,7 +220,7 @@ def get_pros_src_and_embedding(
         embedder: 代码嵌入器实例
         language: 编程语言类型
         min_nodes: 函数的最小节点数阈值
-        min_ast_num: 节点的最小 AST 数量阈值
+        min_ast_num: 节点的最小子节点数量阈值（过滤太简单的代码片段）
         min_project_size: 项目的最小代码片段数量阈值
         
     Returns:
@@ -267,6 +267,7 @@ def get_pros_src_and_embedding(
                     if l == 0:
                         extent_root = extent
                     
+                    # 跳过空的代码片段或子节点数量太少的节点
                     if not code_snippet or code_snippet == "" or ast_num < min_ast_num:
                         continue
                     

@@ -175,7 +175,7 @@ class AppLogger:
             日志文件路径
         """
         project_root = Path(__file__).parent.parent
-        log_dir = project_root / "log"
+        log_dir = project_root / "logs"
         
         # 使用模块名作为日志文件名
         log_file = log_dir / f"{module_name}.log"
