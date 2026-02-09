@@ -10,6 +10,10 @@ import tree_sitter
 from tree_sitter import Language, Parser, Node
 
 from ..common.node_kinds import get_node_kinds
+from ..logger import get_logger
+
+# 创建日志记录器
+logger = get_logger(__name__)
 
 
 class ASTParser:
@@ -25,7 +29,9 @@ class ASTParser:
         """
         self.language = language.lower()
         self.node_kinds = get_node_kinds(self.language)
+        logger.info(f"初始化 AST 解析器: 语言={self.language}")
         self.parser = self._init_parser()
+        logger.info("AST 解析器初始化完成")
         
     def _init_parser(self) -> Parser:
         """初始化 tree-sitter 解析器"""
@@ -45,13 +51,16 @@ class ASTParser:
                 language_obj = Language(tree_sitter_javascript.language())
             else:
                 # 默认使用 C++
+                logger.warning(f"未知语言 {self.language}，使用 C++ 作为默认")
                 import tree_sitter_cpp
                 language_obj = Language(tree_sitter_cpp.language())
                 self.language = "cpp"
+            
+            logger.debug(f"成功加载 tree-sitter 语言库: {self.language}")
         except ImportError as e:
-            raise ImportError(
-                f"无法导入 tree-sitter 语言库。请安装: pip install tree-sitter-{self.language}"
-            ) from e
+            error_msg = f"无法导入 tree-sitter 语言库。请安装: pip install tree-sitter-{self.language}"
+            logger.error(error_msg)
+            raise ImportError(error_msg) from e
         
         parser = Parser(language_obj)
         return parser
@@ -70,9 +79,10 @@ class ASTParser:
             with open(file_path, "rb") as f:
                 source_code = f.read()
             tree = self.parser.parse(source_code)
+            logger.debug(f"成功解析文件: {file_path}")
             return tree
         except Exception as e:
-            print(f"解析文件失败 {file_path}: {e}")
+            logger.error(f"解析文件失败 {file_path}: {e}")
             return None
     
     def get_function_nodes(self, tree: tree_sitter.Tree, file_path: str) -> List[tree_sitter.Node]:
@@ -162,7 +172,7 @@ class ASTParser:
             
             node_info_list.append(node_info)
         except Exception as e:
-            print(f"警告: 跳过节点 due to error: {e}")
+            logger.debug(f"警告: 跳过节点 due to error: {e}")
         
         # 递归遍历子节点
         for child in node.children:
@@ -206,7 +216,7 @@ class ASTParser:
             
             return snippet.strip()
         except Exception as e:
-            print(f"无法读取文件 {file_path}: {e}")
+            logger.error(f"无法读取文件 {file_path}: {e}")
             return None
     
     def remove_single_line_comments(self, code: str) -> str:

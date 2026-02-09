@@ -1,4 +1,4 @@
-# Mining 模块测试指南
+# Mining & Parser 模块测试指南
 
 ## ✅ 改动总结
 
@@ -7,11 +7,23 @@
 - ✅ 使用相对导入（`from ..common import xxx`）
 - ✅ 所有模块都支持 `python -m` 方式运行
 
-### 2. 默认路径修改
+### 2. 全面集成 Logger 系统
+- ✅ `src/mining/code_embedding.py` → `log/code_embedding.log`
+- ✅ `src/mining/clustering.py` → `log/clustering.log`
+- ✅ `src/parser/repo2data.py` → `log/repo2data.log`
+- ✅ `src/parser/ast_parser.py` → `log/ast_parser.log`
+- ✅ `src/parser/file_scanner.py` → `log/file_scanner.log`
+
+### 3. 日志特性
+- 控制台：简化输出（INFO 级别）
+- 文件：详细日志（DEBUG 级别）
+- 每个脚本对应一个 `.log` 文件
+
+### 4. 默认路径修改
 - ✅ 所有默认路径改为从项目根目录开始
 - ✅ 例如：`output/cpp/dataset.pkl` 而不是 `../../output/cpp/dataset.pkl`
 
-### 3. 添加运行命令注释
+### 5. 添加运行命令注释
 - ✅ 每个模块文件末尾都有模块运行命令示例
 - ✅ 包含前台和后台（nohup）两种运行方式
 
@@ -36,7 +48,30 @@ ls -lh output/cpp/dataset.pkl
 
 ## 测试步骤
 
-### 步骤 1: 测试代码嵌入（使用 UniXcoder 轻量级模型）
+### 步骤 0: （可选）测试 Parser 模块
+
+如果需要重新解析代码仓库：
+
+```bash
+python -m src.parser.repo2data \
+    --input repo/cpp \
+    --output output/cpp/dataset_new.pkl \
+    --language cpp
+```
+
+**预期结果：**
+- ✅ 控制台输出简化日志（INFO 级别）
+- ✅ 生成 `log/repo2data.log` 文件（详细日志）
+- ✅ 生成 `output/cpp/dataset_new.pkl` 文件
+
+**查看日志：**
+```bash
+cat log/repo2data.log
+# 或实时查看
+tail -f log/repo2data.log
+```
+
+---
 
 ```bash
 # 测试命令

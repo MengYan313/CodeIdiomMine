@@ -6,6 +6,11 @@
 import os
 from typing import List, Dict
 
+from ..logger import get_logger
+
+# 创建日志记录器
+logger = get_logger(__name__)
+
 
 class FileScanner:
     """扫描源代码文件"""
@@ -44,7 +49,7 @@ class FileScanner:
             项目名称列表
         """
         if not os.path.exists(base_path):
-            print(f"路径不存在: {base_path}")
+            logger.error(f"路径不存在: {base_path}")
             return []
         
         projects = []
@@ -55,6 +60,8 @@ class FileScanner:
         
         projects.sort()
         self.projects = projects
+        logger.info(f"找到 {len(projects)} 个项目")
+        logger.debug(f"项目列表: {projects}")
         return projects
     
     def get_all_source_files(self, base_path: str) -> List[List[str]]:

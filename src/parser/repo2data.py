@@ -10,6 +10,10 @@ from typing import List
 
 from .ast_parser import ASTParser
 from .file_scanner import FileScanner
+from ..logger import get_logger
+
+# 创建日志记录器
+logger = get_logger(__name__)
 
 
 def parse_repository(input_path: str, output_path: str, language: str = "cpp"):
@@ -21,18 +25,27 @@ def parse_repository(input_path: str, output_path: str, language: str = "cpp"):
         output_path: 输出路径，例如 CodeIdiomMine/output/cpp
         language: 编程语言名称
     """
+    logger.info("=" * 60)
+    logger.info("代码仓库解析")
+    logger.info("=" * 60)
+    logger.info(f"输入路径: {input_path}")
+    logger.info(f"输出路径: {output_path}")
+    logger.info(f"编程语言: {language}")
+    
     # 初始化文件扫描器
     scanner = FileScanner(language)
     
     # 获取所有项目
     projects = scanner.get_projects(input_path)
-    print(f"找到 {len(projects)} 个项目")
+    logger.info(f"找到 {len(projects)} 个项目: {projects}")
     
     # 获取所有源代码文件
     pro_file_list = scanner.get_all_source_files(input_path)
-    print(f"总共找到 {sum(len(files) for files in pro_file_list)} 个文件")
+    total_files = sum(len(files) for files in pro_file_list)
+    logger.info(f"总共找到 {total_files} 个源文件")
     
     # 初始化 AST 解析器
+    logger.info(f"初始化 AST 解析器（语言: {language}）...")
     parser = ASTParser(language)
     
     # 存储所有项目的函数 AST 和源代码
@@ -41,18 +54,19 @@ def parse_repository(input_path: str, output_path: str, language: str = "cpp"):
     
     # 遍历每个项目
     for i, project_name in enumerate(projects):
-        print(f"\n处理项目 [{i+1}/{len(projects)}]: {project_name}")
+        logger.info(f"\n处理项目 [{i+1}/{len(projects)}]: {project_name}")
         funcs_in_pro = []  # 存储当前项目的所有函数 AST（2D: 文件-函数）
         funcs_in_pro_src = []  # 存储当前项目的所有函数源代码（2D: 文件-函数）
         
         # 遍历项目中的每个文件
         for j, file_path in enumerate(pro_file_list[i]):
-            print(f"  处理文件 [{j+1}/{len(pro_file_list[i])}]: {os.path.basename(file_path)}")
+            logger.info(f"  处理文件 [{j+1}/{len(pro_file_list[i])}]: {os.path.basename(file_path)}")
             
             try:
                 # 解析文件为 AST
                 tree = parser.parse_file(file_path)
                 if tree is None:
+                    logger.warning(f"    跳过文件（解析失败）: {file_path}")
                     funcs_in_pro.append([])
                     funcs_in_pro_src.append([])
                     continue
@@ -61,9 +75,12 @@ def parse_repository(input_path: str, output_path: str, language: str = "cpp"):
                 func_nodes = parser.get_function_nodes(tree, file_path)
                 
                 if not func_nodes:
+                    logger.debug(f"    未找到函数节点: {file_path}")
                     funcs_in_pro.append([])
                     funcs_in_pro_src.append([])
                     continue
+                
+                logger.debug(f"    找到 {len(func_nodes)} 个函数节点")
                 
                 # 遍历每个函数节点，提取 AST 信息
                 file_func_asts = []
@@ -83,14 +100,16 @@ def parse_repository(input_path: str, output_path: str, language: str = "cpp"):
                 funcs_in_pro_src.append(file_func_srcs)
                 
             except Exception as e:
-                print(f"    错误: 处理文件失败 {file_path}: {e}")
+                logger.error(f"    错误: 处理文件失败 {file_path}: {e}", exc_info=True)
                 funcs_in_pro.append([])
                 funcs_in_pro_src.append([])
         
         pro_func_ast.append(funcs_in_pro)
         pro_func_ast_src.append(funcs_in_pro_src)
+        logger.info(f"  项目 {project_name} 处理完成")
     
     # 过滤掉没有有效函数的文件
+    logger.info("\n过滤无效文件...")
     pro_files, pro_funcs, pro_funcs_src = scanner.filter_valid_files(
         pro_func_ast, pro_func_ast_src
     )
@@ -117,6 +136,7 @@ def save_data(scanner: FileScanner, pro_files: List[List[str]],
     output_dir = os.path.dirname(output_path)
     if output_dir:
         os.makedirs(output_dir, exist_ok=True)
+        logger.info(f"输出目录: {output_dir}")
     
     # 创建 DataFrame
     data = pd.DataFrame({
@@ -126,16 +146,22 @@ def save_data(scanner: FileScanner, pro_files: List[List[str]],
         'func_src': pro_funcs_src
     })
     
-    print(f"\n数据统计:")
-    print(f"  项目数: {len(scanner.projects)}")
-    print(f"  总文件数: {sum(len(files) for files in pro_files)}")
-    print(f"  总函数数: {sum(sum(len(funcs) for funcs in proj) for proj in pro_funcs)}")
-    print(f"\n数据列: {data.columns.tolist()}")
-    print(f"数据形状: {data.shape}")
+    total_files = sum(len(files) for files in pro_files)
+    total_funcs = sum(sum(len(funcs) for funcs in proj) for proj in pro_funcs)
+    
+    logger.info(f"\n数据统计:")
+    logger.info(f"  项目数: {len(scanner.projects)}")
+    logger.info(f"  总文件数: {total_files}")
+    logger.info(f"  总函数数: {total_funcs}")
+    logger.info(f"\n数据列: {data.columns.tolist()}")
+    logger.info(f"数据形状: {data.shape}")
     
     # 保存为 pickle
     pd.to_pickle(data, output_path)
-    print(f"\n数据已保存到: {output_path}")
+    logger.info(f"\n数据已保存到: {output_path}")
+    logger.info("=" * 60)
+    logger.info("解析完成！")
+    logger.info("=" * 60)
 
 
 def read_data(data_file_path: str):
