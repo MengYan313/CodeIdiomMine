@@ -219,8 +219,50 @@ class ASTParser:
         # 尝试从子节点中查找标识符
         for child in node.children:
             if child.type in ["identifier", "type_identifier", "field_identifier"]:
-                return child.text.decode("utf-8")
+                return self._decode_bytes(child.text)
         return None
+    
+    def _decode_bytes(self, data: bytes) -> str:
+        """
+        智能解码字节数据，自动检测编码
+        
+        Args:
+            data: 字节数据
+            
+        Returns:
+            解码后的字符串
+        """
+        if not data:
+            return ""
+        
+        # 检测 UTF-16 BOM
+        if data.startswith(b'\xff\xfe') or data.startswith(b'\xfe\xff'):
+            try:
+                return data.decode('utf-16')
+            except:
+                pass
+        
+        # 检测是否为 UTF-16（每个字符后跟 \x00）
+        if len(data) > 2 and data[1:2] == b'\x00' and data[3:4] == b'\x00':
+            try:
+                return data.decode('utf-16-le')
+            except:
+                pass
+        
+        # 尝试 UTF-8
+        try:
+            return data.decode('utf-8')
+        except UnicodeDecodeError:
+            pass
+        
+        # 尝试 Latin-1（几乎总是成功）
+        try:
+            return data.decode('latin-1')
+        except:
+            pass
+        
+        # 最后使用 UTF-8 忽略错误
+        return data.decode('utf-8', errors='ignore')
     
     def get_code_snippet(self, node: tree_sitter.Node, file_path: str) -> Optional[str]:
         """
@@ -241,7 +283,9 @@ class ASTParser:
             start_byte = node.start_byte
             end_byte = node.end_byte
             snippet_bytes = source_bytes[start_byte:end_byte]
-            snippet = snippet_bytes.decode("utf-8", errors="ignore")
+            
+            # 自动检测并处理编码
+            snippet = self._decode_bytes(snippet_bytes)
             
             # 移除注释和多余换行
             snippet = self.remove_single_line_comments(snippet)

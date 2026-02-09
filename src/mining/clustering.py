@@ -206,8 +206,8 @@ class ClusteringProcessor:
             ]
             
             if closest_point_str:
-                snippet_preview = repr(closest_point_str[:100])
-                logger.info(f"  簇 {label} (大小: {len(points_in_cluster)}): {snippet_preview}")
+                logger.info(f"  簇 {label} (大小: {len(points_in_cluster)}):")
+                logger.info(f"{closest_point_str}")
         
         return cluster_labels, cluster_data
     
@@ -295,9 +295,10 @@ class ClusteringProcessor:
             logger.info(f"  簇数量: {num_clusters}")
             logger.info(f"  平均簇大小: {avg_cluster_size:.2f}")
             logger.info(f"  前 100 个习语:")
-            for idx, row in top100_clusters.head(10).iterrows():
-                snippet = row['center_point'][:80] if row['center_point'] else "None"
-                logger.info(f"    簇 {row['label']} (大小: {row['cluster_size']}): {snippet}...")
+            for idx, row in top100_clusters.iterrows():
+                snippet = row['center_point'] if row['center_point'] else "None"
+                logger.info(f"    簇 {row['label']} (大小: {row['cluster_size']}):")
+                logger.info(f"{snippet}")
             
             # 保存结果
             cluster_results.append({
