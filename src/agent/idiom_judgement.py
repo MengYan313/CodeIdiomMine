@@ -23,7 +23,7 @@ try:
 except ImportError:
     pass
 
-from .test_multi_agent import CodeIdiomPipeline
+from .judge_pipeline import CodeIdiomPipeline
 from ..logger import get_logger
 
 logger = get_logger(__name__)
@@ -67,6 +67,43 @@ def extract_center_points(cluster_data) -> List[Dict[str, Any]]:
             "loc_label": row.get("loc_label", ""),
         })
     return records
+
+
+def simplify_infos(infos: List) -> Dict[str, Any]:
+    """
+    将嵌套的 infos 列表简化为紧凑的存储格式。
+
+    infos 为聚类簇中所有代码片段的信息列表，每个元素形如 [pro_name, file_name, extent_root, node_info]，
+    其中 node_info 为 dict，包含 ast_num 等字段。
+
+    Args:
+        infos: 原始 infos 嵌套列表
+
+    Returns:
+        {
+            "info": 第一个列表元素（代表习语的代表性信息）,
+            "cnt": 列表长度（习语出现次数）,
+            "avg_ast_num": 各元素 node_info.ast_num 的平均值
+        }
+    """
+    if not infos:
+        return {"info": None, "cnt": 0, "avg_ast_num": 0.0}
+
+    info = infos[0]
+    cnt = len(infos)
+
+    ast_nums = []
+    for item in infos:
+        if isinstance(item, (list, tuple)) and len(item) >= 4:
+            node_info = item[3]
+            if isinstance(node_info, dict):
+                ast_nums.append(node_info.get("ast_num", 0))
+        elif isinstance(item, dict):
+            ast_nums.append(item.get("ast_num", 0))
+
+    avg_ast_num = sum(ast_nums) / len(ast_nums) if ast_nums else 0.0
+
+    return {"info": info, "cnt": cnt, "avg_ast_num": avg_ast_num}
 
 
 async def judge_idioms(
@@ -125,9 +162,12 @@ async def judge_idioms(
                     else:
                         result = await pipeline.evaluate(center_point)
                     if result["final_judgment"]["is_idiom"]:
+                        simplified = simplify_infos(rec["infos"])
                         idioms.append({
                             "center_point": center_point,
-                            "infos": rec["infos"],
+                            "info": simplified["info"],
+                            "cnt": simplified["cnt"],
+                            "avg_ast_num": simplified["avg_ast_num"],
                             "loc_label": rec["loc_label"],
                         })
                         logger.info(f"    ✓ 判定为习语 (置信度: {result['final_judgment']['confidence']})")

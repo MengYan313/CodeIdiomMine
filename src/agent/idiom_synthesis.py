@@ -62,7 +62,7 @@ def load_idioms(file_path: str) -> List[Dict[str, Any]]:
         file_path: {repo}_idiom.pkl 路径
 
     Returns:
-        [{"center_point": str, "infos": list, "loc_label": str}, ...]
+        [{"center_point": str, "info": any, "cnt": int, "avg_ast_num": float, "loc_label": str}, ...]
     """
     with open(file_path, "rb") as f:
         return pickle.load(f)
@@ -180,10 +180,18 @@ async def run_synthesis(
                         )
 
                         if result.is_related and result.synthesized_code:
+                            # 只存储两个习语各自的 info（代表性信息），不存完整 infos
+                            info_1 = a.get("info") or (a.get("infos", [None])[0] if a.get("infos") else None)
+                            info_2 = b.get("info") or (b.get("infos", [None])[0] if b.get("infos") else None)
+                            # cnt 和 avg_ast_num 由两个输入习语的对应字段相加得出
+                            cnt = a.get("cnt", 0) + b.get("cnt", 0)
+                            avg_ast_num = a.get("avg_ast_num", 0.0) + b.get("avg_ast_num", 0.0)
                             synthesized.append({
                                 "center_point": result.synthesized_code,
-                                "infos_1": a["infos"],
-                                "infos_2": b["infos"],
+                                "info_1": info_1,
+                                "info_2": info_2,
+                                "cnt": cnt,
+                                "avg_ast_num": avg_ast_num,
                                 "loc_label": loc_label,
                             })
                             if not quiet:
