@@ -20,6 +20,11 @@ from .idiom_judge_agent import (
     IdiomJudgeRequest,
     IdiomJudgeResult
 )
+from .idiom_synthesis_agent import (
+    IdiomSynthesisAgent,
+    IdiomSynthesisRequest,
+    IdiomSynthesisResult
+)
 
 __all__ = [
     # Semantic Clarity Agent
@@ -36,4 +41,9 @@ __all__ = [
     'IdiomJudgeAgent',
     'IdiomJudgeRequest',
     'IdiomJudgeResult',
+
+    # Idiom Synthesis Agent
+    'IdiomSynthesisAgent',
+    'IdiomSynthesisRequest',
+    'IdiomSynthesisResult',
 ]
