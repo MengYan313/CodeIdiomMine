@@ -22,6 +22,20 @@ from ..logger import get_logger
 logger = get_logger(__name__)
 
 
+def patent_programming_pattern_valid(semantic_score: float, syntax_score: float) -> bool:
+    """
+    说明书实施例 7.2：综合判定依据语义、语法两维 score。
+    - 两维均 ≥70：很可能为编程模式；
+    - 一方 ≥70 且另一方 ≥50：可能为编程模式；
+    - 其余：非编程模式。
+    「很可能」与「可能」均视为有效编程模式（保留进入后续合成）。
+    """
+    s = float(semantic_score)
+    t = float(syntax_score)
+    hi, lo = (s, t) if s >= t else (t, s)
+    return hi >= 70 and lo >= 50
+
+
 @dataclass
 class IdiomJudgeRequest:
     """代码习语判定请求"""
@@ -79,10 +93,12 @@ You need to synthesize evaluation results from two dimensions:
 - Semantic clarity assessment
 - Syntax and logic clarity assessment
 
-Judgment criteria:
+Judgment criteria (must be consistent with the numeric scores provided below):
 - Both dimensions score >= 70: Very likely a code idiom
 - One dimension >= 70, the other >= 50: Possibly a code idiom
 - Other cases: Unlikely to be a code idiom
+
+Set "is_idiom" to true exactly when the scores satisfy the second rule above (i.e. higher score >= 70 and lower score >= 50).
 
 IMPORTANT RESPONSE FORMAT:
 1. When referring to the code snippet, wrap it with [Code Idiom] and [/Code Idiom] tags

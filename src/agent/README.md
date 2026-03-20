@@ -1,369 +1,289 @@
-## 📋 系统架构
+# CodeIdiomMine：`src/agent` 多 Agent 模块说明
 
-系统由三个专门的 Agent 组成，采用流水线架构协同工作。
-基于 **autogen_core** 和 **autogen_ext** 实现，遵循 AutoGen 最佳实践。
+本目录实现**编程模式（代码习语）判定**与**同区域模板合成**两条流水线，与说明书实施例 **7.2（三 Agent 并行判定）**、**7.3（规划 + 组装）**、**7.4（合并后再判定与迭代）**对齐。实现基于 Microsoft **AutoGen** 的 `autogen_core` / `autogen_ext`，采用 `RoutedAgent` + `SingleThreadedAgentRuntime` 的消息驱动模型，而非对话式 `agentchat` 封装。
+
+---
+
+## 一、整体架构概览
+
+系统按职责分为两层：
+
+| 层级 | 职责 | 涉及的 Agent | 运行时 |
+|------|------|----------------|--------|
+| **判定子系统（7.2）** | 对**单段代码**做语义 / 语法并行评估，再综合；最终是否「有效编程模式」由**确定性分数规则**裁定 | `SemanticClarityAgent`、`SyntaxLogicAgent`、`IdiomJudgeAgent` | `CodeIdiomPipeline` 内部的 `SingleThreadedAgentRuntime` |
+| **合成子系统（7.3 + 7.4）** | 按 `loc_label` 分组，在组内做**规划 → 组装 → 再判定**循环，最多 **3** 轮合并 | `PlanningSynthesisAgent`、`CodeAssemblyAgent` | `idiom_synthesis.run_synthesis` 中的**独立** `SingleThreadedAgentRuntime` |
+
+判定与合成使用**两个不同的运行时**，原因包括：
+
+- 注册的 Agent 名称空间互不冲突（例如合成侧不需要注册 `semantic_agent`）。
+- 生命周期清晰：`CodeIdiomPipeline` 随 `initialize` / `shutdown` 管理判定用运行时；合成脚本在 `run_synthesis` 内创建/销毁合成用运行时，并单独持有一个 `CodeIdiomPipeline` 实例专门用于**合并后的再判定**。
 
 ```
-输入代码片段
-    ↓
-┌─────────────────────────────┐
-│ Agent 1: 语义清晰度判定     │
-│ SemanticClarityAgent        │
-│ - 继承 RoutedAgent          │
-│ - 评估命名质量              │
-│ - 评估意图明确性            │
-│ - 评估可理解性              │
-└─────────────────────────────┘
-    ↓
-┌─────────────────────────────┐
-│ Agent 2: 语法逻辑判定       │
-│ SyntaxLogicAgent            │
-│ - 继承 RoutedAgent          │
-│ - 评估代码结构              │
-│ - 评估控制流简单性          │
-│ - 评估逻辑直接性            │
-└─────────────────────────────┘
-    ↓
-┌─────────────────────────────┐
-│ Agent 3: 综合判定           │
-│ IdiomJudgeAgent             │
-│ - 继承 RoutedAgent          │
-│ - 综合前两个 Agent 的结果   │
-│ - 判定是否为代码习语        │
-│ - 给出置信度和特征          │
-└─────────────────────────────┘
-    ↓
-输出判定结果
+                    ┌─────────────────────────────────────────┐
+                    │           判定子系统 (7.2)                 │
+                    │  Runtime A: semantic / syntax / judge   │
+                    │  入口: CodeIdiomPipeline.evaluate()      │
+                    └─────────────────────────────────────────┘
+                                        ▲
+                                        │ 合并后代码再判定
+                    ┌───────────────────┴───────────────────────┐
+                    │           合成子系统 (7.3 + 7.4)           │
+                    │  Runtime B: planning_synthesis / assembly │
+                    │  编排: idiom_synthesis.synthesize_group() │
+                    └───────────────────────────────────────────┘
 ```
 
-## 🚀 快速开始
+---
 
-### 1. 安装依赖
+## 二、判定子系统（7.2）：三 Agent 流水线
+
+### 2.1 数据流
+
+1. 对同一 `code_snippet`，使用 `asyncio.gather` **并行**调用：
+   - `SemanticClarityAgent` → `SemanticClarityResult`（命名、意图、可理解性，score 0–100）
+   - `SyntaxLogicAgent` → `SyntaxLogicResult`（语法、控制流、逻辑与异常处理等，score 0–100）
+2. 将两路结果填入 `IdiomJudgeRequest`，调用 `IdiomJudgeAgent`，由 LLM 生成**理由、置信度、习语特征**等说明性内容。
+3. **最终布尔结论** `final_judgment["is_idiom"]` **不**单独采信 LLM 的 `is_idiom`，而是由 `patent_programming_pattern_valid(semantic_score, syntax_score)` 决定：
+   - 较高分 ≥ 70 且较低分 ≥ 50 → 视为有效编程模式；
+   - 否则无效。  
+   若 LLM 与规则不一致，仍会保留 `final_judgment["llm_is_idiom"]` 便于对照；置信度在不一致时按两维 score 均值调整。
+
+### 2.2 流程示意图
+
+```
+code_snippet
+     │
+     ├──────────────────────┬──────────────────────┐
+     ▼                      ▼                      │
+SemanticClarityAgent   SyntaxLogicAgent            │
+     │                      │                      │
+     └──────────┬───────────┘                      │
+                ▼                                  │
+         IdiomJudgeAgent（汇总说明）                │
+                │                                  │
+                ▼                                  │
+    patent_programming_pattern_valid ←─────────────┘
+                │
+                ▼
+        结构化 dict（含 semantic / syntax / final_judgment）
+```
+
+### 2.3 入口与批量任务
+
+- **库内调用**：`CodeIdiomPipeline(model=..., quiet=False)`，`await pipeline.evaluate(code)`，`await pipeline.shutdown()`。  
+  `quiet=True` 时关闭步骤打印，供合成流水线反复调用再判定时减少日志。
+- **命令行批量**：`python -m src.agent.idiom_judgement`，读取聚类产物，对每个 `center_point` 调用上述流水线，写出 `{repo}_idiom.pkl`。
+
+---
+
+## 三、合成子系统（7.3 + 7.4）：规划、组装与再判定
+
+### 3.1 数据与分组
+
+- 输入：`result/.../{repo}_idiom.pkl`（已通过 7.2 的习语列表）。
+- 按 `loc_label`（项目–文件–extent 等区域标签）分组；**仅当组内条数 ≥ 2** 时尝试合成。
+
+### 3.2 单组内迭代（最多 3 轮）
+
+常量 `MAX_SYNTHESIS_ITERATIONS`（默认 **3**，可从 `src.agent` 导出）控制**合并轮数**上限。
+
+每轮顺序：
+
+1. **PlanningSynthesisAgent**：输入当前已合并代码、本组剩余候选片段列表（由编排层注入，未来可替换为工具查询结果）、当前轮次与最大轮次；输出 `should_stop`、`selected_indices`（本轮要并入的一个或多个候选下标）、`reason`。
+2. **CodeAssemblyAgent**：输入 `base_code` 与按规划顺序的 `segments_to_merge`，输出 `merged_code`。
+3. **CodeIdiomPipeline.evaluate(merged_code)**：与 7.2 相同的三 Agent + 规则再判定。  
+   - 若无效：终止该组合成，**保留上一轮仍合法**的合并结果（若从未成功合并则该组不产出合成记录）。  
+   - 若有效：更新当前代码，从池中移除已并入的候选，进入下一轮（直至规划停止、池空或达到 3 轮）。
+
+### 3.3 入口
+
+```bash
+python -m src.agent.idiom_synthesis --input-dir result/cpp --output-dir result/cpp
+```
+
+写出 `{repo}_idiom_syn.pkl`，条目中包含 `center_point`、`loc_label`、聚合后的 `cnt` / `avg_ast_num`、`source_infos`、`merge_rounds`、`synthesis_trace` 等。
+
+---
+
+## 四、使用 AutoGen 的实现方式（实现细节）
+
+### 4.1 为何选用 `autogen_core`
+
+- **`RoutedAgent` + `@message_handler`**：每个 Agent 是强类型的消息处理器，请求/响应用 **dataclass** 描述，适合**非对话、流水线式**调用。
+- **`SingleThreadedAgentRuntime`**：在同一线程内调度消息，与 `asyncio` 配合简单，避免多线程与锁的复杂度。
+- **`autogen_ext` 的 `OpenAIChatCompletionClient`**：统一封装 Chat Completions，与 `SystemMessage` / `UserMessage` 列表对接。
+
+本模块**未**使用 `autogen_agentchat` 的会话 Agent，因主路径是「单次请求 → 结构化返回」，而非多轮用户–助手对话。
+
+### 4.2 Agent 类共性
+
+每个业务 Agent 均：
+
+1. 继承 `RoutedAgent`（`autogen_core`）。
+2. 在类内用 `@message_handler` 声明处理函数，入参为自定义 `Request` dataclass 与 `MessageContext`，返回 `Result` dataclass。
+3. 构造函数注入共享的 `OpenAIChatCompletionClient`；在 handler 内组装 `LLMMessage` 列表并 `await model_client.create(...)`。
+4. 使用项目内 `extract_tag_content(..., "JSON", ...)` 解析 LLM 输出中的 `[JSON]...[/JSON]`，失败时记录日志并返回安全的默认结果。
+
+### 4.3 运行时注册与寻址（与文档示例的差异）
+
+当前代码使用 **`register_factory`** 与 **`AgentId`**，与早期 AutoGen 示例中的 `register` + 字符串 recipient 不同，例如：
+
+```python
+from autogen_core import SingleThreadedAgentRuntime, AgentId
+
+runtime = SingleThreadedAgentRuntime()
+await runtime.register_factory(
+    "semantic_agent",
+    lambda: SemanticClarityAgent(model_client),
+)
+runtime.start()
+
+result = await runtime.send_message(
+    SemanticClarityRequest(code_snippet=code),
+    recipient=AgentId("semantic_agent", key="default"),
+)
+```
+
+要点：
+
+- **工厂**：`register_factory(name, factory)` 在首次投递到该 `AgentId` 时创建实例，适合无状态、可复用的 Worker 形态。
+- **收件人**：`AgentId("logical_name", key="default")` 与注册名一致；`key` 用于多实例扩展时区分（本仓库默认 `"default"`）。
+
+### 4.4 判定流水线中的并行
+
+在 `CodeIdiomPipeline.evaluate` 内，对语义与语法两次 `send_message` 使用 **`asyncio.gather`**，实现说明书中的「并行接收同一代码段输入」；综合判定仍为第三次 `send_message`（依赖前两路结果，天然顺序执行）。
+
+### 4.5 双运行时与 `CodeIdiomPipeline` 复用
+
+- `run_synthesis`：**启动**合成用 `SingleThreadedAgentRuntime`，注册 `planning_synthesis_agent`、`code_assembly_agent`。
+- 同时构造 **`CodeIdiomPipeline(model, quiet=True)`**，内部再创建**第二个**运行时并注册三个判定 Agent。  
+  合成循环中只通过 `pipeline.evaluate` 与判定子系统交互，不手动向 Runtime A 注册合成类 Agent。
+
+---
+
+## 五、文件与模块索引
+
+| 文件 | 角色 |
+|------|------|
+| `semantic_clarity_agent.py` | 语义清晰度 Agent |
+| `syntax_logic_agent.py` | 语法与逻辑 Agent |
+| `idiom_judge_agent.py` | 综合判定 Agent；**`patent_programming_pattern_valid`** |
+| `judge_pipeline.py` | **`CodeIdiomPipeline`**：并行判定 + 规则裁定 + `quiet` |
+| `planning_synthesis_agent.py` | 规划合成 Agent（7.3） |
+| `code_assembly_agent.py` | 代码组装 Agent（7.3） |
+| `idiom_judgement.py` | CLI：聚类结果 → `*_idiom.pkl` |
+| `idiom_synthesis.py` | CLI / API：`*_idiom.pkl` → 规划–组装–再判定 → `*_idiom_syn.pkl` |
+| `__init__.py` | 对外导出主要类型与 `MAX_SYNTHESIS_ITERATIONS` |
+
+---
+
+## 六、快速开始
+
+### 6.1 依赖与环境
 
 ```bash
 pip install autogen-core autogen-ext
-```
-
-### 2. 配置环境变量
-
-```bash
 export OPENAI_API_KEY="your-api-key"
-export OPENAI_BASE_URL="your-base-url"  # 可选
+export OPENAI_BASE_URL="your-base-url"   # 可选
 ```
 
-### 3. 单独测试每个 Agent
+项目根目录可提供 `.env`，部分入口模块会尝试 `load_dotenv`。
 
-#### 测试语义清晰度 Agent
+### 6.2 单独运行各 Agent 模块（自测）
+
 ```bash
 python -m src.agent.semantic_clarity_agent
-```
-
-#### 测试语法逻辑 Agent
-```bash
 python -m src.agent.syntax_logic_agent
-```
-
-#### 测试综合判定 Agent
-```bash
 python -m src.agent.idiom_judge_agent
 ```
 
-### 4. 运行完整的多 Agent 系统
-
-```bash
-python -m src.agent.test_multi_agent
-```
-
-## 📦 文件说明
-
-### 核心 Agent 文件
-
-| 文件 | 说明 | 主要功能 |
-|------|------|---------|
-| `semantic_clarity_agent.py` | 语义清晰度判定 Agent | 评估代码的命名、意图和可理解性 |
-| `syntax_logic_agent.py` | 语法逻辑判定 Agent | 评估代码的结构、控制流和逻辑 |
-| `idiom_judge_agent.py` | 综合判定 Agent | 综合前两个结果判定是否为代码习语 |
-
-### 辅助文件
-
-| 文件 | 说明 |
-|------|------|
-| `test_multi_agent.py` | 多 Agent 集成测试和使用示例 |
-| `__init__.py` | 模块导出 |
-| `README.md` | 本文档 |
-
-## 💻 使用示例
-
-### 使用流水线进行判定
+### 6.3 判定流水线示例
 
 ```python
 import asyncio
-from src.agent.test_multi_agent import CodeIdiomPipeline
+from src.agent.judge_pipeline import CodeIdiomPipeline
 
 async def main():
-    # 创建流水线
     pipeline = CodeIdiomPipeline(model="gpt-4o-mini")
-    
     try:
-        # 评估代码片段
-        code = """
-def calculate_average(numbers):
-    if not numbers:
-        return 0
-    return sum(numbers) / len(numbers)
-"""
-        
-        result = await pipeline.evaluate(code)
+        result = await pipeline.evaluate(
+            "def f(x): return x + 1\n"
+        )
         pipeline.print_result(result)
-    
     finally:
         await pipeline.shutdown()
 
 asyncio.run(main())
 ```
 
-### 单独使用某个 Agent
+### 6.4 单独向某个 Agent 发消息（正确注册方式）
 
 ```python
 import asyncio
 import os
-from autogen_core import SingleThreadedAgentRuntime
+from autogen_core import SingleThreadedAgentRuntime, AgentId
 from autogen_ext.models.openai import OpenAIChatCompletionClient
 from src.agent import SemanticClarityAgent, SemanticClarityRequest
 
 async def main():
-    # 创建运行时
     runtime = SingleThreadedAgentRuntime()
-    
-    # 创建模型客户端
     model_client = OpenAIChatCompletionClient(
         model="gpt-4o-mini",
         api_key=os.getenv("OPENAI_API_KEY"),
-        base_url=os.getenv("OPENAI_BASE_URL")
+        base_url=os.getenv("OPENAI_BASE_URL"),
     )
-    
-    # 注册 Agent
-    await runtime.register(
+    await runtime.register_factory(
         "semantic_agent",
-        lambda: SemanticClarityAgent(model_client)
+        lambda: SemanticClarityAgent(model_client),
     )
-    
-    # 启动运行时
     runtime.start()
-    
     try:
-        # 发送请求
-        code = "def f(x): return x * 2"
-        result = await runtime.send_message(
-            SemanticClarityRequest(code_snippet=code),
-            recipient="semantic_agent"
+        out = await runtime.send_message(
+            SemanticClarityRequest(code_snippet="def f(x): return x * 2"),
+            recipient=AgentId("semantic_agent", key="default"),
         )
-        
-        print(f"是否清晰: {result.is_clear}")
-        print(f"评分: {result.score}")
-        print(f"理由: {result.reason}")
-    
+        print(out.score, out.reason)
     finally:
         await runtime.stop()
 
 asyncio.run(main())
 ```
 
-## 📊 输出格式
+### 6.5 批量判定与合成
 
-### 语义清晰度评估结果
-```python
-@dataclass
-class SemanticClarityResult:
-    is_clear: bool          # 是否清晰 (score >= 70)
-    score: float            # 评分 (0-100)
-    reason: str             # 理由
-    suggestions: List[str]  # 改进建议
+```bash
+python -m src.agent.idiom_judgement --input output/cpp/clusters.pkl --limit 5 -q
+python -m src.agent.idiom_synthesis --input-dir result/cpp --output-dir result/cpp
 ```
 
-### 语法逻辑评估结果
-```python
-@dataclass
-class SyntaxLogicResult:
-    is_clear: bool       # 是否清晰 (score >= 70)
-    score: float         # 评分 (0-100)
-    reason: str          # 理由
-    issues: List[str]    # 发现的问题
-```
+---
 
-### 综合判定结果
-```python
-@dataclass
-class IdiomJudgeResult:
-    is_idiom: bool                # 是否为代码习语
-    confidence: float             # 置信度 (0-100)
-    reason: str                   # 判定理由
-    characteristics: List[str]    # 识别出的习语特征
-```
+## 七、LLM 输出约定
 
-## 🏷️ LLM 响应格式约定
+各 Agent 提示词要求模型用 **`[JSON] ... [/JSON]`** 返回结构化字段；部分提示同时要求用 **`[Code Idiom] ... [/Code Idiom]`** 引用代码。解析统一走 `src/utils/response_parser.py` 的 `extract_tag_content`。
 
-所有 Agent 与 LLM 的交互都遵循统一的标签格式约定：
+---
 
-### 标签格式
+## 八、判定标准（与专利 7.2 一致）
 
-1. **代码片段标签**: `[Code Idiom] ... [/Code Idiom]`
-   - 用于包裹代码片段
-   - 确保代码的完整性和可解析性
+- 语义 score 与语法 score 中，**较高者 ≥ 70 且较低者 ≥ 50** → `patent_programming_pattern_valid` 为真，即保留为有效编程模式。
+- LLM 给出的 `is_clear`、综合 Agent 的叙述用于解释与日志；**门禁**以分数规则为准。
 
-2. **JSON 响应标签**: `[JSON] ... [/JSON]`
-   - 用于包裹 JSON 格式的评估结果
-   - 便于从 LLM 响应中精确提取结构化数据
+---
 
-### LLM 响应示例
+## 九、常见问题
 
-```
-Here is my evaluation:
+**Q：为什么用 `autogen_core` 而不是 `autogen_agentchat`？**  
+A：本场景是结构化、可重复的流水线调用，不需要会话状态机；`RoutedAgent` + 运行时消息足够清晰且易于测试。
 
-[Code Idiom]
-def calculate_average(numbers):
-    if not numbers:
-        return 0
-    return sum(numbers) / len(numbers)
-[/Code Idiom]
+**Q：`register` 与 `register_factory` 区别？**  
+A：本仓库统一使用 **`register_factory`**，与当前 `send_message(..., AgentId(..., key="default"))` 的用法一致。
 
-This code snippet demonstrates clear semantics and logic.
+**Q：合成与判定能否合并为一个 Runtime？**  
+A：可以技术上合并为五个 Agent 同注册在一个运行时，但当前实现**刻意分离**，以降低命名耦合并单独控制 `CodeIdiomPipeline` 生命周期。
 
-[JSON]
-{
-    "is_clear": true,
-    "score": 90,
-    "reason": "Clear function naming and intent",
-    "suggestions": ["Consider adding type hints"]
-}
-[/JSON]
-```
+---
 
-### 解析工具
+## 十、许可证
 
-系统使用 `src/utils/response_parser.py` 中的 `extract_tag_content()` 函数统一解析标签内容：
-
-```python
-from src.utils.response_parser import extract_tag_content
-
-# 提取 JSON 内容
-json_content = extract_tag_content(response, "JSON")
-
-# 提取代码片段
-code = extract_tag_content(response, "Code Idiom")
-```
-
-## 🔧 技术实现
-
-### AutoGen 最佳实践
-
-本系统严格遵循 AutoGen 的最佳实践：
-
-1. **继承 RoutedAgent**: 所有 Agent 继承自 `autogen_core.RoutedAgent`
-2. **使用 message_handler**: 使用 `@message_handler` 装饰器处理消息
-3. **SingleThreadedAgentRuntime**: 使用单线程运行时管理 Agent 通信
-4. **OpenAIChatCompletionClient**: 使用 `autogen_ext` 的模型客户端
-5. **异步设计**: 全部采用异步 API
-6. **结构化消息**: 使用 dataclass 定义请求和响应
-
-### 核心组件
-
-```python
-# 从 autogen_core 导入
-from autogen_core import (
-    RoutedAgent,              # Agent 基类
-    message_handler,          # 消息处理装饰器
-    MessageContext,           # 消息上下文
-    SingleThreadedAgentRuntime # 单线程运行时
-)
-from autogen_core.models import (
-    SystemMessage,            # 系统消息
-    UserMessage,             # 用户消息
-    LLMMessage               # LLM 消息基类
-)
-
-# 从 autogen_ext 导入
-from autogen_ext.models.openai import (
-    OpenAIChatCompletionClient  # OpenAI 客户端
-)
-```
-
-### 设计原则
-
-1. **单一职责**: 每个 Agent 专注于一个评估维度
-2. **流水线架构**: Agent 按顺序执行，前面的结果传递给后面
-3. **结构化输出**: 使用 JSON 格式确保结果可解析
-4. **可扩展性**: 易于添加新的评估维度
-
-### Agent 通信流程
-
-```python
-# 1. 创建运行时
-runtime = SingleThreadedAgentRuntime()
-
-# 2. 注册 Agent
-await runtime.register("agent_name", lambda: AgentClass(model_client))
-
-# 3. 启动运行时
-runtime.start()
-
-# 4. 发送消息
-result = await runtime.send_message(
-    RequestMessage(...),
-    recipient="agent_name"
-)
-
-# 5. 停止运行时
-await runtime.stop()
-```
-
-## 🎯 判定标准
-
-### 代码习语的特征
-
-1. **语义清晰** (score >= 70)
-   - 命名有意义
-   - 意图明确
-   - 易于理解
-
-2. **逻辑简洁** (score >= 70)
-   - 结构清晰
-   - 控制流简单
-   - 逻辑直接
-
-3. **通用模式**
-   - 可复用
-   - 符合最佳实践
-   - 被广泛认可
-
-### 判定逻辑
-
-- 两个维度都 >= 70 分：**很可能是代码习语**
-- 一个 >= 70，另一个 >= 50：**可能是代码习语**
-- 其他情况：**不太可能是代码习语**
-
-## 🐛 常见问题
-
-### Q: 为什么使用 autogen_core 而不是 autogen_agentchat？
-A: `autogen_core` 是 AutoGen 的核心包，提供了更底层和灵活的 Agent 实现。`autogen_agentchat` 是更高级的封装，适合对话场景。对于我们的流水线判定系统，`autogen_core` 更合适。
-
-### Q: 为什么不使用 src/llm？
-A: AutoGen 自带了完善的模型客户端（`OpenAIChatCompletionClient`），功能完整且经过充分测试，直接使用可以减少依赖和潜在问题。
-
-### Q: 如何添加新的评估维度？
-A: 创建一个新的 Agent 类继承 `RoutedAgent`，定义请求和结果的 dataclass，然后在流水线中注册和调用即可。
-
-### Q: 支持批量评估吗？
-A: 可以通过循环调用 `pipeline.evaluate()` 实现批量评估，或者修改 Agent 支持批量请求。
-
-## 📝 TODO
-
-- [ ] 添加更多测试用例
-- [ ] 支持批量评估优化
-- [ ] 添加评估结果缓存
-- [ ] 集成到主流水线
-- [ ] 添加更多评估维度
-
-## 📄 许可证
-
-本项目遵循主项目的许可证。
+本模块遵循仓库根目录的主项目许可证。

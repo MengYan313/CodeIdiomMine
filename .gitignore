@@ -50,3 +50,5 @@ tests/output/
 .env
 .env.local
 
+# doc
+doc/

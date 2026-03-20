@@ -8,42 +8,47 @@ CodeIdiomMine Agent Module
 from .semantic_clarity_agent import (
     SemanticClarityAgent,
     SemanticClarityRequest,
-    SemanticClarityResult
+    SemanticClarityResult,
 )
 from .syntax_logic_agent import (
     SyntaxLogicAgent,
     SyntaxLogicRequest,
-    SyntaxLogicResult
+    SyntaxLogicResult,
 )
 from .idiom_judge_agent import (
     IdiomJudgeAgent,
     IdiomJudgeRequest,
-    IdiomJudgeResult
+    IdiomJudgeResult,
+    patent_programming_pattern_valid,
 )
-from .idiom_synthesis_agent import (
-    IdiomSynthesisAgent,
-    IdiomSynthesisRequest,
-    IdiomSynthesisResult
+from .planning_synthesis_agent import (
+    PlanningSynthesisAgent,
+    PlanningSynthesisRequest,
+    PlanningSynthesisResult,
 )
+from .code_assembly_agent import (
+    CodeAssemblyAgent,
+    CodeAssemblyRequest,
+    CodeAssemblyResult,
+)
+from .idiom_synthesis import MAX_SYNTHESIS_ITERATIONS
 
 __all__ = [
-    # Semantic Clarity Agent
-    'SemanticClarityAgent',
-    'SemanticClarityRequest',
-    'SemanticClarityResult',
-    
-    # Syntax Logic Agent
-    'SyntaxLogicAgent',
-    'SyntaxLogicRequest',
-    'SyntaxLogicResult',
-    
-    # Idiom Judge Agent
-    'IdiomJudgeAgent',
-    'IdiomJudgeRequest',
-    'IdiomJudgeResult',
-
-    # Idiom Synthesis Agent
-    'IdiomSynthesisAgent',
-    'IdiomSynthesisRequest',
-    'IdiomSynthesisResult',
+    "SemanticClarityAgent",
+    "SemanticClarityRequest",
+    "SemanticClarityResult",
+    "SyntaxLogicAgent",
+    "SyntaxLogicRequest",
+    "SyntaxLogicResult",
+    "IdiomJudgeAgent",
+    "IdiomJudgeRequest",
+    "IdiomJudgeResult",
+    "patent_programming_pattern_valid",
+    "PlanningSynthesisAgent",
+    "PlanningSynthesisRequest",
+    "PlanningSynthesisResult",
+    "CodeAssemblyAgent",
+    "CodeAssemblyRequest",
+    "CodeAssemblyResult",
+    "MAX_SYNTHESIS_ITERATIONS",
 ]
