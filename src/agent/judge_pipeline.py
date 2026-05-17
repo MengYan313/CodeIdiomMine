@@ -6,26 +6,11 @@
 """
 
 import asyncio
-import os
-from pathlib import Path
 from typing import Dict, Any
 
 from autogen_core import SingleThreadedAgentRuntime, AgentId
-from autogen_ext.models.openai import OpenAIChatCompletionClient
 
-# 尝试加载 .env 文件
-try:
-    from dotenv import load_dotenv
-    # 获取项目根目录
-    project_root = Path(__file__).parent.parent.parent
-    env_path = project_root / ".env"
-    if env_path.exists():
-        load_dotenv(env_path)
-        print(f"✓ 已加载环境变量从: {env_path}")
-except ImportError:
-    print("⚠ 未安装 python-dotenv，跳过 .env 文件加载")
-    print("  可以通过以下命令安装: pip install python-dotenv")
-
+from ._base import create_model_client, load_project_env
 from .semantic_clarity_agent import (
     SemanticClarityAgent,
     SemanticClarityRequest,
@@ -74,16 +59,14 @@ class CodeIdiomPipeline:
         
         if not self._quiet:
             print("🚀 初始化代码习语判定流水线...")
-        
+
+        load_project_env()
+
         # 创建运行时
         self.runtime = SingleThreadedAgentRuntime()
-        
+
         # 创建模型客户端（三个 Agent 共享）
-        model_client = OpenAIChatCompletionClient(
-            model=self.model,
-            api_key=os.getenv("OPENAI_API_KEY"),
-            base_url=os.getenv("OPENAI_BASE_URL")
-        )
+        model_client = create_model_client(self.model)
         
         # 注册三个 Agent
         await self.runtime.register_factory(

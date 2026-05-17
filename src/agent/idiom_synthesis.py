@@ -13,23 +13,11 @@ import glob
 import os
 import pickle
 from collections import defaultdict
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-# 尝试加载 .env 文件
-try:
-    from dotenv import load_dotenv
-
-    project_root = Path(__file__).parent.parent.parent
-    env_path = project_root / ".env"
-    if env_path.exists():
-        load_dotenv(env_path)
-except ImportError:
-    pass
-
 from autogen_core import SingleThreadedAgentRuntime, AgentId
-from autogen_ext.models.openai import OpenAIChatCompletionClient
 
+from ._base import create_model_client, load_project_env
 from .code_assembly_agent import (
     CodeAssemblyAgent,
     CodeAssemblyRequest,
@@ -42,6 +30,8 @@ from .planning_synthesis_agent import (
 from ..logger import get_logger
 
 logger = get_logger(__name__)
+
+load_project_env()
 
 # 说明书 7.4：多轮合并迭代上限
 MAX_SYNTHESIS_ITERATIONS = 3
@@ -239,11 +229,7 @@ async def run_synthesis(
     os.makedirs(output_dir, exist_ok=True)
 
     runtime = SingleThreadedAgentRuntime()
-    model_client = OpenAIChatCompletionClient(
-        model=model,
-        api_key=os.getenv("OPENAI_API_KEY"),
-        base_url=os.getenv("OPENAI_BASE_URL"),
-    )
+    model_client = create_model_client(model)
     await runtime.register_factory(
         "planning_synthesis_agent",
         lambda: PlanningSynthesisAgent(model_client),

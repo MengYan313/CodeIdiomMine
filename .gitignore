@@ -52,3 +52,5 @@ tests/output/
 
 # doc
 doc/
+# Claude Code personal/local settings
+.claude/settings.local.json

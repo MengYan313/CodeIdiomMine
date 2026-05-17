@@ -32,6 +32,10 @@ class ASTParser:
         logger.info(f"初始化 AST 解析器: 语言={self.language}")
         self.parser = self._init_parser()
         logger.info("AST 解析器初始化完成")
+        # 源码字节缓存：仅缓存最近一次 parse_file 的文件，避免每个 AST 节点
+        # 都重新打开同一个文件（提取片段的结果完全不变，仅消除重复磁盘 IO）。
+        self._cached_path: Optional[str] = None
+        self._cached_source: bytes = b""
         
     def _init_parser(self) -> Parser:
         """初始化 tree-sitter 解析器"""
@@ -78,6 +82,8 @@ class ASTParser:
         try:
             with open(file_path, "rb") as f:
                 source_code = f.read()
+            self._cached_path = file_path
+            self._cached_source = source_code
             tree = self.parser.parse(source_code)
             logger.debug(f"成功解析文件: {file_path}")
             return tree
@@ -239,14 +245,14 @@ class ASTParser:
         if data.startswith(b'\xff\xfe') or data.startswith(b'\xfe\xff'):
             try:
                 return data.decode('utf-16')
-            except:
+            except Exception:
                 pass
         
         # 检测是否为 UTF-16（每个字符后跟 \x00）
         if len(data) > 2 and data[1:2] == b'\x00' and data[3:4] == b'\x00':
             try:
                 return data.decode('utf-16-le')
-            except:
+            except Exception:
                 pass
         
         # 尝试 UTF-8
@@ -258,7 +264,7 @@ class ASTParser:
         # 尝试 Latin-1（几乎总是成功）
         try:
             return data.decode('latin-1')
-        except:
+        except Exception:
             pass
         
         # 最后使用 UTF-8 忽略错误
@@ -277,9 +283,14 @@ class ASTParser:
         """
         try:
             # 使用字节范围直接提取文本（更高效）
-            with open(file_path, "rb") as f:
-                source_bytes = f.read()
-            
+            # 复用 parse_file 缓存的源码字节；遍历单个文件 AST 时这能避免
+            # 对同一文件成百上千次重复读取。
+            if file_path == self._cached_path:
+                source_bytes = self._cached_source
+            else:
+                with open(file_path, "rb") as f:
+                    source_bytes = f.read()
+
             start_byte = node.start_byte
             end_byte = node.end_byte
             snippet_bytes = source_bytes[start_byte:end_byte]

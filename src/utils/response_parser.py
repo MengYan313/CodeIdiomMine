@@ -67,7 +67,7 @@ def extract_json(text: str) -> Dict[str, Any]:
     # 尝试直接解析
     try:
         return json.loads(text)
-    except:
+    except Exception:
         pass
     
     # 尝试提取 ```json 代码块中的 JSON
@@ -75,7 +75,7 @@ def extract_json(text: str) -> Dict[str, Any]:
     if json_match:
         try:
             return json.loads(json_match.group(1))
-        except:
+        except Exception:
             pass
     
     # 尝试提取任意代码块中的 JSON
@@ -83,7 +83,7 @@ def extract_json(text: str) -> Dict[str, Any]:
     if json_match:
         try:
             return json.loads(json_match.group(1))
-        except:
+        except Exception:
             pass
     
     # 尝试提取大括号内的内容（不在代码块中）
@@ -91,7 +91,7 @@ def extract_json(text: str) -> Dict[str, Any]:
     if json_match:
         try:
             return json.loads(json_match.group(0))
-        except:
+        except Exception:
             pass
     
     raise ValueError(f"Cannot extract JSON from text: {text[:200]}...")

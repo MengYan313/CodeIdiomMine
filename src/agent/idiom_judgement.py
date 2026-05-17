@@ -10,21 +10,13 @@ import contextlib
 import os
 import pickle
 from io import StringIO
-from pathlib import Path
 from typing import List, Dict, Any
 
-# 尝试加载 .env 文件
-try:
-    from dotenv import load_dotenv
-    project_root = Path(__file__).parent.parent.parent
-    env_path = project_root / ".env"
-    if env_path.exists():
-        load_dotenv(env_path)
-except ImportError:
-    pass
-
+from ._base import load_project_env
 from .judge_pipeline import CodeIdiomPipeline
 from ..logger import get_logger
+
+load_project_env()
 
 logger = get_logger(__name__)
 
@@ -153,7 +145,8 @@ async def judge_idioms(
             idioms = []
             for j, rec in enumerate(records):
                 center_point = rec["center_point"]
-                logger.info(f"  判定 [{j+1}/{len(records)}]: {center_point[:80]}..." if len(center_point) > 80 else f"  判定 [{j+1}/{len(records)}]: {center_point}")
+                preview = center_point[:80] + "..." if len(center_point) > 80 else center_point
+                logger.info(f"  判定 [{j+1}/{len(records)}]: {preview}")
 
                 try:
                     if quiet:
