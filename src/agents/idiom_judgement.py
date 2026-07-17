@@ -267,7 +267,7 @@ def main():
 
 
 # 模块运行命令（从项目根目录运行）：
-# python -m src.agents.idiom_judgement --input outputs/cpp/clusters.pkl --output-dir results/cpp
+# 运行示例：python -m src.agents.idiom_judgement --input outputs/cpp/clusters.pkl --output-dir results/cpp
 # python -m src.agents.idiom_judgement --input outputs/cpp/clusters.pkl --limit 5  # 测试：每项目仅判定 5 个
 
 if __name__ == "__main__":

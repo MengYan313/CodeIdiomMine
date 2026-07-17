@@ -10,10 +10,15 @@ from .message import MessageBuilder, MessageRole, ConversationHistory, Message
 from .agent import BaseAgent, SimpleAgent, AgentTeam
 from .utils import (
     retry_on_error,
-    parse_json_response,
-    extract_code_blocks,
     Timer
 )
+from .json_output import (
+    JsonOutputError,
+    complete_json_object,
+    parse_json_object,
+    validate_json_object,
+)
+from .prompting import build_json_system_prompt
 
 __all__ = [
     # 配置
@@ -30,14 +35,17 @@ __all__ = [
     'ConversationHistory',
     'Message',
 
-    # Agent
+    # Agent 相关导出
     'BaseAgent',
     'SimpleAgent',
     'AgentTeam',
 
     # 工具
     'retry_on_error',
-    'parse_json_response',
-    'extract_code_blocks',
     'Timer',
+    'JsonOutputError',
+    'complete_json_object',
+    'parse_json_object',
+    'validate_json_object',
+    'build_json_system_prompt',
 ]

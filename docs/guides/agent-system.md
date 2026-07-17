@@ -121,8 +121,8 @@ SemanticClarityAgent   SyntaxLogicAgent            │
 
 1. 业务 JSON Agent 继承 `JsonLLMAgent`，后者再继承两项目共享的 `BaseRoutedAgent`（`autogen_core.RoutedAgent`）。
 2. 在类内用 `@message_handler` 声明处理函数，入参为自定义 `Request` dataclass 与 `MessageContext`，返回 `Result` dataclass。
-3. 构造函数注入共享的 `OpenAIChatCompletionClient`；在 handler 内组装 `LLMMessage` 列表并 `await model_client.create(...)`。
-4. 使用项目内 `extract_tag_content(..., "JSON", ...)` 解析 LLM 输出中的 `[JSON]...[/JSON]`，失败时记录日志并返回安全的默认结果。
+3. 构造函数注入共享的 `OpenAIChatCompletionClient`；handler 通过 `JsonLLMAgent.ask_json(...)` 发起结构化调用。
+4. `src/llm/json_output.py` 启用原生 JSON mode，对完整响应执行严格解析和 schema 校验；首次失败时使用同一模型修复一次，再次失败才由领域 Agent 返回安全默认结果。
 
 ### 4.3 运行时注册与寻址（与文档示例的差异）
 
@@ -262,7 +262,7 @@ asyncio.run(main())
 
 ## 七、LLM 输出约定
 
-各 Agent 提示词要求模型用 **`[JSON] ... [/JSON]`** 返回结构化字段；部分提示同时要求用 **`[Code Idiom] ... [/Code Idiom]`** 引用代码。解析统一走 `src/utils/response_parser.py` 的 `extract_tag_content`。
+各 Agent 的业务提示词和解释字段统一使用中文，代码、必要技术术语和 JSON 字段名保留英文。每类 Agent 声明显式 JSON Schema；模型直接返回 JSON object，不使用标签或 Markdown 包装。共享层只解析完整响应，不从正文猜测 JSON 片段，并把修复次数固定为一次。
 
 ---
 

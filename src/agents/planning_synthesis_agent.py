@@ -13,30 +13,41 @@ from autogen_core import MessageContext, message_handler
 from autogen_ext.models.openai import OpenAIChatCompletionClient
 
 from ._base import JsonLLMAgent
+from ..llm.prompting import build_json_system_prompt
 
-_SYSTEM_MESSAGE = """You are a planning agent for merging code idioms from the SAME source region (same file/function context).
+_SYSTEM_MESSAGE = build_json_system_prompt(
+    role="你是代码习语的规划合成 Agent，只处理同一文件或函数上下文中的候选。",
+    goal="决定本轮是否停止；若继续，只选择能够安全补全当前代码的候选。",
+    success_criteria=(
+        "优先选择与当前代码共享数据依赖、控制流或成对职责的候选，例如初始化/清理和 try/finally。",
+        "选择能够形成更完整习语的最小候选集合，不因候选存在就强行合并。",
+        "selected_indices 只包含当前列表中的有效下标，且不重复。",
+    ),
+    constraints=(
+        "不同源码区域、相互冲突或只具表面相似性的片段不得合并。",
+        "不得改写代码；本 Agent 只作选择和停止决策。",
+    ),
+    field_rules=("reason 使用简洁中文。",),
+    stop_rules=(
+        "候选为空、当前代码已经完整或没有候选能带来明确收益时，should_stop 为 true 且 selected_indices 为空数组。",
+        "决定继续时，should_stop 为 false 且 selected_indices 至少包含一个有效下标。",
+    ),
+)
 
-The user message contains:
-- The current merged code (anchor).
-- A numbered list of other valid idioms in this region (indices 0..n-1).
-- Current merge iteration index and a hard maximum number of merge rounds.
-
-Your job:
-1. Decide whether to STOP (no more beneficial merge, or no candidates left, or context already complete).
-2. If not stopping, choose which candidate(s) to merge into the current code THIS round. You may select one or several indices.
-3. Prefer idioms that are semantically related, common pairings (try/finally, init/cleanup), or share variables with the current code.
-
-Output ONLY valid JSON wrapped in [JSON] and [/JSON] tags:
-{
-    "should_stop": boolean,
-    "selected_indices": [integer, ...],
-    "reason": "short explanation"
+_RESPONSE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "should_stop": {"type": "boolean", "description": "是否停止合成"},
+        "selected_indices": {
+            "type": "array",
+            "items": {"type": "integer"},
+            "description": "本轮合并的候选下标",
+        },
+        "reason": {"type": "string", "description": "决策理由"},
+    },
+    "required": ["should_stop", "selected_indices", "reason"],
+    "additionalProperties": False,
 }
-
-Rules:
-- If should_stop is true, selected_indices should be [].
-- selected_indices must only contain valid indices for the given candidate list (0 to n-1).
-- If the candidate list is empty, set should_stop to true."""
 
 
 @dataclass
@@ -63,7 +74,9 @@ class PlanningSynthesisAgent(JsonLLMAgent):
     """规划合成 Agent：决定停止或选择本轮要并入的候选下标。"""
 
     def __init__(self, model_client: OpenAIChatCompletionClient):
-        super().__init__("PlanningSynthesisAgent", _SYSTEM_MESSAGE, model_client)
+        super().__init__(
+            "PlanningSynthesisAgent", _SYSTEM_MESSAGE, model_client, _RESPONSE_SCHEMA
+        )
 
     @message_handler
     async def handle_request(
@@ -73,31 +86,31 @@ class PlanningSynthesisAgent(JsonLLMAgent):
             return PlanningSynthesisResult(
                 should_stop=True,
                 selected_indices=[],
-                reason="No candidates in region.",
+                reason="当前区域没有候选。",
             )
 
         numbered = "\n\n".join(
-            f"### Candidate index {i}\n```\n{c}\n```"
+            f"### 候选下标 {i}\n```\n{c}\n```"
             for i, c in enumerate(message.candidate_snippets)
         )
-        prompt = f"""Source region label: {message.loc_label or "(unknown)"}
+        prompt = f"""源码区域标签：{message.loc_label or "（未知）"}
 
-Merge iteration: {message.iteration_index + 1} / {message.max_iterations} (hard cap).
+合并轮次：{message.iteration_index + 1} / {message.max_iterations}（硬上限）。
 
-## Current code (anchor)
+## 当前代码（锚点）
 ```
 {message.current_code}
 ```
 
-## Other valid idioms in this region (choose indices to merge this round)
+## 当前区域的其他有效习语（选择本轮合并的下标）
 {numbered}
 
-Should you stop, or which indices (0..{len(message.candidate_snippets) - 1}) should be merged next? Return JSON in [JSON] tags."""
+请判断是否停止；若继续，选择下一步要合并的下标（0..{len(message.candidate_snippets) - 1}）。"""
 
         data = await self.ask_json(prompt)
         if data is None:
             return PlanningSynthesisResult(
-                should_stop=True, selected_indices=[], reason="parse_error"
+                should_stop=True, selected_indices=[], reason="JSON 解析失败"
             )
 
         stop = bool(data.get("should_stop", True))

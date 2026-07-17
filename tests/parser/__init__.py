@@ -1,1 +1,1 @@
-"""Tests for :mod:`src.parser`."""
+""":mod:`src.parser` 的测试。"""

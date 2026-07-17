@@ -1,4 +1,4 @@
-"""Shared application logging with one append-only file per command run."""
+"""共享应用日志：每条命令使用一个仅追加写入的日志文件。"""
 
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ def _safe_name(value: str) -> str:
 
 
 def _detect_run_name() -> str:
-    """Resolve a stable log name for ``python -m`` and direct-script runs."""
+    """为 ``python -m`` 和直接脚本运行确定稳定的日志名称。"""
     configured_name = os.getenv(LOG_NAME_ENV)
     if configured_name:
         return _safe_name(configured_name)
@@ -56,7 +56,7 @@ def _detect_run_name() -> str:
 
 
 class AppLogger:
-    """Create idempotent console and file loggers shared by both projects."""
+    """为两个项目创建幂等的控制台和文件日志器。"""
 
     _loggers: dict[tuple[str, str], logging.Logger] = {}
     _file_handlers: dict[Path, logging.FileHandler] = {}
@@ -69,11 +69,10 @@ class AppLogger:
         *,
         script_name: Optional[str] = None,
     ) -> logging.Logger:
-        """Return a logger writing INFO to stdout and DEBUG to ``logs/``.
+        """返回将 INFO 写入 stdout、将 DEBUG 写入 ``logs/`` 的日志器。
 
-        ``script_name`` remains as a compatibility alias for older WPF2React
-        call sites. New code should use ``run_name`` only when the automatic
-        command name is unsuitable.
+        ``script_name`` 保留为旧 WPF2React 调用点的兼容别名。仅当自动生成的
+        命令名称不合适时，新代码才应显式使用 ``run_name``。
         """
         if run_name and script_name and run_name != script_name:
             raise ValueError("run_name 与 script_name 不能指定不同值")
@@ -118,12 +117,12 @@ class AppLogger:
 
     @classmethod
     def get_log_path(cls, run_name: Optional[str] = None) -> Path:
-        """Return the normalized log file path without opening the file."""
+        """返回规范化的日志文件路径，但不打开文件。"""
         return LOG_DIR / f"{_safe_name(run_name or _detect_run_name())}.log"
 
     @classmethod
     def shutdown(cls) -> None:
-        """Detach and close only the handlers owned by this logging layer."""
+        """仅分离并关闭此日志层持有的处理器。"""
         owned_file_handlers = set(cls._file_handlers.values())
         for logger in cls._loggers.values():
             for handler in list(logger.handlers):
@@ -142,7 +141,7 @@ def get_logger(
     *,
     script_name: Optional[str] = None,
 ) -> logging.Logger:
-    """Convenience wrapper around :meth:`AppLogger.get_logger`."""
+    """对 :meth:`AppLogger.get_logger` 的便捷封装。"""
     return AppLogger.get_logger(name, run_name, script_name=script_name)
 
 

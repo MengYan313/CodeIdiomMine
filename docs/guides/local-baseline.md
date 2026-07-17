@@ -296,7 +296,7 @@ The same exporter also supports optional `judgment` and `synthesis` stages by sc
 ### Agent judgment and synthesis
 
 - Installed AutoGen 0.7.5 successfully ran the repository's `RoutedAgent`, `message_handler`, `SingleThreadedAgentRuntime`, `register_factory`, and `AgentId` APIs.
-- A deterministic in-memory fake model returned valid `[JSON]` responses. It verified:
+- 初始基线的 deterministic in-memory fake model 返回了当时协议下的有效结构化响应；当前协议已升级为原生 JSON mode、schema 校验和单次修复。该基线验证了：
   - semantic/syntax parallel evaluation and the deterministic 90/90 `is_idiom=True` gate;
   - batch judgment from the real minimal cluster to a one-record `sample_idiom.pkl` with the expected schema;
   - planning, code assembly, post-merge judgment, one successful merge round, and `sample_idiom_syn.pkl` with the expected schema.

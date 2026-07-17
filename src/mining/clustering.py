@@ -402,8 +402,8 @@ def main():
 
 
 # 模块运行命令（从项目根目录运行）：
-# python -m src.mining.clustering --input outputs/cpp/embeddings.pkl --output outputs/cpp/clusters.pkl
-# nohup python -m src.mining.clustering --input outputs/cpp/embeddings.pkl --output outputs/cpp/clusters.pkl > logs/clustering.log 2>&1 &
+# 运行示例：python -m src.mining.clustering --input outputs/cpp/embeddings.pkl --output outputs/cpp/clusters.pkl
+# 后台运行示例：nohup python -m src.mining.clustering --input outputs/cpp/embeddings.pkl --output outputs/cpp/clusters.pkl > logs/clustering.log 2>&1 &
 
 if __name__ == "__main__":
     main()

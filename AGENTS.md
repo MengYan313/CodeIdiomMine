@@ -6,9 +6,10 @@ This repository and its sibling repository remain independent, but reusable infr
 
 Mandatory conventions:
 
-- Use `repos/` for source-repository inputs, `outputs/` for reproducible intermediates, `results/` for final artifacts, `logs/` for run logs, `tests/` for tests, and `docs/` for versioned documentation. Do not add a duplicate `inputs/` alias.
+- Use `repos/` for local source-repository inputs, `outputs/` for reproducible intermediates, `results/` for final artifacts, `logs/` for run logs, `tests/` for tests, and `docs/` for versioned documentation. Keep `repos/` ignored and untracked; do not add a duplicate `inputs/` alias.
 - New logging imports use `from src.common.logging import get_logger`. One command writes all module logs to append-only `logs/<run-name>.log`; `src.logger` is compatibility-only.
-- LLM code imports `LLMConfig` and `LLMClient` from `src.llm`. Root `.env` loading, model tiers, GPT-5.6 metadata, client creation, and client closure stay centralized there. Low tier is the only implicit default.
+- LLM code imports shared APIs from `src.llm`. Root `.env` loading, model tiers, GPT-5.6 metadata, client creation, JSON mode, schema validation, one-shot JSON repair, and client closure stay centralized there. Low tier is the only implicit default.
+- Business prompts and explanatory fields use Chinese; retain English only for code, model/API names, necessary technical terms, and JSON field names. Structured calls build stable system prompts with `build_json_system_prompt(...)`, use native JSON mode plus explicit JSON Schema, and never use `[JSON]` or domain marker wrappers.
 - AutoGen code uses `SingleThreadedAgentRuntime`, strong messages, `BaseRoutedAgent`, `register_agent(...)`, `default_agent_id(...)`, and a `start -> try/finally -> stop` lifecycle. Agents communicate through routed messages.
 - Keep offline tests deterministic and free of downloads or paid calls. Real LLM tests require an explicit model, bounded call count, cost/privacy review, and separate smoke outputs.
 - Run `.venv/bin/python scripts/check_shared_infrastructure.py --other ../<sibling>` after changing a shared file. The two projects may keep different verified Python minor versions and different domain packages.
@@ -114,7 +115,7 @@ The repository has an offline `unittest` suite under `tests/`. Its subdirectorie
 
 The Agent subsystem uses `autogen_core` directly. Judgment runs semantic and syntax agents concurrently, then calls the judge agent. Final `is_idiom` is determined by `patent_programming_pattern_valid`: the higher score must be at least 70 and the lower at least 50. The raw LLM verdict is explanatory only. Synthesis uses a separate runtime and a second quiet judgment pipeline; it performs at most three merge rounds and retains only successful merges.
 
-`src/llm/` owns the shared configuration and model-client factory. The judgment/synthesis path consumes its raw AutoGen client while `src/agents/` retains all C++ idiom prompts, schemas, thresholds, and orchestration.
+`src/llm/` owns the shared configuration, model-client factory, strict JSON parsing, lightweight schema validation, and one-shot LLM repair. The judgment/synthesis path consumes its raw AutoGen client while `src/agents/` retains all C++ idiom prompts, domain schemas, thresholds, and orchestration.
 
 ## Local artifacts and known observations
 

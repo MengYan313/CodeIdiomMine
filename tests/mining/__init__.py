@@ -1,1 +1,1 @@
-"""Tests for :mod:`src.mining`."""
+""":mod:`src.mining` 的测试。"""

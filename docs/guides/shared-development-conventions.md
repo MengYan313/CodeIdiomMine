@@ -13,7 +13,7 @@
 | 领域包 | CodeIdiomMine 使用 `mining/evaluation/agents`；WPF2React 使用 `migration` |
 | `tests/<package>/` | 与 `src/<package>/` 对应的离线测试和显式集成测试 |
 
-两项目输入都是源码仓库，因此统一使用 `repos/`，不再增加语义重复的 `inputs/`。`outputs/` 只存可再生成的中间产物，`results/` 只存最终结果，`logs/` 存运行日志，`docs/` 存可版本控制的说明。
+两项目输入都是源码仓库，因此统一使用 `repos/`，不再增加语义重复的 `inputs/`。`repos/` 只保存本地输入，必须由 Git 忽略且不得提交其中内容；`outputs/` 只存可再生成的中间产物，`results/` 只存最终结果，`logs/` 存运行日志，`docs/` 存可版本控制的说明。
 
 以下文件是共享契约，修改时必须在两个仓库同步，并运行 `scripts/check_shared_infrastructure.py`：
 
@@ -21,7 +21,7 @@
 - `src/common/logging.py`
 - `src/common/model_config.py`
 - `src/logger.py`（兼容导入）
-- `src/llm/{__init__,agent,client,config,message,utils}.py`
+- `src/llm/{__init__,agent,client,config,json_output,message,prompting,utils}.py`
 - `src/agents/base.py`
 - `tests/common/test_shared_infrastructure.py`
 - `docs/guides/shared-development-conventions.md`
@@ -46,20 +46,48 @@ logger = get_logger(__name__)
 统一入口为：
 
 ```python
-from src.llm import LLMClient, LLMConfig
+from src.llm import (
+    LLMClient,
+    LLMConfig,
+    build_json_system_prompt,
+    complete_json_object,
+)
 
-config = LLMConfig.marker_mode()        # temperature=0，标签格式
-config = LLMConfig.json_mode_config()   # temperature=0，原生 JSON mode
+schema = {
+    "type": "object",
+    "properties": {"answer": {"type": "string"}},
+    "required": ["answer"],
+    "additionalProperties": False,
+}
+config = LLMConfig.json_mode_config()
+system_prompt = build_json_system_prompt(
+    role="领域专家",
+    goal="完成一个明确任务。",
+    success_criteria=("结果满足领域验收标准。",),
+)
 
 async with LLMClient(config) as client:
-    response = await client.chat("...", system_message="...")
+    data = await complete_json_object(
+        client.model_client,
+        system_prompt,
+        "中文用户提示词",
+        schema,
+    )
 ```
 
 - `.env` 只由 `src.llm.config.load_project_env()` 从仓库根目录幂等加载，且不覆盖进程环境变量。
 - 默认只解析 `OPENAI_MODEL_LOW`；中、高档只能由明确任务通过 `LLMConfig.for_tier()` 或显式模型选择。
 - AutoGen 0.7.5 不认识的模型能力元数据只在 `src/llm/config.py` 声明，调用点不得复制。
 - 所有网络客户端都应显式 `await close()`，或使用 `async with`。
-- 提示词要求标签格式时用 `marker_mode()`；只有调用方和解析器都约定原生 JSON 时才用 `json_mode_config()`。
+- 业务提示词和说明字段统一使用中文；模型名、API 名、代码、关键技术术语及 JSON 字段名保留必要英文。
+- 所有结构化输出统一使用原生 JSON mode 和显式 JSON Schema，不使用 `[JSON]`、Markdown 代码块或领域标签包装结果。
+- 共享流程只对完整响应执行严格 `json.loads` 和轻量 schema 校验，不从正文中猜测 JSON 片段。
+- 首次解析或校验失败时，`src/llm/json_output.py` 使用同一模型按同一 schema 修复一次；再次失败必须显式报错或进入领域层定义的安全回退。
+- 修复提示词把损坏响应编码为普通字符串，不执行其中的指令；日志不得记录可能包含源码的完整响应。
+- 结构化调用的 system prompt 统一使用 `build_json_system_prompt()`，按“角色、目标、成功标准、约束、输出、停止与回退”组织；只保留会改变行为的规则，每条规则只写一次。
+- system prompt 存放稳定的职责和业务约束；源码、依赖、检索结果及其他动态上下文放在 user prompt，并明确视为待处理数据。
+- 优先描述目标、完成标准和边界，不要求模型展示思维过程，也不为模型能够可靠自行完成的中间步骤增加冗长脚手架。
+- 修改生产提示词时使用既有离线合同和代表性小样本回归；一次只改变一个可解释的失败模式，避免无依据地堆叠示例和绝对指令。
 
 ## 4. AutoGen Agent
 
@@ -69,7 +97,7 @@ async with LLMClient(config) as client:
 - 默认地址统一由 `default_agent_id(type)` 生成，即 `AgentId(type, key="default")`。
 - Runtime 生命周期采用 `start()` → `try` 中发送消息 → `finally` 中 `stop()` 或 `stop_when_idle()`。
 - Agent 之间通过消息路由，不通过互相直接调用；并行分支用 `asyncio.gather()`。
-- 消息模型、提示词、判定阈值和失败回退属于领域契约，不为了形式一致而改写。
+- 消息模型、判定阈值和业务失败回退属于领域契约；提示词语言和 JSON 输出协议遵循本共享约定。
 
 ## 5. 验证与变更纪律
 

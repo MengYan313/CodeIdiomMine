@@ -1,9 +1,8 @@
-"""Unified project-local LLM configuration.
+"""统一的项目本地 LLM 配置。
 
-Both repositories use the same low/medium/high model tiers and load credentials
-from the repository root ``.env`` without overriding exported environment
-variables.  Business code should depend on :class:`LLMConfig`, not read model
-or credential variables directly.
+两个项目使用相同的 low、medium、high 模型档位，并从仓库根目录的 ``.env``
+加载凭据，但不覆盖已导出的环境变量。业务代码应依赖 :class:`LLMConfig`，
+不得直接读取模型或凭据变量。
 """
 
 from __future__ import annotations
@@ -40,7 +39,7 @@ _ENV_LOADED = False
 
 @dataclass(frozen=True)
 class ModelTiers:
-    """Resolved low, medium, and high model names."""
+    """解析后的 low、medium、high 模型名称。"""
 
     low: str
     medium: str
@@ -48,7 +47,7 @@ class ModelTiers:
 
 
 def load_project_env() -> None:
-    """Idempotently load the repository-root ``.env`` when dotenv exists."""
+    """存在 dotenv 时，幂等加载仓库根目录的 ``.env``。"""
     global _ENV_LOADED
     if _ENV_LOADED:
         return
@@ -65,7 +64,7 @@ def load_project_env() -> None:
 
 
 def get_model_tiers() -> ModelTiers:
-    """Resolve all model tiers, falling back to the shared GPT-5.6 defaults."""
+    """解析所有模型档位，缺失时回退到共享的 GPT-5.6 默认值。"""
     load_project_env()
     return ModelTiers(
         low=os.getenv(MODEL_LOW_ENV) or DEFAULT_MODEL_LOW,
@@ -75,7 +74,7 @@ def get_model_tiers() -> ModelTiers:
 
 
 def resolve_model_tier(tier: str = "low") -> str:
-    """Resolve one named model tier."""
+    """解析一个指定名称的模型档位。"""
     normalized_tier = tier.lower()
     if normalized_tier not in MODEL_TIER_ENV_VARS:
         valid_tiers = ", ".join(MODEL_TIER_ENV_VARS)
@@ -84,12 +83,12 @@ def resolve_model_tier(tier: str = "low") -> str:
 
 
 def resolve_model(model: Optional[str] = None, *, tier: str = "low") -> str:
-    """Use an explicit model or resolve the requested tier (low by default)."""
+    """使用显式模型，或解析指定档位（默认为 low）。"""
     return model or resolve_model_tier(tier)
 
 
 def get_openai_model_info(model: str) -> Optional[Dict[str, Any]]:
-    """Supply capabilities for relay model names unknown to AutoGen 0.7.5."""
+    """为 AutoGen 0.7.5 尚未识别的中转模型名称补充能力信息。"""
     configured_models = set(get_model_tiers().__dict__.values())
     if not model.startswith("gpt-5.6") and model not in configured_models:
         return None
@@ -105,7 +104,7 @@ def get_openai_model_info(model: str) -> Optional[Dict[str, Any]]:
 
 @dataclass
 class LLMConfig:
-    """Configuration for the shared asynchronous LLM client."""
+    """共享异步 LLM 客户端配置。"""
 
     model: str = field(default_factory=resolve_model)
     temperature: float = 0.0
@@ -131,21 +130,12 @@ class LLMConfig:
 
     @classmethod
     def for_tier(cls, tier: str = "low", **overrides: Any) -> "LLMConfig":
-        """Create a config for an explicit tier with optional field overrides."""
+        """为指定档位创建配置，并允许覆盖可选字段。"""
         return cls(model=cls.model_for_tier(tier), **overrides)
 
     @classmethod
-    def marker_mode(cls, model: Optional[str] = None) -> "LLMConfig":
-        """Create the deterministic, non-JSON config used by tagged prompts."""
-        return cls(
-            model=model or cls.model_for_tier("low"),
-            temperature=0.0,
-            json_mode=False,
-        )
-
-    @classmethod
     def json_mode_config(cls, model: Optional[str] = None) -> "LLMConfig":
-        """Create a deterministic config for providers' native JSON mode."""
+        """创建使用供应商原生 JSON mode 的确定性配置。"""
         return cls(
             model=model or cls.model_for_tier("low"),
             temperature=0.0,
@@ -188,7 +178,7 @@ class LLMConfig:
 
 @dataclass
 class AgentConfig:
-    """Configuration for the lightweight conversational Agent wrapper."""
+    """轻量对话 Agent 封装配置。"""
 
     name: str
     system_message: str

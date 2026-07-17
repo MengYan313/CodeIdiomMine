@@ -5,8 +5,8 @@ Agent 子系统公共基础设施
 
 1. ``load_project_env()``      —— 加载仓库根目录 ``.env``（端点、密钥和模型分档）。
 2. ``create_model_client()``   —— 构造 autogen_ext 的 OpenAIChatCompletionClient。
-3. ``JsonLLMAgent``            —— RoutedAgent 基类，封装「构造消息 → temperature=0 调用 →
-   抽取 [JSON] 块 → json.loads → 失败时记录并回退」这一所有 Agent 一致的调用流程；
+3. ``JsonLLMAgent``            —— RoutedAgent 基类，封装「原生 JSON mode → 严格解析与
+   schema 校验 → 失败时使用同一模型修复一次」这一所有 Agent 一致的调用流程；
    各 Agent 只需提供 system prompt、构造 user prompt、把 dict 映射成自己的结果 dataclass。
 4. ``run_agent_selftest()``    —— 单 Agent 独立自测的通用入口，替代各文件里近百行重复的
    ``if __name__ == "__main__"`` 样板。
@@ -17,17 +17,16 @@ Agent 子系统公共基础设施
 
 from __future__ import annotations
 
-import json
 from dataclasses import asdict, is_dataclass
-from typing import Any, Callable, Dict, List, Optional, Sequence
+from typing import Any, Callable, Dict, Mapping, Optional, Sequence
 
-from autogen_core import MessageContext, RoutedAgent
-from autogen_core.models import LLMMessage, SystemMessage, UserMessage
+from autogen_core import RoutedAgent
 from autogen_ext.models.openai import OpenAIChatCompletionClient
 
 from .base import BaseRoutedAgent, register_agent
 from ..llm.client import create_model_client as _create_model_client
 from ..llm.config import load_project_env
+from ..llm.json_output import JsonOutputError, complete_json_object
 from ..common.logging import get_logger
 
 logger = get_logger(__name__)
@@ -41,34 +40,25 @@ async def complete_json(
     model_client: OpenAIChatCompletionClient,
     system_message: str,
     user_prompt: str,
+    schema: Mapping[str, Any],
     log=logger,
 ) -> Optional[Dict[str, Any]]:
     """
-    以 temperature=0 调用 LLM，抽取并解析 ``[JSON] ... [/JSON]`` 块。
+    以原生 JSON mode 调用 LLM，严格解析并按 schema 校验。
 
-    解析失败返回 ``None``（已记录原始响应），由调用方决定回退默认值，
-    与重构前各 Agent ``except Exception`` 分支语义一致。
+    首次失败时由共享基础设施使用同一模型修复一次；再次失败返回 ``None``，
+    由调用方决定业务回退值。日志不记录可能包含源码的完整响应。
     """
-    from ..utils.response_parser import extract_tag_content
-
-    messages: List[LLMMessage] = [
-        SystemMessage(content=system_message),
-        UserMessage(content=user_prompt, source="user"),
-    ]
-    response = await model_client.create(
-        messages=messages,
-        extra_create_args={"temperature": 0.0},
-    )
-    response_text = response.content
     try:
-        json_content = extract_tag_content(
-            response_text, "JSON", default="", logger_instance=log
+        return await complete_json_object(
+            model_client,
+            system_message,
+            user_prompt,
+            schema,
+            logger=log,
         )
-        if not json_content:
-            json_content = response_text
-        return json.loads(json_content)
-    except Exception as e:  # noqa: BLE001 - 解析失败统一回退
-        log.error(f"解析响应失败: {e}, 响应内容: {response_text[:500]}")
+    except JsonOutputError as exc:
+        log.error("LLM JSON 响应在单次修复后仍无效: %s", exc)
         return None
 
 
@@ -76,7 +66,8 @@ class JsonLLMAgent(BaseRoutedAgent):
     """
     返回 JSON 的 LLM Agent 基类。
 
-    子类需在 ``__init__`` 中调用 ``super().__init__(agent_name, system_message, model_client)``，
+    子类需在 ``__init__`` 中调用
+    ``super().__init__(agent_name, system_message, model_client, response_schema)``，
     并在自己的 ``@message_handler`` 中：构造 user prompt → ``await self.ask_json(prompt)``
     → 把 dict（或 None）映射为本 Agent 的结果 dataclass。
     """
@@ -86,16 +77,22 @@ class JsonLLMAgent(BaseRoutedAgent):
         agent_name: str,
         system_message: str,
         model_client: OpenAIChatCompletionClient,
+        response_schema: Mapping[str, Any],
     ):
         super().__init__(agent_name)
         self._model_client = model_client
         self._system_message = system_message
+        self._response_schema = response_schema
         self._log = self.logger
 
     async def ask_json(self, user_prompt: str) -> Optional[Dict[str, Any]]:
         """调用 LLM 并返回解析后的 dict；失败返回 None。"""
         return await complete_json(
-            self._model_client, self._system_message, user_prompt, self._log
+            self._model_client,
+            self._system_message,
+            user_prompt,
+            self._response_schema,
+            self._log,
         )
 
 

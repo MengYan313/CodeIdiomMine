@@ -303,7 +303,7 @@ def evaluate_project(
             "idiom_count": 0,
         }
 
-    # IC
+    # 计算 IC
     ic = compute_idiom_coverage(idioms, data, project_name, project_idx)
 
     # ISP: 留一法，当前项目为测试集，其余为训练集
@@ -314,7 +314,7 @@ def evaluate_project(
     test_func_srcs = _get_all_func_srcs(data, project_idx)
     isp = compute_idiom_set_precision(training_idioms, test_func_srcs)
 
-    # F1
+    # 计算 F1
     f1 = compute_f1(ic, isp)
 
     # 平均习语规模
@@ -480,8 +480,8 @@ def main():
 
 
 # 模块运行命令（从项目根目录运行）：
-# python -m src.evaluation.idiom_metrics
-# python -m src.evaluation.idiom_metrics -i results/cpp -d outputs/cpp/dataset.pkl -o results/cpp/eval.json
+# 运行示例：python -m src.evaluation.idiom_metrics
+# 运行示例：python -m src.evaluation.idiom_metrics -i results/cpp -d outputs/cpp/dataset.pkl -o results/cpp/eval.json
 
 if __name__ == "__main__":
     main()

@@ -20,7 +20,7 @@
 .venv/bin/python -m unittest discover -s tests -t . -v
 ```
 
-测试覆盖 C++ 节点集合、扫描与 AST 提取、嵌入辅助函数、DBSCAN schema、Agent 确定性门限、评价辅助函数、LLM 消息构建、响应解析和可读产物导出。默认测试不得下载模型或调用外部 LLM。
+测试覆盖 C++ 节点集合、扫描与 AST 提取、嵌入辅助函数、DBSCAN schema、Agent 确定性门限、评价辅助函数、LLM 消息构建、JSON schema/单次修复和可读产物导出。默认测试不得下载模型或调用外部 LLM。
 
 ## 3. 导入和帮助入口
 

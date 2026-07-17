@@ -1,4 +1,4 @@
-"""Check that the reusable infrastructure matches another project checkout."""
+"""检查可复用基础设施是否与另一个项目工作区一致。"""
 
 from __future__ import annotations
 
@@ -16,7 +16,9 @@ SHARED_PATHS = (
     "src/llm/agent.py",
     "src/llm/client.py",
     "src/llm/config.py",
+    "src/llm/json_output.py",
     "src/llm/message.py",
+    "src/llm/prompting.py",
     "src/llm/utils.py",
     "src/agents/base.py",
     "tests/common/test_shared_infrastructure.py",

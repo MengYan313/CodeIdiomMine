@@ -7,7 +7,7 @@
 import time
 import json
 import re
-from typing import Any, Callable, Dict, List, Optional, TypeVar, Union
+from typing import Any, Callable, Dict, List, Optional, TypeVar
 from functools import wraps
 import logging
 
@@ -96,91 +96,6 @@ def format_prompt(
         raise ValueError(f"模板中缺少必需的变量: {e}")
 
 
-def parse_json_response(
-    response: str,
-    strict: bool = False
-) -> Union[Dict, List, None]:
-    """
-    从 LLM 响应中解析 JSON
-
-    尝试从响应文本中提取 JSON 内容，支持 markdown 代码块格式。
-
-    Args:
-        response: LLM 响应文本
-        strict: 是否严格模式（严格模式下解析失败会抛出异常）
-
-    Returns:
-        解析后的 JSON 对象，失败时返回 None
-
-    示例:
-        >>> response = "这是结果：```json\\n{\"name\": \"test\"}\\n```"
-        >>> data = parse_json_response(response)
-        >>> print(data)  # {"name": "test"}
-    """
-    # 尝试直接解析
-    try:
-        return json.loads(response)
-    except json.JSONDecodeError:
-        pass
-
-    # 尝试从 markdown 代码块中提取
-    json_pattern = r'```(?:json)?\s*\n(.*?)\n```'
-    matches = re.findall(json_pattern, response, re.DOTALL)
-
-    for match in matches:
-        try:
-            return json.loads(match)
-        except json.JSONDecodeError:
-            continue
-
-    # 尝试查找 JSON 对象或数组
-    json_object_pattern = r'\{[^{}]*\}'
-    json_array_pattern = r'\[[^\[\]]*\]'
-
-    for pattern in [json_object_pattern, json_array_pattern]:
-        matches = re.findall(pattern, response, re.DOTALL)
-        for match in matches:
-            try:
-                return json.loads(match)
-            except json.JSONDecodeError:
-                continue
-
-    # 解析失败
-    if strict:
-        raise ValueError(f"无法从响应中解析 JSON: {response}")
-
-    logger.warning(f"无法从响应中解析 JSON，返回 None")
-    return None
-
-
-def extract_code_blocks(
-    text: str,
-    language: Optional[str] = None
-) -> List[str]:
-    """
-    从文本中提取代码块
-
-    Args:
-        text: 包含代码块的文本
-        language: 可选的语言过滤器
-
-    Returns:
-        代码块列表
-
-    示例:
-        >>> text = "示例代码：```python\\nprint('hello')\\n```"
-        >>> blocks = extract_code_blocks(text, language="python")
-        >>> print(blocks)  # ["print('hello')"]
-    """
-    if language:
-        pattern = f'```{re.escape(language)}\\s*\\n(.*?)\\n```'
-    else:
-        pattern = r'```(?:\w+)?\s*\n(.*?)\n```'
-
-    matches = re.findall(pattern, text, re.DOTALL)
-    return [match.strip() for match in matches]
-
-
 def truncate_text(
     text: str,
     max_length: int = 100,
@@ -262,27 +177,6 @@ def batch_process(
     return results
 
 
-def safe_json_loads(
-    json_str: str,
-    default: Any = None
-) -> Any:
-    """
-    安全地加载 JSON 字符串
-
-    Args:
-        json_str: JSON 字符串
-        default: 解析失败时的默认值
-
-    Returns:
-        解析后的对象或默认值
-    """
-    try:
-        return json.loads(json_str)
-    except (json.JSONDecodeError, TypeError) as e:
-        logger.warning(f"JSON 解析失败: {e}")
-        return default
-
-
 def safe_json_dumps(
     obj: Any,
     default: str = "{}"
@@ -302,39 +196,6 @@ def safe_json_dumps(
     except (TypeError, ValueError) as e:
         logger.warning(f"JSON 序列化失败: {e}")
         return default
-
-
-def validate_json_schema(
-    data: Dict[str, Any],
-    required_fields: List[str],
-    optional_fields: Optional[List[str]] = None
-) -> tuple[bool, Optional[str]]:
-    """
-    验证 JSON 数据的模式
-
-    Args:
-        data: 要验证的数据
-        required_fields: 必需字段列表
-        optional_fields: 可选字段列表
-
-    Returns:
-        (是否有效, 错误消息) 元组
-    """
-    # 检查必需字段
-    for field in required_fields:
-        if field not in data:
-            return False, f"缺少必需字段: {field}"
-
-    # 检查未知字段
-    all_fields = set(required_fields)
-    if optional_fields:
-        all_fields.update(optional_fields)
-
-    unknown_fields = set(data.keys()) - all_fields
-    if unknown_fields:
-        return False, f"包含未知字段: {', '.join(unknown_fields)}"
-
-    return True, None
 
 
 def merge_dicts(*dicts: Dict) -> Dict:

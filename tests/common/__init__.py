@@ -1,1 +1,1 @@
-"""Tests for :mod:`src.common`."""
+""":mod:`src.common` 的测试。"""

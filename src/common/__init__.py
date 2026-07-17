@@ -1,4 +1,4 @@
-"""Shared infrastructure and CodeIdiomMine C++ definitions."""
+"""CodeIdiomMine 的共享基础设施与 C++ 定义。"""
 
 from .logging import AppLogger, get_logger
 from .node_kinds import BLOCK_KINDS, FUNCTION_KINDS, STATEMENT_KINDS

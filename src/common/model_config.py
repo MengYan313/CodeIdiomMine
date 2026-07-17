@@ -1,4 +1,4 @@
-"""Backward-compatible exports for the unified LLM configuration layer."""
+"""统一 LLM 配置层的向后兼容导出。"""
 
 from ..llm.config import (
     DEFAULT_MODEL_HIGH,

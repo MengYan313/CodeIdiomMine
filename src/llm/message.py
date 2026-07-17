@@ -278,8 +278,8 @@ def create_prompt_template(
     """
     try:
         if escape:
-            # Escape braces in substituted values before formatting. Escaping
-            # after ``format`` would corrupt braces in the final prompt.
+            # 格式化前转义替换值中的花括号；若在 ``format`` 后转义，
+            # 会破坏最终提示词中原本正确的花括号。
             variables = {
                 key: (
                     value.replace('{', '{{').replace('}', '}}')

@@ -457,8 +457,8 @@ def main():
 
 
 # 模块运行命令（从项目根目录运行）：
-# python -m src.mining.code_embedding --input outputs/cpp/dataset.pkl --output outputs/cpp/embeddings.pkl --model unixcoder
-# nohup python -m src.mining.code_embedding --input outputs/cpp/dataset.pkl --output outputs/cpp/embeddings.pkl --model unixcoder > logs/code_embedding.log 2>&1 &
+# 运行示例：python -m src.mining.code_embedding --input outputs/cpp/dataset.pkl --output outputs/cpp/embeddings.pkl --model unixcoder
+# 后台运行示例：nohup python -m src.mining.code_embedding --input outputs/cpp/dataset.pkl --output outputs/cpp/embeddings.pkl --model unixcoder > logs/code_embedding.log 2>&1 &
 
 if __name__ == "__main__":
     main()

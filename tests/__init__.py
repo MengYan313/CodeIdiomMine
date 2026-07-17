@@ -1,1 +1,1 @@
-"""CodeIdiomMine automated tests."""
+"""CodeIdiomMine 自动化测试。"""

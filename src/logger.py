@@ -1,6 +1,6 @@
-"""Compatibility import for the unified logging module.
+"""统一日志模块的兼容导入。
 
-New code should import from ``src.common.logging``.
+新代码应从 ``src.common.logging`` 导入。
 """
 
 from .common.logging import AppLogger, get_logger

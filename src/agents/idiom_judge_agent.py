@@ -15,6 +15,7 @@ from autogen_core import MessageContext, message_handler
 from autogen_ext.models.openai import OpenAIChatCompletionClient
 
 from ._base import JsonLLMAgent
+from ..llm.prompting import build_json_system_prompt
 
 
 def patent_programming_pattern_valid(semantic_score: float, syntax_score: float) -> bool:
@@ -54,75 +55,74 @@ class IdiomJudgeResult:
     characteristics: List[str]  # 识别出的习语特征
 
 
-_SYSTEM_MESSAGE = """You are a code idiom recognition expert responsible for comprehensively evaluating whether a code snippet qualifies as a code idiom.
+_SYSTEM_MESSAGE = build_json_system_prompt(
+    role="你是代码习语识别专家，负责综合已有评估作出一致判定。",
+    goal="判断输入代码是否构成可识别、可复用并符合常见实践的代码习语。",
+    success_criteria=(
+        "综合语义清晰度、语法与逻辑清晰度，以及输入代码体现的通用模式。",
+        "严格按分数判定：较高分不低于 70 且较低分不低于 50 时 is_idiom 为 true，否则为 false。",
+        "confidence 反映证据强度和两项评分的一致程度，范围为 0–100。",
+        "characteristics 只列出能够由代码或上游评估直接支持的习语特征。",
+    ),
+    constraints=(
+        "不得仅因代码简短、可运行或风格整洁就认定为代码习语。",
+        "不得声称某模式被广泛使用，除非输入本身足以支持该结论。",
+    ),
+    field_rules=("reason 和 characteristics 使用中文。",),
+)
 
-Definition of Code Idiom:
-A code idiom is a widely recognized and used code pattern in a specific programming language or domain, characterized by:
-1. **Semantic Clarity**: Clear code intent with reasonable naming
-2. **Logic Simplicity**: Direct implementation avoiding complex nesting
-3. **Pattern Generality**: Reusable across multiple scenarios
-4. **Best Practice**: Follows programming standards and conventions
-
-You need to synthesize evaluation results from two dimensions:
-- Semantic clarity assessment
-- Syntax and logic clarity assessment
-
-Judgment criteria (must be consistent with the numeric scores provided below):
-- Both dimensions score >= 70: Very likely a code idiom
-- One dimension >= 70, the other >= 50: Possibly a code idiom
-- Other cases: Unlikely to be a code idiom
-
-Set "is_idiom" to true exactly when the scores satisfy the second rule above (i.e. higher score >= 70 and lower score >= 50).
-
-IMPORTANT RESPONSE FORMAT:
-1. When referring to the code snippet, wrap it with [Code Idiom] and [/Code Idiom] tags
-2. Wrap your JSON response with [JSON] and [/JSON] tags
-
-Example response format:
-[JSON]
-{
-    "is_idiom": true,
-    "confidence": 85,
-    "reason": "Reason for the judgment",
-    "characteristics": ["characteristic 1", "characteristic 2"]
+_RESPONSE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "is_idiom": {"type": "boolean", "description": "是否为代码习语"},
+        "confidence": {"type": "number", "description": "0 到 100 的置信度"},
+        "reason": {"type": "string", "description": "综合判定理由"},
+        "characteristics": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "识别出的习语特征",
+        },
+    },
+    "required": ["is_idiom", "confidence", "reason", "characteristics"],
+    "additionalProperties": False,
 }
-[/JSON]"""
 
 
 class IdiomJudgeAgent(JsonLLMAgent):
     """综合语义和逻辑两个维度的评估结果，判定是否为代码习语。"""
 
     def __init__(self, model_client: OpenAIChatCompletionClient):
-        super().__init__("IdiomJudgeAgent", _SYSTEM_MESSAGE, model_client)
+        super().__init__(
+            "IdiomJudgeAgent", _SYSTEM_MESSAGE, model_client, _RESPONSE_SCHEMA
+        )
 
     @message_handler
     async def handle_request(
         self, message: IdiomJudgeRequest, ctx: MessageContext
     ) -> IdiomJudgeResult:
-        prompt = f"""Please synthesize the following assessment results to determine whether the code snippet qualifies as a code idiom:
+        prompt = f"""请综合以下评估结果，判断代码片段是否构成代码习语。
 
-[Code Idiom]
+## 代码片段
+```cpp
 {message.code_snippet}
-[/Code Idiom]
+```
 
-**Semantic Clarity Assessment:**
-- Is Clear: {message.semantic_is_clear}
-- Score: {message.semantic_score}
-- Reason: {message.semantic_reason}
-- Suggestions: {message.semantic_suggestions}
+## 语义清晰度评估
+- 是否清晰：{message.semantic_is_clear}
+- 评分：{message.semantic_score}
+- 理由：{message.semantic_reason}
+- 建议：{message.semantic_suggestions}
 
-**Syntax and Logic Clarity Assessment:**
-- Is Clear: {message.syntax_is_clear}
-- Score: {message.syntax_score}
-- Reason: {message.syntax_reason}
-- Issues: {message.syntax_issues}
-
-Please return the comprehensive judgment result in the specified format with [JSON] tags."""
+## 语法与逻辑清晰度评估
+- 是否清晰：{message.syntax_is_clear}
+- 评分：{message.syntax_score}
+- 理由：{message.syntax_reason}
+- 问题：{message.syntax_issues}"""
 
         data = await self.ask_json(prompt)
         if data is None:
             return IdiomJudgeResult(
-                is_idiom=False, confidence=0, reason="Failed to parse response", characteristics=[]
+                is_idiom=False, confidence=0, reason="响应解析失败", characteristics=[]
             )
         return IdiomJudgeResult(
             is_idiom=data.get("is_idiom", False),
@@ -133,7 +133,7 @@ Please return the comprehensive judgment result in the specified format with [JS
 
 
 # 模块运行命令（从项目根目录运行）：
-# python -m src.agents.idiom_judge_agent
+# 运行示例：python -m src.agents.idiom_judge_agent
 
 if __name__ == "__main__":
     from ._base import run_agent_selftest
@@ -152,11 +152,11 @@ def calculate_average(numbers):
 """,
                 semantic_is_clear=True,
                 semantic_score=90,
-                semantic_reason="Clear function naming, obvious parameter and return value intent",
+                semantic_reason="函数命名清楚，参数和返回值意图明确",
                 semantic_suggestions=[],
                 syntax_is_clear=True,
                 syntax_score=85,
-                syntax_reason="Simple and direct logic, proper boundary handling",
+                syntax_reason="逻辑直接，并正确处理边界情况",
                 syntax_issues=[],
             ),
         ],

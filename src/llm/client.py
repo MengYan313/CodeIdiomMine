@@ -20,7 +20,7 @@ def create_model_client(
     *,
     model: Optional[str] = None,
 ) -> OpenAIChatCompletionClient:
-    """Create the raw AutoGen model client from the shared configuration."""
+    """根据共享配置创建原始 AutoGen 模型客户端。"""
     if config is not None and model is not None:
         raise ValueError("config 与 model 不能同时指定")
 
@@ -51,7 +51,7 @@ class LLMClient:
 
     示例:
         >>> import asyncio
-        >>> config = LLMConfig.marker_mode()
+        >>> config = LLMConfig()
         >>> client = LLMClient(config)
         >>> response = await client.chat("你好，请介绍一下你自己")
         >>> print(response)
@@ -261,11 +261,11 @@ class LLMClient:
 
     @property
     def model_client(self) -> OpenAIChatCompletionClient:
-        """Expose the raw AutoGen client for advanced runtime integrations."""
+        """为高级 Runtime 集成暴露原始 AutoGen 客户端。"""
         return self._client
 
     async def close(self) -> None:
-        """Close the underlying asynchronous model client."""
+        """关闭底层异步模型客户端。"""
         await self._client.close()
 
     async def __aenter__(self) -> "LLMClient":

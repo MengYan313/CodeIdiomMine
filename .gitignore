@@ -36,6 +36,9 @@ htmlcov/
 .env.*
 !.env.example
 
+# Local source-repository inputs (never version controlled)
+/repos/
+
 # Project-generated artifacts
 /outputs/
 /results/

@@ -4,7 +4,7 @@ CodeIdiomMine 面向 C++ 仓库提取 AST 片段，生成代码嵌入，聚类�
 
 当前工程基线以仓库现有实现为准：Tree-sitter、预训练代码模型、DBSCAN，以及 `autogen_core` 驱动的判断/合成流水线。论文研究稿用于后续实验设计，不代表当前代码已经实现其中的 Clang、HDBSCAN 或 AST 反统一方案。
 
-项目已固定为仅支持 C++：解析、扫描、节点类型、嵌入和评价入口都不再接受语言参数，也不安装 Python、Java 或 JavaScript 的 Tree-sitter grammar。`repos/cpp`、`outputs/cpp` 和 `results/cpp` 作为既有 C++ 产物路径继续保留。
+项目已固定为仅支持 C++：解析、扫描、节点类型、嵌入和评价入口都不再接受语言参数，也不安装 Python、Java 或 JavaScript 的 Tree-sitter grammar。`repos/cpp`、`outputs/cpp` 和 `results/cpp` 作为既有 C++ 产物路径继续保留。其中 `repos/` 是 Git 忽略的本地源码输入目录，其内容不会随仓库克隆或提交。
 
 ## 目录结构
 
@@ -27,7 +27,7 @@ CodeIdiomMine/
 │   └── utils/                # 通用工具
 ├── tests/                    # 与 src 子包一一对应的自动化测试
 ├── scripts/                  # 共享基础设施一致性检查
-├── repos/                    # 输入仓库语料
+├── repos/                    # 本地输入仓库语料（Git 忽略）
 ├── outputs/                  # 解析、嵌入和聚类产物（忽略）
 ├── results/                  # Agent 与评价产物（忽略）
 ├── logs/                     # 运行日志（忽略）
@@ -37,6 +37,8 @@ CodeIdiomMine/
 ```
 
 目录按语义和 Python 社区惯例命名，不机械统一单复数：`agents/` 表示多个独立 Agent，`utils/` 是常见工具包名称；`common/`、`evaluation/`、`llm/`、`mining/` 和 `parser/` 表示共享层、流程或领域包。`research/` 使用不可数名词。`tests/` 的七个子目录与 `src/` 完全一致。
+
+首次克隆后请在本地创建 `repos/cpp/`，并自行放入待分析的 C++ 仓库。该目录中的源码、许可证及上游元数据由本地使用者管理，不属于本项目的版本控制内容。
 
 ## 本地环境
 
@@ -89,6 +91,8 @@ PKL 保持为阶段间唯一机器接口。需要人工检查时，生成全量�
 真实 Agent 产物生成后，可追加 `--result-dir results/cpp --stages judgment synthesis`，导出判断与合成的全量摘要和前 100 条预览。
 
 Agent 阶段从根目录 `.env` 读取端点、密钥和 GPT-5.6 模型分档。可从 `.env.example` 复制本地配置；当前所有默认调用只使用低档 `OPENAI_MODEL_LOW=gpt-5.6-luna`，中档 `gpt-5.6-terra` 与高档 `gpt-5.6-sol` 仅作后续显式选择。代码片段会被发送给配置的外部模型服务；运行前应确认端点、成本和数据披露范围。
+
+Agent 业务提示词和说明字段统一使用中文，代码、必要技术术语和 JSON 字段名保留英文。结构化响应使用原生 JSON mode 与显式 JSON Schema；完整响应会被严格解析和校验，失败时由同一模型修复一次，不使用响应标签或 Markdown JSON 猜测。
 
 ## 文档与验证
 

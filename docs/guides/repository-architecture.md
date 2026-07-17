@@ -22,8 +22,8 @@ CodeIdiomMine 从 C++ 仓库中提取候选 AST 片段，经代码嵌入和 DBSC
 | `src/mining/` | 预训练模型嵌入、DBSCAN 聚类和可选贝叶斯调参 |
 | `src/agents/` | 通用 AutoGen 基类，以及习语判断、规划、代码组装与合成后再判断 |
 | `src/evaluation/` | IC、留一项目 ISP、F1 与平均习语大小 |
-| `src/llm/` | 两项目统一的模型分档、`.env`、AutoGen 客户端与轻量对话封装；Agent 主路径复用其原生客户端工厂 |
-| `src/utils/` | LLM 标签响应解析、原始 pickle/CSV 转换和流水线可读 JSON 投影 |
+| `src/llm/` | 两项目统一的模型分档、`.env`、AutoGen 客户端、JSON schema/单次修复与轻量对话封装 |
+| `src/utils/` | 原始 pickle/CSV 转换和流水线可读 JSON 投影 |
 | `tests/` | 与上述七个源码子包一一对应的离线自动化测试 |
 
 ## 数据流与契约
