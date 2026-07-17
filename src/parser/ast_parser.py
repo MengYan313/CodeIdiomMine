@@ -1,16 +1,13 @@
-"""
-基于 tree-sitter 的 AST 解析器
-支持多种编程语言的代码解析
-"""
+"""基于 tree-sitter-cpp 的 C++ AST 解析器。"""
 
 import os
 import re
-from typing import List, Dict, Optional, Tuple
+from typing import Dict, List, Optional
 import tree_sitter
-from tree_sitter import Language, Parser, Node
+from tree_sitter import Language, Parser
 
-from ..common.node_kinds import get_node_kinds
-from ..logger import get_logger
+from ..common.node_kinds import FUNCTION_KINDS
+from ..common.logging import get_logger
 
 # 创建日志记录器
 logger = get_logger(__name__)
@@ -19,17 +16,9 @@ logger = get_logger(__name__)
 class ASTParser:
     """使用 tree-sitter 解析代码文件的 AST"""
     
-    def __init__(self, language: str, language_lib_path: Optional[str] = None):
-        """
-        初始化 AST 解析器
-        
-        Args:
-            language: 编程语言名称 (cpp, python, java, javascript)
-            language_lib_path: tree-sitter 语言库路径（可选，如果已编译）
-        """
-        self.language = language.lower()
-        self.node_kinds = get_node_kinds(self.language)
-        logger.info(f"初始化 AST 解析器: 语言={self.language}")
+    def __init__(self):
+        """初始化 C++ AST 解析器。"""
+        logger.info("初始化 C++ AST 解析器")
         self.parser = self._init_parser()
         logger.info("AST 解析器初始化完成")
         # 源码字节缓存：仅缓存最近一次 parse_file 的文件，避免每个 AST 节点
@@ -38,35 +27,18 @@ class ASTParser:
         self._cached_source: bytes = b""
         
     def _init_parser(self) -> Parser:
-        """初始化 tree-sitter 解析器"""
-        # 根据语言加载对应的 tree-sitter 语言库
+        """加载 tree-sitter-cpp grammar 并初始化解析器。"""
         try:
-            if self.language == "cpp":
-                import tree_sitter_cpp
-                language_obj = Language(tree_sitter_cpp.language())
-            elif self.language == "python":
-                import tree_sitter_python
-                language_obj = Language(tree_sitter_python.language())
-            elif self.language == "java":
-                import tree_sitter_java
-                language_obj = Language(tree_sitter_java.language())
-            elif self.language == "javascript":
-                import tree_sitter_javascript
-                language_obj = Language(tree_sitter_javascript.language())
-            else:
-                # 默认使用 C++
-                logger.warning(f"未知语言 {self.language}，使用 C++ 作为默认")
-                import tree_sitter_cpp
-                language_obj = Language(tree_sitter_cpp.language())
-                self.language = "cpp"
-            
-            logger.debug(f"成功加载 tree-sitter 语言库: {self.language}")
+            import tree_sitter_cpp
+
+            cpp_language = Language(tree_sitter_cpp.language())
+            logger.debug("成功加载 tree-sitter-cpp grammar")
         except ImportError as e:
-            error_msg = f"无法导入 tree-sitter 语言库。请安装: pip install tree-sitter-{self.language}"
+            error_msg = "无法导入 C++ grammar。请安装: pip install tree-sitter-cpp"
             logger.error(error_msg)
             raise ImportError(error_msg) from e
         
-        parser = Parser(language_obj)
+        parser = Parser(cpp_language)
         return parser
     
     def parse_file(self, file_path: str) -> Optional[tree_sitter.Tree]:
@@ -106,7 +78,6 @@ class ASTParser:
             return []
         
         func_nodes = []
-        func_kinds = self.node_kinds["func"]
         processed_ranges = []
         
         def traverse(node: tree_sitter.Node, depth: int = 0):
@@ -114,7 +85,7 @@ class ASTParser:
             # 检查节点类型是否在函数类型列表中
             node_type = node.type
             
-            if node_type in func_kinds:
+            if node_type in FUNCTION_KINDS:
                 # 获取节点范围
                 start_point = node.start_point
                 end_point = node.end_point
@@ -309,34 +280,15 @@ class ASTParser:
             return None
     
     def remove_single_line_comments(self, code: str) -> str:
-        """移除单行注释"""
-        if self.language == "cpp" or self.language == "java" or self.language == "javascript":
-            # C++/Java/JavaScript: // 注释
-            pattern = r"//.*?$"
-            code = re.sub(pattern, "", code, flags=re.MULTILINE)
-        elif self.language == "python":
-            # Python: # 注释
-            pattern = r"#.*?$"
-            code = re.sub(pattern, "", code, flags=re.MULTILINE)
-        return code
+        """移除 C++ 单行注释。"""
+        return re.sub(r"//.*?$", "", code, flags=re.MULTILINE)
     
     def remove_multi_line_comments(self, code: str) -> str:
-        """移除多行注释"""
-        if self.language == "cpp" or self.language == "java" or self.language == "javascript":
-            # C++/Java/JavaScript: /* */ 注释
-            pattern = r"/\*.*?\*/"
-            code = re.sub(pattern, "", code, flags=re.DOTALL)
-        elif self.language == "python":
-            # Python: """ """ 或 ''' ''' 注释
-            pattern = r'""".*?"""'
-            code = re.sub(pattern, "", code, flags=re.DOTALL)
-            pattern = r"'''.*?'''"
-            code = re.sub(pattern, "", code, flags=re.DOTALL)
-        return code
+        """移除 C++ 块注释。"""
+        return re.sub(r"/\*.*?\*/", "", code, flags=re.DOTALL)
     
     def remove_extra_newlines(self, code: str) -> str:
         """移除多余的换行符"""
         pattern = r"\n\s*\n"
         code = re.sub(pattern, "\n", code)
         return code
-

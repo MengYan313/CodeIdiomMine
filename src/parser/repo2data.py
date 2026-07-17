@@ -10,30 +10,29 @@ from typing import List
 
 from .ast_parser import ASTParser
 from .file_scanner import FileScanner
-from ..logger import get_logger
+from ..common.logging import get_logger
 
 # 创建日志记录器
 logger = get_logger(__name__)
 
 
-def parse_repository(input_path: str, output_path: str, language: str = "cpp"):
+def parse_repository(input_path: str, output_path: str):
     """
     解析仓库中的所有源代码文件
     
     Args:
-        input_path: 输入路径，例如 CodeIdiomMine/repo/cpp
-        output_path: 输出路径，例如 CodeIdiomMine/output/cpp
-        language: 编程语言名称
+        input_path: 输入路径，例如 CodeIdiomMine/repos/cpp
+        output_path: 输出路径，例如 CodeIdiomMine/outputs/cpp
     """
     logger.info("=" * 60)
     logger.info("代码仓库解析")
     logger.info("=" * 60)
     logger.info(f"输入路径: {input_path}")
     logger.info(f"输出路径: {output_path}")
-    logger.info(f"编程语言: {language}")
+    logger.info("编程语言: C++")
     
     # 初始化文件扫描器
-    scanner = FileScanner(language)
+    scanner = FileScanner()
     
     # 获取所有项目
     projects = scanner.get_projects(input_path)
@@ -45,8 +44,8 @@ def parse_repository(input_path: str, output_path: str, language: str = "cpp"):
     logger.info(f"总共找到 {total_files} 个源文件")
     
     # 初始化 AST 解析器
-    logger.info(f"初始化 AST 解析器（语言: {language}）...")
-    parser = ASTParser(language)
+    logger.info("初始化 C++ AST 解析器...")
+    parser = ASTParser()
     
     # 存储所有项目的函数 AST 和源代码
     pro_func_ast = []  # 3D: 项目-文件-函数
@@ -187,31 +186,23 @@ def main():
     )
     parser.add_argument(
         '--input', '-i',
-        default='repo/cpp',
-        help='输入项目路径（例如: repo/cpp）'
+        default='repos/cpp',
+        help='输入项目路径（例如: repos/cpp）'
     )
     parser.add_argument(
         '--output', '-o',
-        default='output/cpp/dataset.pkl',
-        help='输出数据文件路径（例如: output/cpp/dataset.pkl）'
+        default='outputs/cpp/dataset.pkl',
+        help='输出数据文件路径（例如: outputs/cpp/dataset.pkl）'
     )
-    parser.add_argument(
-        '--language', '-l',
-        default='cpp',
-        choices=['cpp', 'python', 'java', 'javascript'],
-        help='编程语言类型'
-    )
-    
     args = parser.parse_args()
     
     # 解析仓库
-    parse_repository(args.input, args.output, args.language)
+    parse_repository(args.input, args.output)
 
 
 # 模块运行命令（从项目根目录运行）：
-# python -m src.parser.repo2data --input repo/cpp --output output/cpp/dataset.pkl --language cpp
-# nohup python -m src.parser.repo2data --input repo/cpp --output output/cpp/dataset.pkl --language cpp > logs/repo2data.log 2>&1 &
+# python -m src.parser.repo2data --input repos/cpp --output outputs/cpp/dataset.pkl
+# nohup python -m src.parser.repo2data --input repos/cpp --output outputs/cpp/dataset.pkl > logs/repo2data.log 2>&1 &
 
 if __name__ == "__main__":
     main()
-

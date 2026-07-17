@@ -1,0 +1,1 @@
+"""CodeIdiomMine automated tests."""

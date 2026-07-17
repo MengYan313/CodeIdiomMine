@@ -1,27 +1,12 @@
-"""
-CodeIdiomMine Common Module
-公共模块：包含共享的工具和定义
-"""
+"""Shared infrastructure and CodeIdiomMine C++ definitions."""
 
-from .node_kinds import (
-    get_node_kinds,
-    get_func_kinds,
-    get_block_kinds,
-    get_stmt_kinds,
-    LANGUAGE_NODE_KINDS,
-    func_kind,
-    block_kind,
-    stmt_kind,
-)
+from .logging import AppLogger, get_logger
+from .node_kinds import BLOCK_KINDS, FUNCTION_KINDS, STATEMENT_KINDS
 
 __all__ = [
-    'get_node_kinds',
-    'get_func_kinds',
-    'get_block_kinds',
-    'get_stmt_kinds',
-    'LANGUAGE_NODE_KINDS',
-    'func_kind',
-    'block_kind',
-    'stmt_kind',
+    "AppLogger",
+    "get_logger",
+    "FUNCTION_KINDS",
+    "BLOCK_KINDS",
+    "STATEMENT_KINDS",
 ]
-

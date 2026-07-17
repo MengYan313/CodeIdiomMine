@@ -14,8 +14,8 @@ import numpy as np
 import pandas as pd
 from transformers import AutoTokenizer, AutoModel
 
-from ..common.node_kinds import get_func_kinds, get_block_kinds, get_stmt_kinds
-from ..logger import get_logger
+from ..common.node_kinds import BLOCK_KINDS, FUNCTION_KINDS, STATEMENT_KINDS
+from ..common.logging import get_logger
 
 # 创建日志记录器
 logger = get_logger(__name__)
@@ -141,39 +141,61 @@ class CodeEmbedder:
         Returns:
             嵌入向量张量 (1, hidden_size)
         """
-        if not code_snippet or code_snippet.strip() == "":
-            # 返回零向量
-            hidden_size = self.model.config.hidden_size
-            logger.debug("空代码片段，返回零向量")
-            return torch.zeros(1, hidden_size)
-        
-        # 使用配置的最大长度
-        inputs = self.tokenizer(
-            code_snippet,
-            return_tensors="pt",
-            truncation=True,
-            padding=True,
-            max_length=self.max_length
-        )
-        
-        # 将输入移动到模型所在的设备
+        return self.get_embeddings([code_snippet], batch_size=1)[0]
+
+    def get_embeddings(
+        self,
+        code_snippets: List[str],
+        batch_size: int = 8
+    ) -> List[torch.Tensor]:
+        """批量生成嵌入，并保持输入顺序及单段 ``(1, hidden_size)`` 形状。"""
+        if batch_size < 1:
+            raise ValueError("batch_size 必须大于等于 1")
+        if not code_snippets:
+            return []
+
+        hidden_size = self.model.config.hidden_size
+        embeddings: List[Optional[torch.Tensor]] = [None] * len(code_snippets)
+        nonempty_indices = [
+            index for index, snippet in enumerate(code_snippets)
+            if snippet and snippet.strip()
+        ]
+
+        for index, snippet in enumerate(code_snippets):
+            if not snippet or not snippet.strip():
+                embeddings[index] = torch.zeros(1, hidden_size)
+
+        # 相近长度的片段放入同一批次，减少 padding；结果写回原下标，因此
+        # 不改变下游代码段、位置信息和嵌入之间的顺序契约。
+        nonempty_indices.sort(key=lambda index: len(code_snippets[index]))
         device = next(self.model.parameters()).device
-        inputs = {k: v.to(device) for k, v in inputs.items()}
-        
-        with torch.no_grad():
-            outputs = self.model(**inputs)
-            # 使用 mean pooling 所有 token 的嵌入
-            hidden_states = outputs.last_hidden_state
-            # 计算平均池化（排除 padding tokens）
-            attention_mask = inputs['attention_mask']
-            # 扩展 attention_mask 以匹配 hidden_states 的维度
-            mask_expanded = attention_mask.unsqueeze(-1).expand(hidden_states.size()).float()
-            # 计算加权平均
-            sum_embeddings = torch.sum(hidden_states * mask_expanded, dim=1)
-            sum_mask = torch.clamp(mask_expanded.sum(dim=1), min=1e-9)
-            embedding = sum_embeddings / sum_mask
-        
-        return embedding.cpu()  # 返回 CPU 张量以便后续处理
+
+        for start in range(0, len(nonempty_indices), batch_size):
+            batch_indices = nonempty_indices[start:start + batch_size]
+            batch_snippets = [code_snippets[index] for index in batch_indices]
+            inputs = self.tokenizer(
+                batch_snippets,
+                return_tensors="pt",
+                truncation=True,
+                padding=True,
+                max_length=self.max_length
+            )
+            inputs = {key: value.to(device) for key, value in inputs.items()}
+
+            with torch.no_grad():
+                hidden_states = self.model(**inputs).last_hidden_state
+                attention_mask = inputs['attention_mask']
+                mask_expanded = attention_mask.unsqueeze(-1).expand(hidden_states.size()).float()
+                sum_embeddings = torch.sum(hidden_states * mask_expanded, dim=1)
+                sum_mask = torch.clamp(mask_expanded.sum(dim=1), min=1e-9)
+                batch_embeddings = (sum_embeddings / sum_mask).cpu()
+
+            for index, embedding in zip(batch_indices, batch_embeddings):
+                embeddings[index] = embedding.unsqueeze(0)
+
+        if any(embedding is None for embedding in embeddings):
+            raise RuntimeError("存在未生成的代码嵌入")
+        return [embedding for embedding in embeddings if embedding is not None]
 
 
 def parse_extent(extent: str) -> Tuple[int, int, int, int]:
@@ -207,10 +229,10 @@ def is_within_extent(extent_pre: str, extent_cur: str) -> bool:
 def get_pros_src_and_embedding(
     data: pd.DataFrame,
     embedder: CodeEmbedder,
-    language: str = "cpp",
     min_nodes: int = 10,
     min_ast_num: int = 5,
-    min_project_size: int = 1000
+    min_project_size: int = 1000,
+    batch_size: int = 8
 ) -> Tuple[List[str], List[List[str]], List[List[torch.Tensor]], List[List[List]]]:
     """
     从 AST 数据中提取代码片段并生成嵌入
@@ -218,21 +240,16 @@ def get_pros_src_and_embedding(
     Args:
         data: 包含 AST 数据的 DataFrame
         embedder: 代码嵌入器实例
-        language: 编程语言类型
         min_nodes: 函数的最小节点数阈值
         min_ast_num: 节点的最小子节点数量阈值（过滤太简单的代码片段）
         min_project_size: 项目的最小代码片段数量阈值
+        batch_size: 模型批量推理大小
         
     Returns:
         (pros_name, pros_src, pros_emb, pros_info) 元组
     """
-    logger.info(f"开始提取代码片段并生成嵌入（语言: {language}）")
+    logger.info("开始提取 C++ 代码片段并生成嵌入")
     logger.info(f"过滤条件: min_nodes={min_nodes}, min_ast_num={min_ast_num}, min_project_size={min_project_size}")
-    
-    # 获取节点类型
-    func_kind = get_func_kinds(language)
-    block_kind = get_block_kinds(language)
-    stmt_kind = get_stmt_kinds(language)
     
     projects = data['project']
     files = data['cppFile']
@@ -245,7 +262,7 @@ def get_pros_src_and_embedding(
         pro_name = projects[i]
         logger.info(f"处理项目 [{i+1}/{len(asts)}]: {pro_name}")
         
-        pro_src, pro_emb, pro_info = [], [], []
+        pro_src, pro_info = [], []
         
         for j, file_data in enumerate(project_data):
             file_name = files[i][j]
@@ -272,25 +289,27 @@ def get_pros_src_and_embedding(
                         continue
                     
                     # 处理函数和块级别的节点
-                    if kind in func_kind or kind in block_kind:
+                    if kind in FUNCTION_KINDS or kind in BLOCK_KINDS:
                         pro_src.append(code_snippet)
-                        embedding = embedder.get_embedding(code_snippet)
-                        pro_emb.append(embedding)
                         pro_info.append([pro_name, file_name, extent_root, node_info])
                     
                     # 处理语句级别的节点（需要检查是否嵌套）
-                    elif kind in stmt_kind:
+                    elif kind in STATEMENT_KINDS:
                         if not is_within_extent(extent_valid, extent):
                             extent_valid = extent
                             pro_src.append(code_snippet)
-                            embedding = embedder.get_embedding(code_snippet)
-                            pro_emb.append(embedding)
                             pro_info.append([pro_name, file_name, extent_root, node_info])
         
         logger.info(f"  项目 {pro_name}: {len(pro_src)} 个代码片段")
         
         # 只有当项目代码片段数量达到阈值时才添加
         if len(pro_src) >= min_project_size:
+            logger.info(f"  批量生成嵌入（batch_size={batch_size}）")
+            if hasattr(embedder, "get_embeddings"):
+                pro_emb = embedder.get_embeddings(pro_src, batch_size=batch_size)
+            else:
+                # 保留只实现 get_embedding 的轻量测试替身兼容性。
+                pro_emb = [embedder.get_embedding(snippet) for snippet in pro_src]
             pros_name.append(pro_name)
             pros_src.append(pro_src)
             pros_emb.append(pro_emb)
@@ -345,9 +364,9 @@ def generate_embeddings(
     input_file: str,
     output_file: str,
     model_name: str = "unixcoder",
-    language: str = "cpp",
     device: Optional[str] = None,
-    min_project_size: int = 100  # 降低测试阈值
+    min_project_size: int = 100,  # 降低测试阈值
+    batch_size: int = 8
 ):
     """
     生成代码嵌入的主函数
@@ -356,9 +375,9 @@ def generate_embeddings(
         input_file: 输入的 AST 数据文件路径
         output_file: 输出的嵌入数据文件路径
         model_name: 模型名称（"codellama", "unixcoder", "codebert" 或完整模型名）
-        language: 编程语言类型
         device: 设备（cuda/cpu）
         min_project_size: 项目最小代码片段数量（测试时可以设置较小值）
+        batch_size: 模型批量推理大小
     """
     logger.info("=" * 60)
     logger.info("代码嵌入生成")
@@ -376,7 +395,10 @@ def generate_embeddings(
     # 生成嵌入
     logger.info("开始生成嵌入...")
     pros_name, pros_src, pros_emb, pros_info = get_pros_src_and_embedding(
-        data, embedder, language=language, min_project_size=min_project_size
+        data,
+        embedder,
+        min_project_size=min_project_size,
+        batch_size=batch_size
     )
     
     # 保存结果
@@ -391,24 +413,18 @@ def main():
     parser = argparse.ArgumentParser(description='生成代码嵌入')
     parser.add_argument(
         '--input', '-i',
-        default='output/cpp/dataset.pkl',
+        default='outputs/cpp/dataset.pkl',
         help='输入的 AST 数据文件路径'
     )
     parser.add_argument(
         '--output', '-o',
-        default='output/cpp/embeddings.pkl',
+        default='outputs/cpp/embeddings.pkl',
         help='输出的嵌入数据文件路径'
     )
     parser.add_argument(
         '--model', '-m',
         default='unixcoder',
         help='模型名称：codellama, unixcoder, codebert 或完整 HuggingFace 模型名（默认: unixcoder）'
-    )
-    parser.add_argument(
-        '--language', '-l',
-        default='cpp',
-        choices=['cpp', 'python', 'java', 'javascript'],
-        help='编程语言类型'
     )
     parser.add_argument(
         '--device', '-d',
@@ -421,6 +437,12 @@ def main():
         default=100,
         help='项目最小代码片段数量阈值（默认: 100，测试时可设为更小值）'
     )
+    parser.add_argument(
+        '--batch-size',
+        type=int,
+        default=8,
+        help='模型批量推理大小（默认: 8）'
+    )
     
     args = parser.parse_args()
     
@@ -428,16 +450,15 @@ def main():
         input_file=args.input,
         output_file=args.output,
         model_name=args.model,
-        language=args.language,
         device=args.device,
-        min_project_size=args.min_project_size
+        min_project_size=args.min_project_size,
+        batch_size=args.batch_size
     )
 
 
 # 模块运行命令（从项目根目录运行）：
-# python -m src.mining.code_embedding --input output/cpp/dataset.pkl --output output/cpp/embeddings.pkl --model unixcoder
-# nohup python -m src.mining.code_embedding --input output/cpp/dataset.pkl --output output/cpp/embeddings.pkl --model unixcoder > logs/code_embedding.log 2>&1 &
+# python -m src.mining.code_embedding --input outputs/cpp/dataset.pkl --output outputs/cpp/embeddings.pkl --model unixcoder
+# nohup python -m src.mining.code_embedding --input outputs/cpp/dataset.pkl --output outputs/cpp/embeddings.pkl --model unixcoder > logs/code_embedding.log 2>&1 &
 
 if __name__ == "__main__":
     main()
-

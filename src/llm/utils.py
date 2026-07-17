@@ -25,16 +25,16 @@ def retry_on_error(
 ) -> Callable:
     """
     重试装饰器
-    
+
     Args:
         max_retries: 最大重试次数
         delay: 初始延迟时间（秒）
         backoff: 延迟增长倍数
         exceptions: 要捕获的异常类型元组
-    
+
     Returns:
         装饰器函数
-    
+
     示例:
         >>> @retry_on_error(max_retries=3, delay=1.0)
         >>> def unreliable_function():
@@ -46,7 +46,7 @@ def retry_on_error(
         def wrapper(*args, **kwargs) -> T:
             current_delay = delay
             last_exception = None
-            
+
             for attempt in range(max_retries + 1):
                 try:
                     return func(*args, **kwargs)
@@ -62,9 +62,9 @@ def retry_on_error(
                         logger.error(
                             f"函数 {func.__name__} 在 {max_retries + 1} 次尝试后仍然失败"
                         )
-            
+
             raise last_exception
-        
+
         return wrapper
     return decorator
 
@@ -75,14 +75,14 @@ def format_prompt(
 ) -> str:
     """
     格式化提示词模板
-    
+
     Args:
         template: 提示词模板字符串
         **kwargs: 模板变量
-    
+
     Returns:
         格式化后的提示词
-    
+
     示例:
         >>> prompt = format_prompt(
         >>>     "将以下文本翻译成 {language}：{text}",
@@ -102,16 +102,16 @@ def parse_json_response(
 ) -> Union[Dict, List, None]:
     """
     从 LLM 响应中解析 JSON
-    
+
     尝试从响应文本中提取 JSON 内容，支持 markdown 代码块格式。
-    
+
     Args:
         response: LLM 响应文本
         strict: 是否严格模式（严格模式下解析失败会抛出异常）
-    
+
     Returns:
         解析后的 JSON 对象，失败时返回 None
-    
+
     示例:
         >>> response = "这是结果：```json\\n{\"name\": \"test\"}\\n```"
         >>> data = parse_json_response(response)
@@ -122,21 +122,21 @@ def parse_json_response(
         return json.loads(response)
     except json.JSONDecodeError:
         pass
-    
+
     # 尝试从 markdown 代码块中提取
     json_pattern = r'```(?:json)?\s*\n(.*?)\n```'
     matches = re.findall(json_pattern, response, re.DOTALL)
-    
+
     for match in matches:
         try:
             return json.loads(match)
         except json.JSONDecodeError:
             continue
-    
+
     # 尝试查找 JSON 对象或数组
     json_object_pattern = r'\{[^{}]*\}'
     json_array_pattern = r'\[[^\[\]]*\]'
-    
+
     for pattern in [json_object_pattern, json_array_pattern]:
         matches = re.findall(pattern, response, re.DOTALL)
         for match in matches:
@@ -144,11 +144,11 @@ def parse_json_response(
                 return json.loads(match)
             except json.JSONDecodeError:
                 continue
-    
+
     # 解析失败
     if strict:
         raise ValueError(f"无法从响应中解析 JSON: {response}")
-    
+
     logger.warning(f"无法从响应中解析 JSON，返回 None")
     return None
 
@@ -159,24 +159,24 @@ def extract_code_blocks(
 ) -> List[str]:
     """
     从文本中提取代码块
-    
+
     Args:
         text: 包含代码块的文本
         language: 可选的语言过滤器
-    
+
     Returns:
         代码块列表
-    
+
     示例:
         >>> text = "示例代码：```python\\nprint('hello')\\n```"
         >>> blocks = extract_code_blocks(text, language="python")
         >>> print(blocks)  # ["print('hello')"]
     """
     if language:
-        pattern = f'```{language}\\s*\\n(.*?)\\n```'
+        pattern = f'```{re.escape(language)}\\s*\\n(.*?)\\n```'
     else:
         pattern = r'```(?:\w+)?\s*\n(.*?)\n```'
-    
+
     matches = re.findall(pattern, text, re.DOTALL)
     return [match.strip() for match in matches]
 
@@ -188,41 +188,44 @@ def truncate_text(
 ) -> str:
     """
     截断文本到指定长度
-    
+
     Args:
         text: 要截断的文本
         max_length: 最大长度
         suffix: 截断后添加的后缀
-    
+
     Returns:
         截断后的文本
     """
     if len(text) <= max_length:
         return text
-    
+
+    if len(suffix) >= max_length:
+        return suffix[:max_length]
+
     return text[:max_length - len(suffix)] + suffix
 
 
 def count_tokens_approximate(text: str) -> int:
     """
     粗略估算文本的 token 数量
-    
+
     使用简单的规则估算，实际 token 数量可能有所不同。
-    
+
     Args:
         text: 文本内容
-    
+
     Returns:
         估算的 token 数量
     """
     # 简单估算：1 token ≈ 4 个字符（英文）或 1.5 个中文字符
     chinese_chars = len(re.findall(r'[\u4e00-\u9fff]', text))
     other_chars = len(text) - chinese_chars
-    
+
     # 中文字符：1.5 个字符 = 1 token
     # 其他字符：4 个字符 = 1 token
     estimated_tokens = (chinese_chars / 1.5) + (other_chars / 4)
-    
+
     return int(estimated_tokens)
 
 
@@ -234,28 +237,28 @@ def batch_process(
 ) -> List[Any]:
     """
     批量处理数据
-    
+
     Args:
         items: 要处理的数据列表
         process_fn: 处理函数
         batch_size: 批次大小
         show_progress: 是否显示进度
-    
+
     Returns:
         处理结果列表
     """
     results = []
     total = len(items)
-    
+
     for i in range(0, total, batch_size):
         batch = items[i:i + batch_size]
         batch_results = [process_fn(item) for item in batch]
         results.extend(batch_results)
-        
+
         if show_progress:
             progress = min(i + batch_size, total)
             logger.info(f"进度: {progress}/{total} ({progress/total*100:.1f}%)")
-    
+
     return results
 
 
@@ -265,11 +268,11 @@ def safe_json_loads(
 ) -> Any:
     """
     安全地加载 JSON 字符串
-    
+
     Args:
         json_str: JSON 字符串
         default: 解析失败时的默认值
-    
+
     Returns:
         解析后的对象或默认值
     """
@@ -286,11 +289,11 @@ def safe_json_dumps(
 ) -> str:
     """
     安全地序列化对象为 JSON 字符串
-    
+
     Args:
         obj: 要序列化的对象
         default: 序列化失败时的默认值
-    
+
     Returns:
         JSON 字符串或默认值
     """
@@ -308,12 +311,12 @@ def validate_json_schema(
 ) -> tuple[bool, Optional[str]]:
     """
     验证 JSON 数据的模式
-    
+
     Args:
         data: 要验证的数据
         required_fields: 必需字段列表
         optional_fields: 可选字段列表
-    
+
     Returns:
         (是否有效, 错误消息) 元组
     """
@@ -321,26 +324,26 @@ def validate_json_schema(
     for field in required_fields:
         if field not in data:
             return False, f"缺少必需字段: {field}"
-    
+
     # 检查未知字段
     all_fields = set(required_fields)
     if optional_fields:
         all_fields.update(optional_fields)
-    
+
     unknown_fields = set(data.keys()) - all_fields
     if unknown_fields:
         return False, f"包含未知字段: {', '.join(unknown_fields)}"
-    
+
     return True, None
 
 
 def merge_dicts(*dicts: Dict) -> Dict:
     """
     合并多个字典
-    
+
     Args:
         *dicts: 要合并的字典
-    
+
     Returns:
         合并后的字典
     """
@@ -354,18 +357,18 @@ def merge_dicts(*dicts: Dict) -> Dict:
 class Timer:
     """
     简单的计时器类
-    
+
     示例:
         >>> with Timer("处理数据"):
         >>>     # 一些耗时操作
         >>>     pass
         >>> # 输出: 处理数据 耗时: 1.23 秒
     """
-    
+
     def __init__(self, name: str = "操作", verbose: bool = True):
         """
         初始化计时器
-        
+
         Args:
             name: 操作名称
             verbose: 是否打印日志
@@ -374,25 +377,24 @@ class Timer:
         self.verbose = verbose
         self.start_time = None
         self.end_time = None
-    
+
     def __enter__(self):
         """进入上下文"""
         self.start_time = time.time()
         if self.verbose:
             logger.info(f"开始: {self.name}")
         return self
-    
+
     def __exit__(self, exc_type, exc_val, exc_tb):
         """退出上下文"""
         self.end_time = time.time()
         elapsed = self.end_time - self.start_time
         if self.verbose:
             logger.info(f"{self.name} 耗时: {elapsed:.2f} 秒")
-    
+
     def elapsed(self) -> float:
         """获取已经过的时间"""
         if self.start_time is None:
             return 0.0
         end = self.end_time if self.end_time else time.time()
         return end - self.start_time
-

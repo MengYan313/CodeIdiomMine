@@ -15,7 +15,7 @@ from sklearn.metrics import silhouette_score, pairwise_distances_argmin_min
 from skopt import gp_minimize
 from skopt.space import Real, Integer
 
-from ..logger import get_logger
+from ..common.logging import get_logger
 
 # 创建日志记录器
 logger = get_logger(__name__)
@@ -364,12 +364,12 @@ def main():
     parser = argparse.ArgumentParser(description='代码习语聚类')
     parser.add_argument(
         '--input', '-i',
-        default='output/cpp/embeddings.pkl',
+        default='outputs/cpp/embeddings.pkl',
         help='输入的嵌入数据文件路径'
     )
     parser.add_argument(
         '--output', '-o',
-        default='output/cpp/clusters.pkl',
+        default='outputs/cpp/clusters.pkl',
         help='输出的聚类结果文件路径'
     )
     parser.add_argument(
@@ -402,8 +402,8 @@ def main():
 
 
 # 模块运行命令（从项目根目录运行）：
-# python -m src.mining.clustering --input output/cpp/embeddings.pkl --output output/cpp/clusters.pkl
-# nohup python -m src.mining.clustering --input output/cpp/embeddings.pkl --output output/cpp/clusters.pkl > logs/clustering.log 2>&1 &
+# python -m src.mining.clustering --input outputs/cpp/embeddings.pkl --output outputs/cpp/clusters.pkl
+# nohup python -m src.mining.clustering --input outputs/cpp/embeddings.pkl --output outputs/cpp/clusters.pkl > logs/clustering.log 2>&1 &
 
 if __name__ == "__main__":
     main()

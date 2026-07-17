@@ -1,40 +1,20 @@
-"""
-文件扫描器
-用于扫描指定目录下的源代码文件
-"""
+"""扫描仓库中的 C++ 源文件。"""
 
 import os
 from typing import List, Dict
 
-from ..logger import get_logger
+from ..common.logging import get_logger
 
 # 创建日志记录器
 logger = get_logger(__name__)
 
 
 class FileScanner:
-    """扫描源代码文件"""
+    """扫描 C++ 源代码文件。"""
+
+    CPP_EXTENSIONS = (".cpp", ".cc", ".cxx", ".c++", ".hpp", ".h", ".hxx")
     
-    # 语言到文件扩展名的映射
-    LANGUAGE_EXTENSIONS = {
-        "cpp": [".cpp", ".cc", ".cxx", ".c++", ".hpp", ".h", ".hxx"],
-        "python": [".py"],
-        "java": [".java"],
-        "javascript": [".js", ".jsx", ".ts", ".tsx"],
-    }
-    
-    def __init__(self, language: str):
-        """
-        初始化文件扫描器
-        
-        Args:
-            language: 编程语言名称
-        """
-        self.language = language.lower()
-        self.extensions = self.LANGUAGE_EXTENSIONS.get(
-            self.language, 
-            self.LANGUAGE_EXTENSIONS["cpp"]
-        )
+    def __init__(self):
         self.projects: List[str] = []
         self.pro_file_list: List[List[str]] = []
     
@@ -43,7 +23,7 @@ class FileScanner:
         获取基础路径下的所有项目目录
         
         Args:
-            base_path: 基础路径，例如 CodeIdiomMine/repo/cpp
+            base_path: 基础路径，例如 CodeIdiomMine/repos/cpp
             
         Returns:
             项目名称列表
@@ -69,7 +49,7 @@ class FileScanner:
         获取所有项目的源代码文件
         
         Args:
-            base_path: 基础路径，例如 CodeIdiomMine/repo/cpp
+            base_path: 基础路径，例如 CodeIdiomMine/repos/cpp
             
         Returns:
             二维列表，第一维是项目，第二维是该项目的文件列表
@@ -105,10 +85,10 @@ class FileScanner:
                 continue
             
             for file_name in files:
-                # 检查文件扩展名
-                if any(file_name.endswith(ext) for ext in self.extensions):
-                    # 跳过测试文件
-                    if "test" in file_name.lower() and self.language != "python":
+                # 检查 C++ 文件扩展名
+                if file_name.endswith(self.CPP_EXTENSIONS):
+                    # 保持原 C++ 扫描行为：跳过测试文件
+                    if "test" in file_name.lower():
                         continue
                     file_path = os.path.join(root, file_name)
                     files_list.append(file_path)
@@ -147,4 +127,3 @@ class FileScanner:
             pro_funcs_src.append(pro_funcs_src_)
         
         return pro_files, pro_funcs, pro_funcs_src
-

@@ -1,195 +1,102 @@
 # CodeIdiomMine
 
-代码习语挖掘项目 - 从源代码仓库中挖掘常见的代码模式和习语。
+CodeIdiomMine 面向 C++ 仓库提取 AST 片段，生成代码嵌入，聚类候选习语，并通过 AutoGen Agent 完成判断与合成。
 
-## 项目结构
+当前工程基线以仓库现有实现为准：Tree-sitter、预训练代码模型、DBSCAN，以及 `autogen_core` 驱动的判断/合成流水线。论文研究稿用于后续实验设计，不代表当前代码已经实现其中的 Clang、HDBSCAN 或 AST 反统一方案。
 
-```
+项目已固定为仅支持 C++：解析、扫描、节点类型、嵌入和评价入口都不再接受语言参数，也不安装 Python、Java 或 JavaScript 的 Tree-sitter grammar。`repos/cpp`、`outputs/cpp` 和 `results/cpp` 作为既有 C++ 产物路径继续保留。
+
+## 目录结构
+
+```text
 CodeIdiomMine/
-├── common/              # 公共模块（共享定义和工具）
-│   ├── __init__.py
-│   └── node_kinds.py   # AST 节点类型定义
-├── parser/              # 代码解析模块
-│   ├── ast_parser.py   # AST 解析器（基于 tree-sitter）
-│   ├── file_scanner.py # 文件扫描器
-│   └── repo2data.py    # 主入口文件
-├── mining/              # 代码习语挖掘模块
-│   ├── code_embedding.py  # 代码嵌入（使用 CodeLLaMA 7B）
-│   └── clustering.py      # 聚类分析（DBSCAN）
-├── repo/                # 源代码仓库（输入）
-│   └── cpp/            # C++ 项目
-├── output/              # 输出结果
-│   └── cpp/            # C++ 解析结果
-├── requirements.txt     # 统一依赖包
-├── .gitignore          # Git 忽略文件
-└── README.md           # 项目说明
+├── AGENTS.md                 # 仓库级开发约定
+├── README.md                 # 项目入口文档
+├── .env.example              # 无密钥的端点与模型分档模板
+├── docs/
+│   ├── README.md             # 文档索引
+│   ├── guides/               # 架构、测试、Agent 与本地基线
+│   └── research/             # 论文与研究背景
+├── src/
+│   ├── agents/               # 通用 Agent 基类与判断/合成 Agent
+│   ├── common/               # 共享日志、兼容配置与 C++ 节点类型
+│   ├── evaluation/           # 指标计算
+│   ├── llm/                  # 统一模型配置、客户端与轻量 Agent 封装
+│   ├── mining/               # 嵌入与 DBSCAN 聚类
+│   ├── parser/               # Tree-sitter 扫描和 AST 提取
+│   └── utils/                # 通用工具
+├── tests/                    # 与 src 子包一一对应的自动化测试
+├── scripts/                  # 共享基础设施一致性检查
+├── repos/                    # 输入仓库语料
+├── outputs/                  # 解析、嵌入和聚类产物（忽略）
+├── results/                  # Agent 与评价产物（忽略）
+├── logs/                     # 运行日志（忽略）
+├── .venv/                    # 项目虚拟环境（忽略）
+├── requirements.txt          # 上游依赖下限
+└── requirements-local.lock   # 已验证本地环境快照
 ```
 
-## 安装
+目录按语义和 Python 社区惯例命名，不机械统一单复数：`agents/` 表示多个独立 Agent，`utils/` 是常见工具包名称；`common/`、`evaluation/`、`llm/`、`mining/` 和 `parser/` 表示共享层、流程或领域包。`research/` 使用不可数名词。`tests/` 的七个子目录与 `src/` 完全一致。
 
-### 1. 创建 conda 环境
+## 本地环境
+
+已验证环境为 Apple Silicon macOS、Python 3.12.10，项目虚拟环境位于 `.venv/`。不要向 macOS 系统 Python 安装依赖。
 
 ```bash
-conda create -n cim python=3.14 -y
-conda activate cim
+/opt/homebrew/bin/python3.12 -m venv .venv
+.venv/bin/python -m pip install --upgrade pip setuptools wheel
+.venv/bin/python -m pip install -r requirements.txt \
+  autogen-core 'autogen-ext[openai]' python-dotenv
+.venv/bin/python -m pip check
+.venv/bin/python -m unittest discover -s tests -t . -v
 ```
 
-### 2. 安装依赖
+`requirements.txt` 暂未包含 Agent 依赖；`requirements-local.lock` 是本机成功验证的精确快照，而不是新的上游依赖策略。
+
+## 运行流水线
+
+所有命令都必须从仓库根目录以模块方式执行。直接运行 `python src/...py` 会破坏相对导入。
 
 ```bash
-pip install -r requirements.txt
+.venv/bin/python -m src.parser.repo2data \
+  --input repos/cpp --output outputs/cpp/dataset.pkl
+
+.venv/bin/python -m src.mining.code_embedding \
+  --input outputs/cpp/dataset.pkl --output outputs/cpp/embeddings.pkl \
+  --model unixcoder
+
+.venv/bin/python -m src.mining.clustering \
+  --input outputs/cpp/embeddings.pkl --output outputs/cpp/clusters.pkl
+
+.venv/bin/python -m src.agents.idiom_judgement \
+  --input outputs/cpp/clusters.pkl --output-dir results/cpp
+
+.venv/bin/python -m src.agents.idiom_synthesis \
+  --input-dir results/cpp --output-dir results/cpp
+
+.venv/bin/python -m src.evaluation.idiom_metrics
 ```
 
-## 使用方法
-
-### 步骤 1: 解析代码仓库
+PKL 保持为阶段间唯一机器接口。需要人工检查时，生成全量汇总与限量 JSON 预览：
 
 ```bash
-cd parser
-python repo2data.py \
-    --input ../repo/cpp \
-    --output ../output/cpp/dataset.pkl \
-    --language cpp
+.venv/bin/python -m src.utils.export_artifacts \
+  --input-dir outputs/cpp --output-dir outputs/cpp/readables \
+  --limit 100 --cluster-top 100
 ```
 
-**参数说明**:
-- `--input, -i`: 输入项目路径
-- `--output, -o`: 输出数据文件路径
-- `--language, -l`: 编程语言类型（`cpp`, `python`, `java`, `javascript`）
+解析与嵌入默认各展示前 100 条，聚类按每个项目的簇大小展示 Top100；完整 AST、tensor 和成员列表仍只保存在 PKL 中。
+真实 Agent 产物生成后，可追加 `--result-dir results/cpp --stages judgment synthesis`，导出判断与合成的全量摘要和前 100 条预览。
 
-**输出格式**: pickle 格式的 DataFrame，包含：
-- `project`: 项目名称列表
-- `cppFile`: 文件路径列表（2D: 项目-文件）
-- `func_ast`: 函数 AST 节点信息列表（3D: 项目-文件-函数）
-- `func_src`: 函数源代码列表（3D: 项目-文件-函数）
+Agent 阶段从根目录 `.env` 读取端点、密钥和 GPT-5.6 模型分档。可从 `.env.example` 复制本地配置；当前所有默认调用只使用低档 `OPENAI_MODEL_LOW=gpt-5.6-luna`，中档 `gpt-5.6-terra` 与高档 `gpt-5.6-sol` 仅作后续显式选择。代码片段会被发送给配置的外部模型服务；运行前应确认端点、成本和数据披露范围。
 
-### 步骤 2: 生成代码嵌入
+## 文档与验证
 
-```bash
-cd mining
-python code_embedding.py \
-    --input ../output/cpp/dataset.pkl \
-    --output ../output/cpp/embeddings.pkl \
-    --model codellama/CodeLlama-7b-hf \
-    --language cpp
-```
+- [文档索引](docs/README.md)
+- [仓库架构](docs/guides/repository-architecture.md)
+- [两项目共享开发约定](docs/guides/shared-development-conventions.md)
+- [本地验证指南](docs/guides/testing.md)
+- [Agent 子系统](docs/guides/agent-system.md)
+- [已验证本地基线](docs/guides/local-baseline.md)
 
-**参数说明**:
-- `--input, -i`: 输入的 AST 数据文件路径
-- `--output, -o`: 输出的嵌入数据文件路径
-- `--model, -m`: 模型名称（默认: `codellama/CodeLlama-7b-hf`）
-- `--language, -l`: 编程语言类型
-- `--device, -d`: 设备（`cuda`/`cpu`，默认自动选择）
-
-**输出格式**: pickle 格式的 DataFrame，包含：
-- `pros_name`: 项目名称列表
-- `pros_src`: 代码片段列表（2D）
-- `pros_emb`: 嵌入向量列表（2D，torch.Tensor）
-- `pros_info`: 信息列表（2D）
-
-### 步骤 3: 执行聚类
-
-```bash
-cd mining
-python clustering.py \
-    --input ../output/cpp/embeddings.pkl \
-    --output ../output/cpp/clusters.pkl \
-    --eps 0.5 \
-    --min-samples 2
-```
-
-**参数说明**:
-- `--input, -i`: 输入的嵌入数据文件路径
-- `--output, -o`: 输出的聚类结果文件路径
-- `--eps, -e`: DBSCAN eps 参数（默认: 0.5）
-- `--min-samples, -m`: DBSCAN min_samples 参数（默认: 2）
-- `--optimize`: 是否优化聚类参数（使用贝叶斯优化）
-
-**输出格式**: pickle 格式的列表，每个元素包含：
-- `pros_name`: 项目名称
-- `clusters`: DataFrame，包含簇标签、中心点代码片段、簇大小等信息
-
-## 模块说明
-
-### Parser 模块
-
-- **功能**: 将源代码解析为 AST，提取函数节点和代码片段
-- **技术**: tree-sitter（支持多语言）
-- **支持语言**: C++、Python、Java、JavaScript
-- **特性**: 
-  - 自动识别不同语言的源代码文件扩展名
-  - 自动过滤测试文件和隐藏目录
-  - 提取函数级别的代码片段和 AST 节点信息
-
-### Mining 模块
-
-- **代码嵌入**: 使用 CodeLLaMA 7B 生成代码嵌入向量
-  - 支持更长的代码序列（最大 2048 tokens）
-  - 4096 维输出（更高的表达能力）
-  - 自动 GPU 分配和多 GPU 支持
-  - 使用 float16 半精度以节省显存
-- **聚类分析**: 使用 DBSCAN 算法进行基于密度的聚类
-  - 支持贝叶斯优化自动选择最佳参数
-  - 自动识别频繁代码习语
-
-### Common 模块
-
-- **节点类型定义**: 统一的 AST 节点类型定义
-- **支持语言**: C++、Python、Java、JavaScript
-- **导入方式**: `from common.node_kinds import get_node_kinds, get_func_kinds`
-
-## 配置
-
-### 环境变量（可选）
-
-复制 `env.example` 为 `.env` 并修改配置：
-
-```bash
-cp env.example .env
-```
-
-主要配置项：
-- `EMBEDDING_MODEL`: 嵌入模型名称
-- `DEVICE`: 设备（`auto`, `cuda`, `cpu`）
-- `REPO_PATH`: 源代码仓库路径
-- `OUTPUT_PATH`: 输出结果路径
-
-## 注意事项
-
-### 模型要求
-
-- **模型大小**: CodeLLaMA 7B 约 13GB，确保有足够的磁盘空间
-- **GPU 推荐**: 强烈建议使用 GPU（至少 16GB 显存），CPU 模式会非常慢
-- **首次运行**: 会自动下载模型（使用 HuggingFace 缓存），下载可能需要较长时间
-
-### 使用建议
-
-- 确保已安装对应语言的 tree-sitter 语言库
-- 输出目录会自动创建
-- 测试文件和隐藏目录会被自动跳过
-- 解析失败的文件会被跳过，不会中断整个流程
-- 聚类参数优化可能需要较长时间，建议先在小数据集上测试
-
-## 开发
-
-### 安装为开发包
-
-```bash
-pip install -e .
-```
-
-### 导入方式
-
-所有模块统一从 `common.node_kinds` 导入节点类型：
-
-```python
-from common.node_kinds import get_node_kinds, get_func_kinds, get_block_kinds, get_stmt_kinds
-```
-
-## 许可证
-
-[添加许可证信息]
-
-## 贡献
-
-[添加贡献指南]
+建议先运行低成本检查，再使用最小数据验证各阶段。完整步骤和已知问题见本地验证指南与基线记录。
