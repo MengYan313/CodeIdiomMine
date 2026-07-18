@@ -24,6 +24,7 @@
 - `src/llm/{__init__,agent,client,config,json_output,message,prompting,utils}.py`
 - `src/agents/base.py`
 - `tests/common/test_shared_infrastructure.py`
+- `docs/guides/prompt-engineering-guide.md`
 - `docs/guides/shared-development-conventions.md`
 
 ## 2. 日志
@@ -42,6 +43,8 @@ logger = get_logger(__name__)
 - 禁止记录密钥、完整端点或未经批准的私有源码。旧的 `src.logger` 仅为兼容入口，新代码不得继续使用。
 
 ## 3. LLM 配置与调用
+
+日常新增、修改或评审提示词时，先阅读 `docs/guides/prompt-engineering-guide.md`。该文件保存了两个项目已经采用的官方提示词实践；只有目标模型/API 变化、用户要求最新指南、出现无法解释的持续回归或冻结正式实验配置时，才需要使用 `$openai-docs` 刷新。
 
 统一入口为：
 

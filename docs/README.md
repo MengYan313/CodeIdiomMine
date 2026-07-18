@@ -5,6 +5,7 @@
 ## 开发文档
 
 - [两项目共享开发约定](guides/shared-development-conventions.md)：日志、LLM、AutoGen、目录和测试的统一契约。
+- [提示词优化本地指南](guides/prompt-engineering-guide.md)：日常提示词结构、JSON 契约、验证流程与官方指南刷新条件。
 - [仓库架构](guides/repository-architecture.md)：模块职责、C++ 数据流和范围边界。
 - [评价指标规范](guides/evaluation-metrics.md)：最终指标分类、公式、聚合方式、解释边界与变更控制。
 - [本地验证指南](guides/testing.md)：从自动化测试到完整流水线的验证顺序。

@@ -22,6 +22,7 @@ SHARED_PATHS = (
     "src/llm/utils.py",
     "src/agents/base.py",
     "tests/common/test_shared_infrastructure.py",
+    "docs/guides/prompt-engineering-guide.md",
     "docs/guides/shared-development-conventions.md",
 )
 

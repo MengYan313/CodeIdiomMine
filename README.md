@@ -100,6 +100,7 @@ Agent 业务提示词和说明字段统一使用中文，代码、必要技术�
 - [仓库架构](docs/guides/repository-architecture.md)
 - [评价指标规范](docs/guides/evaluation-metrics.md)
 - [两项目共享开发约定](docs/guides/shared-development-conventions.md)
+- [提示词优化本地指南](docs/guides/prompt-engineering-guide.md)
 - [本地验证指南](docs/guides/testing.md)
 - [Agent 子系统](docs/guides/agent-system.md)
 - [已验证本地基线](docs/guides/local-baseline.md)
