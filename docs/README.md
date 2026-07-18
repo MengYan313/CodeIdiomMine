@@ -1,6 +1,6 @@
 # 文档索引
 
-仓库只在根目录保留项目入口文档 `README.md` 和开发约定 `AGENTS.md`。其余说明统一归档在 `docs/` 下。
+仓库只在根目录保留项目入口文档 `README.md` 和开发约定 `AGENTS.md`。其余说明统一归档在 `docs/` 下。项目自有文档使用中文，代码、命令、路径和必要技术标识保留英文；外部论文按来源语言归档在 `docs/research/`。
 
 ## 开发文档
 
@@ -8,7 +8,7 @@
 - [提示词优化本地指南](guides/prompt-engineering-guide.md)：日常提示词结构、JSON 契约、验证流程与官方指南刷新条件。
 - [仓库架构](guides/repository-architecture.md)：模块职责、C++ 数据流和范围边界。
 - [评价指标规范](guides/evaluation-metrics.md)：最终指标分类、公式、聚合方式、解释边界与变更控制。
-- [Baseline 复现](guides/baselines.md)：三条 baseline、CIMAS-CPP、统一产物合同、运行命令与验证状态。
+- [baseline 复现](guides/baselines.md)：三条 baseline、CIMAS-CPP、统一产物合同、运行命令与验证状态。
 - [本地验证指南](guides/testing.md)：从自动化测试到完整流水线的验证顺序。
 - [本地开发基线](guides/local-baseline.md)：已验证环境、实际产物、错误证据和延期事项。
 - [Agent 子系统架构](guides/agent-system.md)：判断与合成流水线的详细设计。

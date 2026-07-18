@@ -6,6 +6,7 @@
 
 强制约定：
 
+- 项目自有文档统一使用中文，包括 `README.md`、`AGENTS.md` 和 `docs/**/*.md` 的标题、正文、表格说明与图注；仅代码、命令、路径、模型/API 名称、标准缩写、公式、JSON 字段和必要引文保留英文。第三方论文与 `rags/` 等原始检索语料保持来源语言，不得伪装成项目自有中文文档。开发文档统一放在 `docs/guides/`，研究材料统一放在 `docs/research/`；除约定入口文件和带编号的研究稿外，Markdown 文件名使用小写 kebab-case。评估指标、baseline 复现和本地基线分别固定命名为 `evaluation-metrics.md`、`baselines.md` 和 `local-baseline.md`。
 - 使用 `repos/` 存放本地源码仓库输入，`outputs/` 存放可复现的中间产物，`results/` 存放最终产物，`logs/` 存放运行日志，`tests/` 存放测试，`docs/` 存放纳入版本控制的文档。`repos/` 必须保持忽略且不受 Git 跟踪；不要增加重复的 `inputs/` 别名。
 - 新日志代码统一使用 `from src.common.logging import get_logger`。同一命令的所有模块日志均以追加方式写入 `logs/<run-name>.log`；`src.logger` 仅用于兼容旧代码。
 - LLM 代码统一从 `src.llm` 导入共享 API。根目录 `.env` 加载、模型档位、GPT-5.6 元数据、客户端创建、JSON 模式、Schema 校验、单次 JSON 修复及客户端关闭逻辑都必须集中在该包中。只有低档模型可以作为隐式默认值。

@@ -1,6 +1,6 @@
 # CodeIdiomMine
 
-当前版本：**CIM 5.4**
+当前版本：**CIM 5.5**
 
 CodeIdiomMine 面向 C++ 仓库提取 AST 片段，生成代码嵌入，聚类候选习语，并通过 AutoGen Agent 完成判断与合成。
 
@@ -101,7 +101,7 @@ Agent 业务提示词和说明字段统一使用中文，代码、必要技术�
 - [文档索引](docs/README.md)
 - [仓库架构](docs/guides/repository-architecture.md)
 - [评价指标规范](docs/guides/evaluation-metrics.md)
-- [Baseline 复现与统一评价](docs/guides/baselines.md)
+- [baseline 复现与统一评价](docs/guides/baselines.md)
 - [两项目共享开发约定](docs/guides/shared-development-conventions.md)
 - [提示词优化本地指南](docs/guides/prompt-engineering-guide.md)
 - [本地验证指南](docs/guides/testing.md)

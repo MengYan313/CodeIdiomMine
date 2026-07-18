@@ -27,7 +27,17 @@
 - `docs/guides/prompt-engineering-guide.md`
 - `docs/guides/shared-development-conventions.md`
 
-## 2. 日志
+## 2. 文档结构、命名与语言
+
+- 项目入口只在仓库根目录保留 `README.md` 和 `AGENTS.md`；其他项目自有文档统一进入 `docs/`，并由 `docs/README.md` 提供索引。
+- 可执行实现、架构、测试、环境、评估和复现说明统一放在 `docs/guides/`；论文草稿、研究方案和外部论文统一放在 `docs/research/`。
+- 除 `README.md`、`AGENTS.md` 等约定入口和带编号的中文研究稿外，项目自有 Markdown 文件名统一使用小写 kebab-case。
+- 两个仓库的指标规范固定命名为 `docs/guides/evaluation-metrics.md`，baseline 方法与复现规范固定命名为 `docs/guides/baselines.md`，已验证本地事实记录固定命名为 `docs/guides/local-baseline.md`。项目需要独立的评测操作指南时使用 `docs/guides/evaluation.md`。
+- 项目自有文档的标题、正文、表格说明、图注和维护记录必须使用中文。代码、命令、文件路径、模型/API 名称、标准缩写、数学公式、JSON 字段名和必要的原文引文可以保留英文；不得因此把整段项目说明写成英文。
+- 外部论文、许可证、上游 API 文档快照以及 `rags/` 下作为运行输入的第三方检索语料可以保留来源语言。这些材料必须与项目自有文档分区存放，且不得作为规避中文文档规则的理由。
+- 新增、移动或重命名文档时，必须同步更新 `docs/README.md`、根 `README.md`、`AGENTS.md`、代码内帮助文本和全部相对链接，并检查旧路径不再被引用。
+
+## 3. 日志
 
 新代码统一使用：
 
@@ -42,7 +52,7 @@ logger = get_logger(__name__)
 - `python -m` 入口会自动成为 run name；特殊场景可传 `run_name=`，也可用 `APP_LOG_NAME` 覆盖。
 - 禁止记录密钥、完整端点或未经批准的私有源码。旧的 `src.logger` 仅为兼容入口，新代码不得继续使用。
 
-## 3. LLM 配置与调用
+## 4. LLM 配置与调用
 
 日常新增、修改或评审提示词时，先阅读 `docs/guides/prompt-engineering-guide.md`。该文件保存了两个项目已经采用的官方提示词实践；只有目标模型/API 变化、用户要求最新指南、出现无法解释的持续回归或冻结正式实验配置时，才需要使用 `$openai-docs` 刷新。
 
@@ -92,7 +102,7 @@ async with LLMClient(config) as client:
 - 优先描述目标、完成标准和边界，不要求模型展示思维过程，也不为模型能够可靠自行完成的中间步骤增加冗长脚手架。
 - 修改生产提示词时使用既有离线合同和代表性小样本回归；一次只改变一个可解释的失败模式，避免无依据地堆叠示例和绝对指令。
 
-## 4. AutoGen Agent
+## 5. AutoGen Agent
 
 - 使用 `autogen_core.SingleThreadedAgentRuntime`、强类型消息和 `RoutedAgent`，不混用旧 `autogen` API。
 - 通用 Agent 继承 `src.agents.base.BaseRoutedAgent`；领域基类可以继续封装它。
@@ -102,7 +112,7 @@ async with LLMClient(config) as client:
 - Agent 之间通过消息路由，不通过互相直接调用；并行分支用 `asyncio.gather()`。
 - 消息模型、判定阈值和业务失败回退属于领域契约；提示词语言和 JSON 输出协议遵循本共享约定。
 
-## 5. 验证与变更纪律
+## 6. 验证与变更纪律
 
 按成本递增验证：编译 → 共享基础设施离线测试 → 项目离线测试 → 最小合成 LLM smoke → 真实小样本 → 全量运行。默认测试不得下载模型或产生付费调用。
 
