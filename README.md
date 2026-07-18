@@ -1,5 +1,7 @@
 # CodeIdiomMine
 
+当前版本：**CIM 5.4**
+
 CodeIdiomMine 面向 C++ 仓库提取 AST 片段，生成代码嵌入，聚类候选习语，并通过 AutoGen Agent 完成判断与合成。
 
 当前工程基线以仓库现有实现为准：Tree-sitter、预训练代码模型、DBSCAN，以及 `autogen_core` 驱动的判断/合成流水线。论文研究稿用于后续实验设计，不代表当前代码已经实现其中的 Clang、HDBSCAN 或 AST 反统一方案。
@@ -87,7 +89,7 @@ PKL 保持为阶段间唯一机器接口。需要人工检查时，生成全量�
   --limit 100 --cluster-top 100
 ```
 
-解析与嵌入默认各展示前 100 条，聚类按每个项目的簇大小展示 Top100；完整 AST、tensor 和成员列表仍只保存在 PKL 中。
+解析与嵌入默认各展示前 100 条，聚类按每个项目的簇大小展示 Top100；这些文件仅是人工预览，不参与任何 baseline 或 CIMAS-CPP 的最终习语数量选择，完整 AST、tensor 和成员列表仍只保存在 PKL 中。
 真实 Agent 产物生成后，可追加 `--result-dir results/cpp --stages judgment synthesis`，导出判断与合成的全量摘要和前 100 条预览。
 
 Agent 阶段从根目录 `.env` 读取端点、密钥和 GPT-5.6 模型分档。可从 `.env.example` 复制本地配置；当前所有默认调用只使用低档 `OPENAI_MODEL_LOW=gpt-5.6-luna`，中档 `gpt-5.6-terra` 与高档 `gpt-5.6-sol` 仅作后续显式选择。代码片段会被发送给配置的外部模型服务；运行前应确认端点、成本和数据披露范围。
@@ -99,6 +101,7 @@ Agent 业务提示词和说明字段统一使用中文，代码、必要技术�
 - [文档索引](docs/README.md)
 - [仓库架构](docs/guides/repository-architecture.md)
 - [评价指标规范](docs/guides/evaluation-metrics.md)
+- [Baseline 复现与统一评价](docs/guides/baselines.md)
 - [两项目共享开发约定](docs/guides/shared-development-conventions.md)
 - [提示词优化本地指南](docs/guides/prompt-engineering-guide.md)
 - [本地验证指南](docs/guides/testing.md)

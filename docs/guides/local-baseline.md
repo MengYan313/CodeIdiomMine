@@ -384,6 +384,51 @@ The reproducible commands are:
 
 Post-change validation passed `pip check`, `compileall` for `src/tests/scripts`, both evaluation CLI help entries, and all 36 offline tests. The validation made no network, model-download, or paid API request.
 
+#### 2026-07-18 three-baseline reproduction and shared metric contract
+
+The three requested baselines are now implemented as separate C++ entry points, with method details and formal commands in [the baseline reproduction guide](baselines.md):
+
+- `src.evaluation.haggis_cpp` ports the Haggis DP-pTSG core to the current Tree-sitter C++ AST. The fixed reference is archived `mast-group/codemining-treelm` commit `8b241a195fe860713c8dbbee387710533b97258c`. It uses PCFG priors, DP posterior prediction, pointwise collapsed Gibbs sampling, burn-in collection, and explicit posterior/occurrence/file/node thresholds. Its manifest records the Java/JDT, blocked-sampler, binarization, symbol-abstraction, and current function/block/statement `ast_num >= 5` output-projection differences; it is not presented as the original Java tool directly supporting C++.
+- `src.evaluation.llm_direct_baseline` mechanically chunks raw functions and uses one model in map/reduce form. Discovery receives no AST, embedding, cluster, or Agent conclusions. Its global budget estimate counts the system prompt, schema-appended user prompt, and actual JSON output. AST evidence mapping occurs only after discovery to satisfy the common evaluator contract.
+- `src.evaluation.rules_embedding_baseline` treats eligible DBSCAN clusters directly as idiom types. Its current contract applies minimum cluster size, an explicitly supplied ratio below 1, and a per-project type cap in that order. The default cap is 100; it is a hard maximum after ratio selection, not a fixed Top100 output and not a rule for the other methods.
+- `src.evaluation.baseline_validation` rejects mock or incomplete artifacts, runs the unchanged fixed evaluator, and requires all nine metrics at project, repository-macro, and global levels. The common list is `IC_macro`, `IC_micro`, `IC`, `ISP`, `F1`, `idiom_type_count`, `avg_cluster_size`, `avg_cross_file_support`, and `AvgAST`.
+
+Deterministic integration coverage uses three synthetic repositories. It runs all three baseline implementations, injects a schema-aware fake model for LLM-Direct, runs the actual CIMAS judgment runtime with a fake shared client (semantic and syntax Agents plus the judge Agent), and validates all four artifact sets through the same evaluator. This proves method-level schema and metric applicability without a download or paid request.
+
+An earlier full current-cluster run used `min_cluster_size=3`, `selection_ratio=1.0`, and `max_types=100`. All three projects selected 100 types and passed the nine-metric contract:
+
+| Repository | IC | ISP | F1 | types | average cluster size | average file support | AvgAST |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Envoy | 0.0006 | 0.1550 | 0.0012 | 100 | 44.36 | 11.40 | 113.99 |
+| qBittorrent | 0.0030 | 0.0400 | 0.0056 | 100 | 12.55 | 3.81 | 97.21 |
+| React Native | 0.0046 | 0.2800 | 0.0091 | 100 | 12.18 | 3.47 | 157.60 |
+
+These values remain historical evidence that the adapter and metrics ran over the complete cluster input, not the earlier `mock_cluster_file_split` evidence-oracle run. They are superseded as a rule-baseline configuration because `selection_ratio=1.0` does not execute the now-required proportional truncation. A formal replacement must freeze a ratio below 1 on development data before rerunning; the repository does not invent that scientific parameter from the test set.
+
+The corrected three-stage selector was additionally exercised over the complete current cluster artifact as a configuration smoke, using `min_cluster_size=3`, `selection_ratio=0.5`, and `max_types=100`. The ratio 0.5 is only a wiring value, not a thesis parameter selected from test results. Envoy had 839 size-eligible clusters, ratio selection proposed 420 and the cap retained 100; qBittorrent had 219, proposed 110 and retained 100; React Native had 175, proposed and retained 88. The resulting type counts were therefore 100/100/88 rather than a forced Top100 for every project. All nine metrics passed; evidence is under ignored `results/baseline-smoke/rules-combined/cpp/`.
+
+The Haggis-CPP bounded smoke read the real current AST dataset but limited each project to 20 functions with at most 300 nodes, used 6 iterations with 50% burn-in, and deliberately relaxed selection thresholds. It sampled 1,997/1,009/2,922 nodes and output 10/8/10 idiom types for Envoy/qBittorrent/React Native. All nine metrics were finite at all three levels. Cross-project IC/ISP/F1 were zero because the permissive smoke fragments had only one local occurrence; this is expected for a wiring smoke and is not a quality result. The current Haggis entry point no longer accepts `max_types`; all fragments passing its method-native thresholds are written.
+
+The final LLM-Direct-Budget real smoke used only two handwritten C++ functions. No repository source was disclosed. `gpt-5.6-luna` made one map and one reduce request, produced one idiom with two file sources, and used an estimated 1,493 input-plus-output tokens under a 4,000-token bound after counting system prompts and JSON schemas. The manifest records two logical calls and two endpoint requests. During implementation this same synthetic case was run successfully three times—first to verify the new baseline, then after correcting system/schema accounting, and finally after enforcing the budget on repair requests—so the task made six successful endpoint requests in total; the sandbox-denied first attempt never reached the endpoint. The one-project leave-one-out IC/ISP/F1 values were necessarily zero, while all nine values remained finite at project, repository-macro, and global levels. The intermediary did not expose exact billing, so no charge is claimed. The current manifest explicitly records that `max_output_tokens` is a per-response token bound and that no final idiom-count cap is applied.
+
+Ignored evidence paths are:
+
+- full rules baseline: `results/baselines/rules-embedding-clustering/cpp/`;
+- corrected rules-combination smoke: `results/baseline-smoke/rules-combined/cpp/`;
+- Haggis smoke: `results/baseline-smoke/haggis-cpp/cpp/`;
+- synthetic LLM input: `outputs/baseline-smoke/synthetic/`;
+- LLM-Direct smoke: `results/baseline-smoke/llm-direct-budget/cpp/`.
+
+Each result directory contains `baseline-manifest.json`, `eval.json`, and `metric-validation.json`. These runs prove reproducibility and evaluator compatibility; only the full rules baseline processed its complete current input, and none of the smoke numbers should enter a comparative result table.
+
+The output-selection correction was revalidated offline: Haggis produced 4/5/5 untruncated types across the synthetic projects, LLM-Direct produced 2/2/2, the rules baseline produced 1/1/1 under `min_cluster_size=2`, `selection_ratio=0.5`, `max_types=1`, and unbounded CIMAS judgment produced 2/2/2. All four differing output cardinalities passed the same nine-metric contract. No network or paid request was made.
+
+#### 2026-07-18 CIM 5.4 baseline documentation release
+
+The project version advanced from the established `CIM 5.3` commit convention to `CIM 5.4`. `docs/guides/baselines.md` now serves as the detailed implementation specification: it records each baseline's research role, ordered algorithm, parameters, C++ adaptation or budget boundary, output-selection contract, common artifact fields, fairness constraints, commands, limitations, and validation evidence. README and the fixed evaluation specification carry the same version marker.
+
+Release verification passed `pip check`, `compileall` for `src/tests/scripts`, all 41 deterministic offline tests, all four baseline/evaluator `--help` entries, `git diff --check`, and `scripts/check_shared_infrastructure.py --other ../WPF2React` (`shared_infrastructure_ok=True`, 16 files). No source file was sent to an external model, and no paid or network LLM request was made.
+
 ## Logs and evidence caveat
 
 Before the cross-project infrastructure unification, source wrote module logs to `logs/<full.module.name>.log` with `mode='w'`; package imports could therefore truncate earlier evidence. The historical stage snapshots remain under `outputs/baselines/records/{parsers,embeddings,clusterings,evaluations}/` and `outputs/baselines/records/logs/`. Current code instead appends every module in one command to `logs/<run-name>.log` through `src/common/logging.py`, so the earlier truncation caveat applies only to the recorded baseline runs.
@@ -399,8 +444,8 @@ The differences below are recorded background, not current defects to fix automa
 - Current code has no Stage 3 cluster alignment, AST anti-unification, typed placeholders, or binding-preserving abstraction.
 - Current judgment uses semantic, syntax/logic, and judge Agents with a deterministic two-score gate. It has no independent code-smell Agent, three-way manual review, deterministic parser evidence, or Clang validation.
 - Current synthesis groups by `loc_label`, asks an LLM to plan/assemble, and re-judges for at most three rounds. It does not enforce the proposed AST-aware static relation triggers, binding rules, or syntax-only validation.
-- Current evaluation now implements consistent leave-one-project-out IC/ISP/F1, macro/micro AST coverage, candidate-level AST size statistics, exact counts, a structured lexical matcher, and explicit project-file/mock validation modes. It still does not implement the proposed OY, IV, Cost, human-validated V metrics, HVIP@K, ALR@K, VIY@K, confidence intervals, baselines, or a formal clone-family split followed by training-only re-mining.
-- Haggis-CPP, LLM-Direct, AST-Frequent, thesis ablations, human labeling, and formal experiment manifests are proposals only and are absent.
+- Current evaluation implements consistent leave-one-project-out IC/ISP/F1, macro/micro AST coverage, candidate-level AST size statistics, exact counts, a structured lexical matcher, explicit project-file/mock validation modes, and a shared nine-metric contract for all implemented methods. It still does not implement the research draft's proposed OY, IV, Cost, human-validated V metrics, confidence intervals, or a formal clone-family split followed by training-only re-mining.
+- Haggis-CPP, LLM-Direct-Budget, and Rules-Embedding-Clustering are implemented and smoke-validated. Formal full-corpus repeated experiments, human labeling, frozen corpus manifests, cost matching against a complete CIMAS run, and the finer thesis ablations remain deferred.
 - The fusion document defines a shared thesis perspective with WPF2React, not a code, data, or repository merge.
 
 ## 2026-07-17 cross-project infrastructure alignment
@@ -418,17 +463,10 @@ Reusable engineering infrastructure was aligned with WPF2React without changing 
 
 1. The intermediary endpoint, credential loading, Luna direct wrapper, judgment, and synthesis paths have passed a nine-request synthetic smoke. Full-corpus paid Agent evaluation remains deliberately deferred because its cost, source disclosure scope, and research validity require a separate explicit run plan.
 2. Full-corpus parser, CPU UniXcoder, and DBSCAN completed successfully on the current three snapshots. Re-running remains a high-cost experiment and should preserve the recorded corpus scope and parameters.
-3. Formal thesis experiments are not authorized yet and require explicit scope, pinned corpora/commits, baselines, metrics, and secrets/cost decisions.
+3. Baseline implementation and bounded validation are authorized and complete. Formal comparative thesis runs still require pinned corpus commits, train/development/test manifests, repeated seeds, a complete CIMAS token measurement, and an explicit source-disclosure/cost decision.
 4. Reproducibility is improved by `requirements-local.lock`; the official `requirements.txt` remains broad for scientific packages but now includes the Agent stack. The obsolete non-C++ grammar requirements have been removed.
 5. CLI `runpy` warnings from eager package imports remain non-blocking. The former eager-import log truncation issue was removed by the append-only run logger during cross-project infrastructure alignment.
 
 ## Recommended next decision
 
-Before algorithmic work, choose one bounded follow-up:
-
-1. Extend the offline tests with fake-client end-to-end judgment/synthesis fixtures; or
-2. Pin and rationalize official dependencies based on this verified environment; or
-3. Define a small, versioned Agent evaluation fixture before spending on a larger model-quality run; or
-4. Start one explicitly scoped thesis-alignment change from `docs/research/01_C++代码习语挖掘研究稿.md`.
-
-Do not rerun full-repository embedding, start paid Agent evaluation, or begin thesis refactoring by default.
+The next experiment-level decision is to freeze corpus commits and the train/development/test manifest, then measure the complete CIMAS-CPP token usage that will define `LLM-Direct-Budget`. Do not launch full paid LLM evaluation or reinterpret bounded smoke values as thesis results without that freeze.

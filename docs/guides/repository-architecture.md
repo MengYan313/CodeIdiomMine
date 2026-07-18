@@ -21,7 +21,7 @@ CodeIdiomMine 从 C++ 仓库中提取候选 AST 片段，经代码嵌入和 DBSC
 | `src/parser/` | C++ 文件扫描、Tree-sitter C++ 初始化、AST 与源码片段提取 |
 | `src/mining/` | 预训练模型嵌入、DBSCAN 聚类和可选贝叶斯调参 |
 | `src/agents/` | 通用 AutoGen 基类，以及习语判断、规划、代码组装与合成后再判断 |
-| `src/evaluation/` | 两组固定评价指标、按仓库/全局聚合及明确标注的离线模拟验证 |
+| `src/evaluation/` | 固定评价指标、三条 baseline、统一产物/指标合同、按仓库与全局聚合及明确标注的离线模拟验证 |
 | `src/llm/` | 两项目统一的模型分档、`.env`、AutoGen 客户端、JSON schema/单次修复与轻量对话封装 |
 | `src/utils/` | 原始 pickle/CSV 转换和流水线可读 JSON 投影 |
 | `tests/` | 与上述七个源码子包一一对应的离线自动化测试 |
@@ -48,9 +48,11 @@ repos/cpp/<project>/...
 
 指标的正式公式、统计单位、仓库宏平均、全局汇总和解释边界统一见[评价指标规范](evaluation-metrics.md)；其他文档只保留入口或实验记录，不另行定义不同口径。
 
+三条正式 baseline 分别由 `haggis_cpp.py`、`llm_direct_baseline.py` 和 `rules_embedding_baseline.py` 生成与判断阶段兼容的 `*_idiom.pkl`。`baseline_common.py` 维护公共记录与九指标名单，`baseline_validation.py` 拒绝 mock/不完整证据并调用现有评价器。方法定义、算法适配边界和完整命令见[Baseline 复现](baselines.md)。
+
 这些 pickle schema 是阶段间接口。`source_infos` 和 `avg_subtree_size` 是为可复现评价增加的向后兼容证据字段；旧产物缺少它们时，评估器退回代表实例和数据集定位。其他任务不得顺手改变字段或嵌套层级。
 
-`src.utils.export_artifacts` 不改变上述接口：PKL 保留完整嵌套 AST、CPU tensor 和簇成员，JSON 只作为可重新生成的人工分析投影。每阶段的 `*.summary.json` 统计全量输入；`dataset.preview.json` 和 `embeddings.preview.json` 默认各取前 100 条，`clusters.top100.json` 默认按项目分别取簇大小 Top100。真实 Agent 运行后还可按需导出 `judgment` 和 `synthesis` 的摘要及前 100 条。预览中的长源码会显式截断，嵌入只展示形状、范数和向量头部，因此这些 JSON 不得回流为下一阶段输入。
+`src.utils.export_artifacts` 不改变上述接口：PKL 保留完整嵌套 AST、CPU tensor 和簇成员，JSON 只作为可重新生成的人工分析投影。每阶段的 `*.summary.json` 统计全量输入；`dataset.preview.json` 和 `embeddings.preview.json` 默认各取前 100 条，`clusters.top100.json` 默认按项目分别取簇大小 Top100。真实 Agent 运行后还可按需导出 `judgment` 和 `synthesis` 的摘要及前 100 条。预览中的长源码会显式截断，嵌入只展示形状、范数和向量头部，因此这些 JSON 不得回流为下一阶段输入，也不得作为 Haggis、LLM-Direct 或 CIMAS-CPP 的产物截断清单。
 
 ## C++ 范围边界
 

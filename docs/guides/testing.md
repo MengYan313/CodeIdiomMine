@@ -134,7 +134,27 @@ Agent 结果存在后可运行 `--result-dir results/cpp --stages judgment synth
 
 `clusters.top100.json` 在这里仅作为已存在的冻结语料清单：构造器只读取 `project/label` 集合，不读取或输出 `rank`，评价器也不计算任何排序或 Top-K 指标。`mock_cluster_file_split` 把每个冻结簇在训练/测试文件中的**全部成员**当作已知匹配证据，专用于检查指标分子分母、extent 并集和多项目汇总；输出带 `is_mock_evaluation` 和 `mock_warning`。由于 DBSCAN 在文件划分前已经看过整个项目，该结果不能作为模型质量或论文结果。正式跨项目泛化使用默认 `leave_one_project_out`；正式项目内实验则必须先按克隆族/文件划分语料，再只在训练区域重新运行挖掘流程。
 
-## 9. 日志、产物和证据
+## 9. Baseline 与主方法的统一验证
+
+确定性离线集成测试会实际运行 Haggis-CPP、LLM-Direct-Budget（fake client）、规则+嵌入聚类，以及 CIMAS-CPP 的三 Agent 判断路径（fake client），并要求四种产物都通过同一个九指标合同：
+
+```bash
+.venv/bin/python -m unittest tests.evaluation.test_baselines -v
+```
+
+每条 baseline 生成正式产物后都要运行统一验证器；CIMAS-CPP 额外使用 `--allow-main-method`，因为主方法不写 `baseline_provenance`：
+
+```bash
+.venv/bin/python -m src.evaluation.baseline_validation \
+  --method <method> --idiom-dir <result-dir> \
+  --dataset outputs/cpp/dataset.pkl
+```
+
+验证器拒绝 `mock_provenance`、空来源证据、`cnt` 不一致和缺失 baseline provenance；它还拒绝 Haggis/LLM 的最终种类数量上限，以及没有执行三段组合截断的旧规则配置。评价器直接接受各方法不同数量的完整产物，不要求公共 Top100 或相同习语种类数，并确认逐项目、仓库宏平均、全局三层都包含九项有限数值。各方法的定义、参数和完整命令见[Baseline 复现](baselines.md)。
+
+Haggis smoke 使用 `--max-functions-per-project`、较少 `--iterations` 和独立输出目录，参数必须标成 smoke；正式 Haggis 不限制最终习语种类数。LLM smoke 只使用合成代码，预先说明基础模型、最大逻辑调用数、JSON 修复上限、token 预算、可能费用和披露范围；正式 LLM-Direct 不限制最终习语种类数。CIMAS 的 `--limit` 只允许用于独立 smoke，正式结果必须省略。只有规则 baseline 使用“最小簇大小→比例→数量上限”的产物截断；`results/evaluation-mock/` 的历史 Top100 模拟不能伪装成任何正式方法产物。
+
+## 10. 日志、产物和证据
 
 - 运行日志：`logs/<run-name>.log`（同一命令的模块共享，追加写入）。
 - 中间产物：`outputs/`。
@@ -144,6 +164,6 @@ Agent 结果存在后可运行 `--result-dir results/cpp --stages judgment synth
 
 以上目录均被 Git 忽略。重要实验应另存命令、解释器和依赖版本、输入范围、输出路径、关键统计和完整错误。日志默认追加；长期实验仍应保存独立的命令与结果清单，避免不同运行混淆。
 
-## 10. 测试目录约定
+## 11. 测试目录约定
 
 `tests/` 下的 `agents/`、`common/`、`evaluation/`、`llm/`、`mining/`、`parser/`、`utils/` 与 `src/` 一一对应。新增测试放入被测包的同名目录；临时测试产物使用 `tests/outputs/`、`tests/temp_outputs/` 或 `tests/.tmp/`，这些路径已由 `.gitignore` 排除。

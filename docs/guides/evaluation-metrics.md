@@ -1,7 +1,7 @@
 # 代码习语评价指标规范
 
 - 状态：**当前实现规范，已固定**
-- 版本：CIM 5.2
+- 版本：CIM 5.4
 - 生效日期：2026-07-18
 - 适用范围：`src/evaluation/`、评价 JSON、离线测试与后续实验记录
 
@@ -327,6 +327,8 @@ global.AvgAST                    = 全部可测 type_avg_ast 之和 / 全部可�
 这些字段是分子、分母或诊断信息，不属于新增的最终指标。
 
 兼容字段 `avg_idiom_size`、`median_idiom_size` 和 `idiom_size_iqr` 可以继续存在于 JSON 中用于旧接口和代表实例诊断，但不属于本文固定的九项最终指标。最终结构规模应以 `AvgAST` 为准。
+
+评价器不对输入习语集合执行公共 Top-K 或数量对齐。Haggis-CPP、LLM-Direct-Budget 和 CIMAS-CPP 使用各自完整的有效输出；只有 Rules-Embedding-Clustering 在发现方法内部执行预先冻结的“最小簇大小、保留比例、数量上限”组合截断。`idiom_type_count` 会直接记录由此产生的不同集合大小，其他指标按各自真实分母计算。
 
 ## 7. 评价模式及其结论边界
 
