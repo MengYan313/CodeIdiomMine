@@ -21,7 +21,7 @@ CodeIdiomMine 从 C++ 仓库中提取候选 AST 片段，经代码嵌入和 DBSC
 | `src/parser/` | C++ 文件扫描、Tree-sitter C++ 初始化、AST 与源码片段提取 |
 | `src/mining/` | 预训练模型嵌入、DBSCAN 聚类和可选贝叶斯调参 |
 | `src/agents/` | 通用 AutoGen 基类，以及习语判断、规划、代码组装与合成后再判断 |
-| `src/evaluation/` | IC、留一项目 ISP、F1 与平均习语大小 |
+| `src/evaluation/` | 两组固定评价指标、按仓库/全局聚合及明确标注的离线模拟验证 |
 | `src/llm/` | 两项目统一的模型分档、`.env`、AutoGen 客户端、JSON schema/单次修复与轻量对话封装 |
 | `src/utils/` | 原始 pickle/CSV 转换和流水线可读 JSON 投影 |
 | `tests/` | 与上述七个源码子包一一对应的离线自动化测试 |
@@ -42,11 +42,13 @@ repos/cpp/<project>/...
 - `dataset.pkl`：DataFrame 列为 `project`、`cppFile`、`func_ast`、`func_src`。`cppFile` 是保留的数据契约字段。
 - `embeddings.pkl`：DataFrame 列为 `pros_name`、`pros_src`、`pros_emb`、`pros_info`；嵌入以 CPU `torch.Tensor` 保存。
 - `clusters.pkl`：`list[{pros_name, clusters}]`；簇表包含 `label`、`center_point`、`else_point`、`cluster_size`、`center_point_info`、`infos`、`loc_label`。
-- `{repo}_idiom.pkl`：包含 `center_point`、`info`、`cnt`、`avg_ast_num`、`loc_label`。
-- `{repo}_idiom_syn.pkl`：额外包含 `source_infos`、`merge_rounds`、`synthesis_trace`。
-- `eval.json`：包含逐项目及汇总的 `IC`、`ISP`、`F1`、`avg_idiom_size`。
+- `{repo}_idiom.pkl`：包含 `center_point`、与代表代码一致的 `info`、完整簇证据 `source_infos`、`cnt`、兼容字段 `avg_ast_num`、完整子树统计 `avg_subtree_size` 和 `loc_label`。
+- `{repo}_idiom_syn.pkl`：继续保留合并后全部 `source_infos`，并增加 `merge_rounds`、`synthesis_trace`。
+- `eval.json`：默认按留一项目方式，让同一训练习语集合同时在测试项目上计算 `IC_macro`、`IC_micro`、最终 `IC=(IC_macro+IC_micro)/2`、集合复现率 `ISP` 及使用最终 IC 的 `F1`；另按仓库报告习语种类数、平均聚类簇大小、平均跨文件支持数和 `AvgAST`，并保留必要分子分母。项目内文件划分和明确标注的聚类模拟评价由 CLI 模式显式选择。
 
-这些 pickle schema 是阶段间接口。结构调整任务不得顺手改变字段或嵌套层级。
+指标的正式公式、统计单位、仓库宏平均、全局汇总和解释边界统一见[评价指标规范](evaluation-metrics.md)；其他文档只保留入口或实验记录，不另行定义不同口径。
+
+这些 pickle schema 是阶段间接口。`source_infos` 和 `avg_subtree_size` 是为可复现评价增加的向后兼容证据字段；旧产物缺少它们时，评估器退回代表实例和数据集定位。其他任务不得顺手改变字段或嵌套层级。
 
 `src.utils.export_artifacts` 不改变上述接口：PKL 保留完整嵌套 AST、CPU tensor 和簇成员，JSON 只作为可重新生成的人工分析投影。每阶段的 `*.summary.json` 统计全量输入；`dataset.preview.json` 和 `embeddings.preview.json` 默认各取前 100 条，`clusters.top100.json` 默认按项目分别取簇大小 Top100。真实 Agent 运行后还可按需导出 `judgment` 和 `synthesis` 的摘要及前 100 条。预览中的长源码会显式截断，嵌入只展示形状、范数和向量头部，因此这些 JSON 不得回流为下一阶段输入。
 

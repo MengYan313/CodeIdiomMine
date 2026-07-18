@@ -55,13 +55,17 @@ def extract_center_points(cluster_data) -> List[Dict[str, Any]]:
             continue
         records.append({
             "center_point": center_point,
+            "center_point_info": row.get("center_point_info"),
             "infos": row.get("infos", []),
             "loc_label": row.get("loc_label", ""),
         })
     return records
 
 
-def simplify_infos(infos: List) -> Dict[str, Any]:
+def simplify_infos(
+    infos: List,
+    representative_info: Optional[List] = None,
+) -> Dict[str, Any]:
     """
     将嵌套的 infos 列表简化为紧凑的存储格式。
 
@@ -73,29 +77,51 @@ def simplify_infos(infos: List) -> Dict[str, Any]:
 
     Returns:
         {
-            "info": 第一个列表元素（代表习语的代表性信息）,
+            "info": 与 center_point 对应的代表性信息,
+            "source_infos": 簇中全部来源信息,
             "cnt": 列表长度（习语出现次数）,
-            "avg_ast_num": 各元素 node_info.ast_num 的平均值
+            "avg_ast_num": 各元素 node_info.ast_num 的平均值,
+            "avg_subtree_size": 各元素完整子树节点数的平均值（若可用）
         }
     """
     if not infos:
-        return {"info": None, "cnt": 0, "avg_ast_num": 0.0}
+        return {
+            "info": representative_info,
+            "source_infos": [],
+            "cnt": 0,
+            "avg_ast_num": 0.0,
+            "avg_subtree_size": 0.0,
+        }
 
-    info = infos[0]
+    info = representative_info if representative_info is not None else infos[0]
     cnt = len(infos)
 
     ast_nums = []
+    subtree_sizes = []
     for item in infos:
         if isinstance(item, (list, tuple)) and len(item) >= 4:
             node_info = item[3]
             if isinstance(node_info, dict):
                 ast_nums.append(node_info.get("ast_num", 0))
+                if node_info.get("subtree_size") is not None:
+                    subtree_sizes.append(node_info["subtree_size"])
         elif isinstance(item, dict):
             ast_nums.append(item.get("ast_num", 0))
+            if item.get("subtree_size") is not None:
+                subtree_sizes.append(item["subtree_size"])
 
     avg_ast_num = sum(ast_nums) / len(ast_nums) if ast_nums else 0.0
+    avg_subtree_size = (
+        sum(subtree_sizes) / len(subtree_sizes) if subtree_sizes else 0.0
+    )
 
-    return {"info": info, "cnt": cnt, "avg_ast_num": avg_ast_num}
+    return {
+        "info": info,
+        "source_infos": list(infos),
+        "cnt": cnt,
+        "avg_ast_num": avg_ast_num,
+        "avg_subtree_size": avg_subtree_size,
+    }
 
 
 async def judge_idioms(
@@ -155,12 +181,17 @@ async def judge_idioms(
                     else:
                         result = await pipeline.evaluate(center_point)
                     if result["final_judgment"]["is_idiom"]:
-                        simplified = simplify_infos(rec["infos"])
+                        simplified = simplify_infos(
+                            rec["infos"],
+                            representative_info=rec.get("center_point_info"),
+                        )
                         idioms.append({
                             "center_point": center_point,
                             "info": simplified["info"],
+                            "source_infos": simplified["source_infos"],
                             "cnt": simplified["cnt"],
                             "avg_ast_num": simplified["avg_ast_num"],
+                            "avg_subtree_size": simplified["avg_subtree_size"],
                             "loc_label": rec["loc_label"],
                         })
                         logger.info(f"    ✓ 判定为习语 (置信度: {result['final_judgment']['confidence']})")

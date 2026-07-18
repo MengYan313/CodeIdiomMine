@@ -1,6 +1,6 @@
 # CodeIdiomMine local development baseline
 
-Last verified: 2026-07-17 (Asia/Shanghai)
+Last verified: 2026-07-18 (Asia/Shanghai)
 
 This is the durable project memory for the existing implementation. It records observed facts and reproducible smoke tests; it is not a claim that the code implements the thesis proposals.
 
@@ -329,6 +329,61 @@ The real evaluation CLI consumed the minimal dataset and fake-client judgment ou
 - `IC=0.25`, `ISP=0.0`, `F1=0.0`, `avg_idiom_size=731.0`, `idiom_count=1`.
 - The values are only an entry/schema smoke test. ISP is zero because the synthetic dataset has one project and the evaluator uses other projects as the leave-one-out training idiom set.
 
+The preceding values describe the former evaluator and are retained as historical evidence only. They are superseded by the corrected metric validation below: the former `info[2]` lookup measured the containing function extent, so `avg_idiom_size=731.0` was the full function rather than the candidate subtree.
+
+#### 2026-07-18 metric correction and frozen Top100-corpus simulation
+
+The normative metric definitions are fixed in the [evaluation metric specification](evaluation-metrics.md); this section records only the verified implementation and experiment evidence.
+
+The evaluator was corrected without a model download or LLM request:
+
+- candidate coverage and size use `info[3].extent`, while `info[2]` remains the containing function extent for backward compatibility;
+- DBSCAN representative selection now queries one centroid against all members instead of selecting member zero;
+- judgment and synthesis artifacts retain all `source_infos`, and newly parsed AST nodes record `subtree_size` without changing historical `ast_num` semantics;
+- each leave-one-project fold uses the same training idiom set for IC and ISP; matching abstracts identifiers and literals but preserves C++ keywords, operators and candidate node kind;
+- evaluation reports `IC_macro`, `IC_micro`, their arithmetic mean as final `IC`, exact matched/total counts, ISP, and F1 computed from final IC;
+- each cluster is one idiom type and every `source_infos` member is an idiom instance; library statistics report type count, average cluster size, average unique-file support, and cluster-macro AvgAST over all measurable members;
+- default CLI paths now use the documented plural `outputs/` and `results/` roots.
+
+The existing `outputs/cpp/readables/clusters.top100.json` was used only as a frozen corpus manifest under ignored `results/evaluation-mock/cpp/`. The builder reads the manifest's `project/label` set but ignores its historical `rank`; neither generated artifacts nor evaluation output contains a rank, and no ranking/Top-K metric is computed. The mock builder retained complete cluster membership and added `mock_provenance`; no candidate was judged by an LLM. A deterministic 80/20 file split then treated every selected cluster member as an evidence oracle solely to validate formulas and extent union:
+
+| Repository | IC_macro | IC_micro | IC | ISP | F1 |
+|---|---:|---:|---:|---:|---:|
+| Envoy | 0.0981 | 0.1847 | 0.1414 | 0.5729 | 0.2268 |
+| qBittorrent | 0.0672 | 0.1736 | 0.1204 | 0.2500 | 0.1626 |
+| React Native | 0.0508 | 0.1560 | 0.1034 | 0.3333 | 0.1578 |
+| Repository macro | 0.0720 | 0.1714 | 0.1217 | 0.3854 | 0.1824 |
+
+| Repository | idiom types | average cluster size | average unique-file support | AvgAST |
+|---|---:|---:|---:|---:|
+| Envoy | 100 | 44.36 | 11.40 | 113.99 |
+| qBittorrent | 100 | 12.55 | 3.87 | 107.88 |
+| React Native | 100 | 12.18 | 3.47 | 166.92 |
+| Repository macro | 100.00 | 23.03 | 6.2467 | 129.60 |
+
+The necessary pooled global summary is `IC_macro=0.0816` (function-weighted), `IC_micro=0.1784` (node-weighted), `IC=0.1300`, `ISP=0.3891` (107/275 eligible training-supported types), and `F1=0.1949`. The frozen library contains 300 types and 6,909 member instances; its type-weighted average cluster size is 23.03, average unique-file support is 6.2467, and AvgAST is 129.60.
+
+The result is `results/evaluation-mock/cpp/eval-mock-evidence.json`. An independent completeness audit compared the manifest, source clusters, and generated artifacts: all 300 selected clusters were present, all 6,909 expected member instances were preserved, there were zero missing clusters and zero size mismatches, and no `rank` field was emitted. The evidence-oracle evaluation covers 894,442 AST nodes and marks 159,580 as covered across 6,127 functions. These values are intentionally neither zero nor near one, demonstrating that the repaired denominators and candidate extents behave normally. They are explicitly simulated results, not research results, because clustering preceded the file split.
+
+The stricter mocked leave-one-project run was also retained as `eval.json`. Its repository macro is `IC_macro=0.0027`, `IC_micro=0.0028`, final `IC=0.0027`, `ISP=0.1317`, and `F1=0.0053`; this low cross-domain coverage is an observed limitation of using concrete DBSCAN clusters before the proposed parameterized template/anti-unification stage, not an evaluator defect.
+
+The reproducible commands are:
+
+```bash
+.venv/bin/python -m src.evaluation.mock_idioms \
+  --clusters outputs/cpp/clusters.pkl \
+  --selection-manifest outputs/cpp/readables/clusters.top100.json \
+  --output-dir results/evaluation-mock/cpp
+
+.venv/bin/python -m src.evaluation.idiom_metrics \
+  --idiom-dir results/evaluation-mock/cpp \
+  --dataset outputs/cpp/dataset.pkl \
+  --output results/evaluation-mock/cpp/eval-mock-evidence.json \
+  --mode mock_cluster_file_split --test-fraction 0.2
+```
+
+Post-change validation passed `pip check`, `compileall` for `src/tests/scripts`, both evaluation CLI help entries, and all 36 offline tests. The validation made no network, model-download, or paid API request.
+
 ## Logs and evidence caveat
 
 Before the cross-project infrastructure unification, source wrote module logs to `logs/<full.module.name>.log` with `mode='w'`; package imports could therefore truncate earlier evidence. The historical stage snapshots remain under `outputs/baselines/records/{parsers,embeddings,clusterings,evaluations}/` and `outputs/baselines/records/logs/`. Current code instead appends every module in one command to `logs/<run-name>.log` through `src/common/logging.py`, so the earlier truncation caveat applies only to the recorded baseline runs.
@@ -344,7 +399,7 @@ The differences below are recorded background, not current defects to fix automa
 - Current code has no Stage 3 cluster alignment, AST anti-unification, typed placeholders, or binding-preserving abstraction.
 - Current judgment uses semantic, syntax/logic, and judge Agents with a deterministic two-score gate. It has no independent code-smell Agent, three-way manual review, deterministic parser evidence, or Clang validation.
 - Current synthesis groups by `loc_label`, asks an LLM to plan/assemble, and re-judges for at most three rounds. It does not enforce the proposed AST-aware static relation triggers, binding rules, or syntax-only validation.
-- Current evaluation implements IC, leave-one-project-out ISP, their F1, and average AST size using extent coverage plus normalized substring matching. It does not implement the proposed Raw/V metrics, OY, IV, Cost, HVIP@K, ALR@K, VIY@K, confidence intervals, baselines, or formal train/development/test isolation.
+- Current evaluation now implements consistent leave-one-project-out IC/ISP/F1, macro/micro AST coverage, candidate-level AST size statistics, exact counts, a structured lexical matcher, and explicit project-file/mock validation modes. It still does not implement the proposed OY, IV, Cost, human-validated V metrics, HVIP@K, ALR@K, VIY@K, confidence intervals, baselines, or a formal clone-family split followed by training-only re-mining.
 - Haggis-CPP, LLM-Direct, AST-Frequent, thesis ablations, human labeling, and formal experiment manifests are proposals only and are absent.
 - The fusion document defines a shared thesis perspective with WPF2React, not a code, data, or repository merge.
 

@@ -113,7 +113,26 @@ Agent 结果存在后可运行 `--result-dir results/cpp --stages judgment synth
 .venv/bin/python -m src.evaluation.idiom_metrics
 ```
 
-评价依赖固定 C++ 路径下的 dataset 和 Agent 结果。单项目或 fake-client 输入只能证明入口和 schema 可用，不能作为论文结果。
+默认模式是留一项目：当前项目为测试集，其他项目产出的同一个去重习语集合同时用于 IC 与 ISP。当前未参数化的候选通过保留关键字/运算符、抽象标识符和字面量的结构化词法签名匹配，并要求候选 AST 节点类型一致。`IC_macro` 是函数覆盖率宏平均，`IC_micro` 是节点覆盖率微平均，最终 `IC=(IC_macro+IC_micro)/2`；F1 使用最终 IC。习语库结构另按仓库报告习语种类数、平均聚类簇大小、平均跨文件支持数和 AvgAST。
+
+最终指标的分类理由、完整公式、全部成员计入规则、仓库宏平均与全局汇总方式、空分母处理及结论边界统一见[评价指标规范](evaluation-metrics.md)。本节只说明如何运行评价，不定义第二套口径。
+
+没有真实 Agent 结果时，可把现有聚类 Top100 明确构造成模拟习语，验证指标分子、分母、extent 并集和多项目汇总：
+
+```bash
+.venv/bin/python -m src.evaluation.mock_idioms \
+  --clusters outputs/cpp/clusters.pkl \
+  --selection-manifest outputs/cpp/readables/clusters.top100.json \
+  --output-dir results/evaluation-mock/cpp
+
+.venv/bin/python -m src.evaluation.idiom_metrics \
+  --idiom-dir results/evaluation-mock/cpp \
+  --dataset outputs/cpp/dataset.pkl \
+  --output results/evaluation-mock/cpp/eval-mock-evidence.json \
+  --mode mock_cluster_file_split --test-fraction 0.2
+```
+
+`clusters.top100.json` 在这里仅作为已存在的冻结语料清单：构造器只读取 `project/label` 集合，不读取或输出 `rank`，评价器也不计算任何排序或 Top-K 指标。`mock_cluster_file_split` 把每个冻结簇在训练/测试文件中的**全部成员**当作已知匹配证据，专用于检查指标分子分母、extent 并集和多项目汇总；输出带 `is_mock_evaluation` 和 `mock_warning`。由于 DBSCAN 在文件划分前已经看过整个项目，该结果不能作为模型质量或论文结果。正式跨项目泛化使用默认 `leave_one_project_out`；正式项目内实验则必须先按克隆族/文件划分语料，再只在训练区域重新运行挖掘流程。
 
 ## 9. 日志、产物和证据
 

@@ -170,12 +170,13 @@ class ClusteringProcessor:
             centroid = np.mean(points_in_cluster, axis=0)
             
             # 找到最接近中心的点（频繁习语）
+            # 查询方向必须是“一个质心 -> 全部簇成员”。反向调用会为每个
+            # 簇成员都返回唯一目标（质心）的索引 0，最终总是误选第一个成员。
             closest_point_idx, _ = pairwise_distances_argmin_min(
-                points_in_cluster, np.array([centroid]), metric='cosine'
+                np.array([centroid]), points_in_cluster, metric='cosine'
             )
             
             if len(closest_point_idx) > 0 and infos:
-                closest_idx = cluster_indices[closest_point_idx[0]]
                 closest_point_info = infos[closest_point_idx[0]]
                 closest_point_str = srcs[closest_point_idx[0]]
                 

@@ -64,17 +64,39 @@ def group_by_loc_label(idioms: List[Dict[str, Any]]) -> Dict[str, List[Dict[str,
 
 
 def _aggregate_sources(sources: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """合并多条习语记录的元信息（cnt / avg_ast_num 求和，info 列表）。"""
+    """合并来源证据，并按出现次数计算节点规模的加权平均。"""
     infos = []
     cnt = 0
-    ast_sum = 0.0
+    ast_weighted_sum = 0.0
+    ast_weight = 0
+    subtree_weighted_sum = 0.0
+    subtree_weight = 0
     for s in sources:
-        info = s.get("info")
-        if info is not None:
-            infos.append(info)
-        cnt += int(s.get("cnt", 0) or 0)
-        ast_sum += float(s.get("avg_ast_num", 0.0) or 0.0)
-    return {"source_infos": infos, "cnt": cnt, "avg_ast_num": ast_sum}
+        source_infos = s.get("source_infos")
+        if isinstance(source_infos, list) and source_infos:
+            infos.extend(source_infos)
+        else:
+            info = s.get("info")
+            if info is not None:
+                infos.append(info)
+        source_count = int(s.get("cnt", 0) or 0)
+        cnt += source_count
+        avg_ast_num = float(s.get("avg_ast_num", 0.0) or 0.0)
+        if source_count > 0:
+            ast_weighted_sum += avg_ast_num * source_count
+            ast_weight += source_count
+        avg_subtree_size = float(s.get("avg_subtree_size", 0.0) or 0.0)
+        if avg_subtree_size > 0 and source_count > 0:
+            subtree_weighted_sum += avg_subtree_size * source_count
+            subtree_weight += source_count
+    return {
+        "source_infos": infos,
+        "cnt": cnt,
+        "avg_ast_num": ast_weighted_sum / ast_weight if ast_weight else 0.0,
+        "avg_subtree_size": (
+            subtree_weighted_sum / subtree_weight if subtree_weight else 0.0
+        ),
+    }
 
 
 async def synthesize_group(
@@ -202,6 +224,7 @@ async def synthesize_group(
         "source_infos": meta["source_infos"],
         "cnt": meta["cnt"],
         "avg_ast_num": meta["avg_ast_num"],
+        "avg_subtree_size": meta["avg_subtree_size"],
         "merge_rounds": successful_rounds,
         "synthesis_trace": trace,
     }

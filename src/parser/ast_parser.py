@@ -190,6 +190,9 @@ class ASTParser:
                     break
             
             node_info["ast_num"] = child_count
+            # DFS 序列中一棵子树连续占据 [i, j)，因此该值是包含根节点的
+            # 完整子树规模。保留 ast_num 的历史“直接子节点数”语义。
+            node_info["subtree_size"] = j - i
     
     def _get_node_name(self, node: tree_sitter.Node) -> Optional[str]:
         """获取节点的名称（如果存在）"""

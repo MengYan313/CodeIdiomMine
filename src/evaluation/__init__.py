@@ -2,10 +2,12 @@
 代码习语评估模块
 
 提供习语挖掘结果的评估指标：
-- IC (Idiom Coverage): 函数中被习语匹配的 AST 节点比例
-- ISP (Idiom Set Precision): 训练习语在测试集中重现的比例
-- F1: IC 与 ISP 的调和平均数
-- 平均习语规模: 习语包含的 AST 节点数量平均值
+- IC_macro: 测试函数 AST 节点覆盖率的宏平均
+- IC_micro: 测试函数 AST 节点覆盖率的节点微平均
+- IC: IC_macro 与 IC_micro 的算术平均
+- ISP (Idiom Set Precision): 同一训练习语集合在测试集中重现的比例
+- F1: 最终 IC 与 ISP 的调和平均数
+- 习语库结构: 种类数、平均簇大小、平均跨文件支持数和 AvgAST
 """
 
 from importlib import import_module
@@ -15,6 +17,7 @@ __all__ = [
     "compute_idiom_set_precision",
     "compute_f1",
     "compute_avg_idiom_size",
+    "compute_idiom_library_stats",
     "evaluate_project",
     "evaluate_cpp",
 ]

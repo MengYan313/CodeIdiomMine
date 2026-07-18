@@ -24,6 +24,7 @@ class CppParserTests(unittest.TestCase):
             parser.traverse_ast(functions[0], str(source_path), node_infos)
             parser.calculate_ast_num(node_infos)
             self.assertEqual(node_infos[0]["kind"], "function_definition")
+            self.assertEqual(node_infos[0]["subtree_size"], len(node_infos))
             self.assertIn("return left + right", node_infos[0]["code_snippet"])
 
     def test_scanner_keeps_cpp_and_filters_tests_and_other_languages(self):

@@ -6,6 +6,7 @@
 
 - [两项目共享开发约定](guides/shared-development-conventions.md)：日志、LLM、AutoGen、目录和测试的统一契约。
 - [仓库架构](guides/repository-architecture.md)：模块职责、C++ 数据流和范围边界。
+- [评价指标规范](guides/evaluation-metrics.md)：最终指标分类、公式、聚合方式、解释边界与变更控制。
 - [本地验证指南](guides/testing.md)：从自动化测试到完整流水线的验证顺序。
 - [本地开发基线](guides/local-baseline.md)：已验证环境、实际产物、错误证据和延期事项。
 - [Agent 子系统架构](guides/agent-system.md)：判断与合成流水线的详细设计。

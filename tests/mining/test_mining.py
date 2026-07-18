@@ -15,12 +15,14 @@ class MiningHelperTests(unittest.TestCase):
     def test_dbscan_preserves_cluster_schema(self):
         embeddings = [
             torch.tensor([[1.0, 0.0]]),
-            torch.tensor([[1.0, 0.01]]),
+            torch.tensor([[0.9, 0.1]]),
+            torch.tensor([[0.0, 1.0]]),
         ]
-        sources = ["return first;", "return second;"]
+        sources = ["return first;", "return medoid;", "return third;"]
         infos = [
             ["sample", "sample.cpp", "1-0-1-13", {}],
             ["sample", "sample.cpp", "2-0-2-14", {}],
+            ["sample", "sample.cpp", "3-0-3-13", {}],
         ]
 
         labels, clusters = ClusteringProcessor.perform_dbscan_clustering(
@@ -28,13 +30,14 @@ class MiningHelperTests(unittest.TestCase):
             sources,
             embeddings,
             infos,
-            eps=0.1,
+            eps=1.0,
             min_samples=2,
         )
 
-        self.assertEqual(labels.tolist(), [0, 0])
+        self.assertEqual(labels.tolist(), [0, 0, 0])
         self.assertEqual(len(clusters), 1)
-        self.assertEqual(int(clusters.iloc[0]["cluster_size"]), 2)
+        self.assertEqual(int(clusters.iloc[0]["cluster_size"]), 3)
+        self.assertEqual(clusters.iloc[0]["center_point"], "return medoid;")
         self.assertEqual(
             clusters.columns.tolist(),
             [
