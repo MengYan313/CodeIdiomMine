@@ -22,6 +22,15 @@
 
 测试覆盖 C++ Adapter、预处理续行遮蔽、扫描与 AST 提取、Parser token 预算与超长函数降级、embedding 合同、DBSCAN schema、Agent 确定性门限、评价辅助函数、LLM 消息构建、JSON schema/单次修复和可读产物导出。默认测试使用假 tokenizer，不得下载模型或调用外部 LLM。
 
+数据集实验还应运行清单交叉校验。该命令只读取本地固定仓库和产物，不执行目标仓库代码：
+
+```bash
+.venv/bin/python -m scripts.analyze_cpp_dataset validate-manifest \
+  --manifest docs/research/cpp-dataset-manifest.json
+```
+
+它验证正式项目数量、固定 commit、四列 pickle Schema、项目身份、仓库相对路径安全与唯一性，以及审计文件数/函数数和独立分析结果的一致性。
+
 ## 3. 导入和帮助入口
 
 ```bash

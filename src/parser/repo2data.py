@@ -27,6 +27,7 @@ def parse_repository(
     embedding_model: str = "unixcoder",
     max_input_tokens: Optional[int] = None,
     local_files_only: bool = False,
+    projects: Optional[List[str]] = None,
 ):
     """
     解析仓库中的所有源代码文件
@@ -35,6 +36,7 @@ def parse_repository(
         input_path: 输入路径，例如 CodeIdiomMine/repos/cpp
         output_path: 输出路径，例如 CodeIdiomMine/outputs/cpp
         fragment_output_path: 可选的 Parser model-ready 片段输出路径
+        projects: 可选的精确项目目录名列表；省略时解析全部项目
     """
     logger.info("=" * 60)
     logger.info("代码仓库解析")
@@ -47,8 +49,10 @@ def parse_repository(
     scanner = FileScanner()
     
     # 获取所有项目
-    projects = scanner.get_projects(input_path)
-    logger.info(f"找到 {len(projects)} 个项目: {projects}")
+    selected_projects = scanner.get_projects(input_path, projects)
+    logger.info(
+        f"找到 {len(selected_projects)} 个项目: {selected_projects}"
+    )
     
     # 获取所有源代码文件
     pro_file_list = scanner.get_all_source_files(input_path)
@@ -65,8 +69,11 @@ def parse_repository(
     file_diagnostics: List[Dict[str, Any]] = []
     
     # 遍历每个项目
-    for i, project_name in enumerate(projects):
-        logger.info(f"\n处理项目 [{i+1}/{len(projects)}]: {project_name}")
+    for i, project_name in enumerate(selected_projects):
+        logger.info(
+            f"\n处理项目 [{i+1}/{len(selected_projects)}]: {project_name}"
+        )
+        project_path = os.path.join(input_path, project_name)
         funcs_in_pro = []  # 存储当前项目的所有函数 AST（2D: 文件-函数）
         funcs_in_pro_src = []  # 存储当前项目的所有函数源代码（2D: 文件-函数）
         
@@ -76,7 +83,7 @@ def parse_repository(
             
             try:
                 # 解析文件为 AST
-                tree = parser.parse_file(file_path, source_root=input_path)
+                tree = parser.parse_file(file_path, source_root=project_path)
                 if tree is None:
                     logger.warning(f"    跳过文件（解析失败）: {file_path}")
                     diagnostics = dict(parser.last_file_diagnostics)
@@ -166,9 +173,10 @@ def parse_repository(
         input_path=input_path,
         output_path=output_path,
         audit_output_path=resolved_audit_path,
-        projects=projects,
+        projects=selected_projects,
         scanned_files=pro_file_list,
         file_diagnostics=file_diagnostics,
+        scan_diagnostics=scanner.last_scan_diagnostics,
     )
     if fragment_output_path is not None:
         build_fragment_file(
@@ -188,6 +196,7 @@ def save_parse_audit(
     projects: List[str],
     scanned_files: List[List[str]],
     file_diagnostics: List[Dict[str, Any]],
+    scan_diagnostics: Optional[Dict[str, Any]] = None,
 ) -> None:
     """保存所有扫描文件的解析、恢复和未覆盖证据，不改变 pickle Schema。"""
     status_counts: Dict[str, int] = {}
@@ -230,6 +239,7 @@ def save_parse_audit(
         "input_path": input_path,
         "output_path": output_path,
         "projects": projects,
+        "scan": scan_diagnostics or {},
         "summary": summary,
         "files": sorted(
             file_diagnostics,
@@ -348,6 +358,12 @@ def main():
         action='store_true',
         help='构建片段时只使用本地 tokenizer 缓存，禁止下载',
     )
+    parser.add_argument(
+        '--project',
+        action='append',
+        default=None,
+        help='只解析指定项目目录；可重复传入，省略时解析全部项目',
+    )
     args = parser.parse_args()
     
     # 解析仓库
@@ -359,6 +375,7 @@ def main():
         args.embedding_model,
         args.max_input_tokens,
         args.local_files_only,
+        args.project,
     )
 
 

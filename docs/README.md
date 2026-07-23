@@ -12,6 +12,7 @@
 - [Parser 基线与优化对比](guides/parser-quality-report.md)：4,804 个真实文件的前后统计、确定性和性能证据。
 - [Parser 代表性产物审计](guides/parser-artifact-audit.md)：宏、模板、Concept、Lambda、不完整代码和语义片段样例。
 - [Parser 风险与限制](guides/parser-risks.md)：失败分类、兼容策略、误切分风险和未解决事项。
+- [C++ 数据集 Parser 优化与回归](guides/cpp-dataset-parser-regression.md)：27 个候选的修改前基线、通用扫描与路径修正、优化后全量结果和确定性证据。
 - [评价指标规范](guides/evaluation-metrics.md)：最终指标分类、公式、聚合方式、解释边界与变更控制。
 - [baseline 复现](guides/baselines.md)：三条 baseline、CIMAS-CPP、统一产物合同、运行命令与验证状态。
 - [本地验证指南](guides/testing.md)：从自动化测试到完整流水线的验证顺序。
@@ -21,6 +22,10 @@
 
 ## 研究文档
 
+- [C++ 实验数据集现状报告](research/cpp-dataset-status-report.md)：26 个正式项目的构成、统计、范围、复算方法与局限。
+- [C++ 实验数据集逐项目排查报告](research/cpp-dataset-project-audit.md)：27 个候选的固定版本、许可、规模、解析质量与筛选结论。
+- [C++ 实验数据集结构化清单](research/cpp-dataset-manifest.json)：完整 commit、许可文件证据、复现命令、基线/最终指标与产物位置。
+- [C++ 实验数据集统计](research/cpp-dataset-statistics.json)：从实际固定源码和解析产物重算的正式汇总。
 - [C++ 代码习语挖掘研究稿](research/01_C++代码习语挖掘研究稿.md)
 - [面向代码可复用性增强的融合研究方案](research/03_面向代码可复用性增强的融合研究方案.md)
 - [Idiom Mining II](research/Idiom_Mining_II.pdf)

@@ -59,7 +59,7 @@ repos/cpp/<project>/...
   -> results/cpp/eval.json
 ```
 
-- `dataset.pkl`：DataFrame 列为 `project`、`cppFile`、`func_ast`、`func_src`。`cppFile` 是保留的数据契约字段。映射 v2 为每个节点保存原始字节范围和原文，为函数根保存文件身份、内容哈希、解析来源和可选语义切片。
+- `dataset.pkl`：DataFrame 列为 `project`、`cppFile`、`func_ast`、`func_src`。`cppFile` 是保留的数据契约字段，其值为项目仓库相对 POSIX 路径，不能退化为 basename 或绝对路径。映射 v2 为每个节点保存原始字节范围和原文，为函数根保存文件身份、内容哈希、解析来源和可选语义切片。
 - `dataset.audit.json`：Parser 侧车 Schema v2，覆盖所有扫描文件，包括无函数和失败文件；记录 `ERROR`、missing、未覆盖区间、宏影子恢复和函数范围。它是审计证据，不是下一阶段输入。
 - `fragments.pkl`：Parser 片段 Schema v1；保存目标 tokenizer、token 预算、`quality-v2` 原文片段、既有 `fragment_info` 映射结构、超限拒绝清单和降级统计。embedding 的规范输入是该产物。
 - `embeddings.pkl`：DataFrame 列为 `pros_name`、`pros_src`、`pros_emb`、`pros_info`；嵌入以 CPU `torch.Tensor` 保存。
@@ -95,10 +95,10 @@ Parser 长度降级见[C++ Adapter 与模型输入治理](cpp-adapter-and-model-
 
 1. `src/common/node_kinds.py` 直接导出 C++ 节点集合，不维护语言映射；
 2. `src/parser/ast_parser.py` 固定装配 `src/parser/cpp_adapter.py`，Adapter 固定加载 `tree-sitter-cpp`；
-3. `src/parser/file_scanner.py` 固定扫描 C/C++ 扩展名；
+3. `src/parser/file_scanner.py` 确定性扫描标准 C/C++ 扩展名，以完整目录段排除构建、缓存、第三方、生成、测试、示例和基准输入，并拒绝符号链接与越界路径；
 4. parser、embedding 和 evaluation CLI 均无 `--language` 参数。
 
-`repos/cpp`、`outputs/cpp` 和 `results/cpp` 中的 `cpp` 是固定的现有产物命名空间，不是可切换语言参数。当前扫描器会过滤路径中的测试、缓存和版本控制目录；具体规则以源码为准。重新引入其他语言属于新的架构变更，不能通过增加一个 CLI 选项或静默回退实现。
+`repos/cpp`、`outputs/cpp` 和 `results/cpp` 中的 `cpp` 是固定的现有产物命名空间，不是可切换语言参数。扫描器接受 `.c`、`.cc`、`.cpp`、`.cxx`、`.c++`、`.h`、`.hh`、`.hpp` 和 `.hxx`，具体清洗规则及排除计数以源码和 `dataset.audit.json` 为准。`repo2data --project <目录名>` 可从多项目输入根中精确选择一个或多个项目，不构成语言选择器。重新引入其他语言属于新的架构变更，不能通过增加一个 CLI 选项或静默回退实现。
 
 ## Agent 子系统
 

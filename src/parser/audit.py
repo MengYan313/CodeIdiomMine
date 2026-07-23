@@ -338,7 +338,11 @@ def _audit_source_file(
     project: str,
     file_path: Path,
 ) -> SourceEvidence:
-    source_path = file_path.relative_to(source_root).as_posix()
+    source_path = (
+        file_path.resolve(strict=True)
+        .relative_to((source_root / project).resolve(strict=True))
+        .as_posix()
+    )
     try:
         source = file_path.read_bytes()
         tree = parser.parser.parse(source)
@@ -576,7 +580,7 @@ def audit_parser(
         for file_path_value in file_paths:
             file_path = Path(file_path_value)
             evidence = _audit_source_file(parser, source_root, project, file_path)
-            source_evidence[evidence.source_path] = evidence
+            source_evidence[f"{project}\0{evidence.source_path}"] = evidence
 
     data = pd.read_pickle(dataset_path)
     candidate_stats: Dict[str, CandidateAccumulator] = {
@@ -601,19 +605,16 @@ def audit_parser(
     for _, row in data.iterrows():
         project = str(row["project"])
         for file_name, file_functions in zip(row["cppFile"], row["func_ast"]):
-            file_path = Path(str(file_name))
-            try:
-                source_path = file_path.relative_to(source_root).as_posix()
-            except ValueError:
-                source_path = file_path.as_posix()
-            dataset_files.add(source_path)
+            source_path = Path(str(file_name)).as_posix()
+            file_path = source_root / project / source_path
+            dataset_files.add(f"{project}/{source_path}")
             raw_source: Optional[bytes]
             try:
                 raw_source = file_path.read_bytes()
             except OSError:
                 raw_source = None
             offsets = _line_offsets(raw_source) if raw_source is not None else []
-            evidence = source_evidence.get(source_path)
+            evidence = source_evidence.get(f"{project}\0{source_path}")
 
             for function_ast in file_functions:
                 if not function_ast:

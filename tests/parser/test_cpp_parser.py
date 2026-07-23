@@ -72,6 +72,148 @@ class CppParserTests(unittest.TestCase):
             self.assertEqual(scanner.projects, ["sample"])
             self.assertEqual([Path(path).name for path in files[0]], ["main.cpp"])
 
+    def test_scanner_uses_segment_rules_extensions_and_safe_paths(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            project = root / "sample"
+            (project / "src" / "contest").mkdir(parents=True)
+            (project / "tests").mkdir()
+            (project / "vendor").mkdir()
+            (project / "generated").mkdir()
+            (project / "build").mkdir()
+            (project / "include").mkdir()
+            (project / "src" / "contest" / "latest.cpp").write_text(
+                "int latest() { return 1; }\n",
+                encoding="utf-8",
+            )
+            (project / "include" / "public.hh").write_text(
+                "inline int public_api() { return 2; }\n",
+                encoding="utf-8",
+            )
+            (project / "src" / "compat.c").write_text(
+                "int compat(void) { return 3; }\n",
+                encoding="utf-8",
+            )
+            (project / "src" / "value_test.cpp").write_text(
+                "int ignored_test() { return 0; }\n",
+                encoding="utf-8",
+            )
+            (project / "tests" / "ignored.cpp").write_text(
+                "int ignored_dir() { return 0; }\n",
+                encoding="utf-8",
+            )
+            (project / "vendor" / "ignored.cpp").write_text(
+                "int ignored_vendor() { return 0; }\n",
+                encoding="utf-8",
+            )
+            (project / "generated" / "ignored.cpp").write_text(
+                "int ignored_generated() { return 0; }\n",
+                encoding="utf-8",
+            )
+            (project / "build" / "ignored.cpp").write_text(
+                "int ignored_build() { return 0; }\n",
+                encoding="utf-8",
+            )
+            outside = root / "outside.hh"
+            outside.write_text("int outside() { return 0; }\n", encoding="utf-8")
+            (project / "include" / "linked.hh").symlink_to(outside)
+
+            scanner = FileScanner()
+            files = scanner.get_all_source_files(str(root))
+            relative = [
+                Path(path)
+                .resolve()
+                .relative_to(project.resolve())
+                .as_posix()
+                for path in files[0]
+            ]
+
+            self.assertEqual(
+                relative,
+                ["include/public.hh", "src/compat.c", "src/contest/latest.cpp"],
+            )
+            summary = scanner.last_scan_diagnostics["summary"]
+            self.assertGreaterEqual(summary["excluded_directory_count"], 4)
+            self.assertEqual(summary["excluded_test_file_count"], 1)
+            self.assertEqual(summary["excluded_symlink_count"], 1)
+
+    def test_repository_uses_repo_relative_posix_ids_without_basename_loss(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            project = root / "sample"
+            (project / "include").mkdir(parents=True)
+            (project / "src").mkdir()
+            (project / "include" / "same.hh").write_text(
+                "inline int header_value() { return 1; }\n",
+                encoding="utf-8",
+            )
+            (project / "src" / "same.cpp").write_text(
+                "int source_value() { return 2; }\n",
+                encoding="utf-8",
+            )
+            output = root / "dataset.pkl"
+            audit_output = root / "dataset.audit.json"
+
+            parse_repository(
+                str(root),
+                str(output),
+                str(audit_output),
+            )
+
+            data = pd.read_pickle(output)
+            self.assertEqual(
+                data.iloc[0]["cppFile"],
+                ["include/same.hh", "src/same.cpp"],
+            )
+            source_paths = [
+                function_ast[0]["source_path"]
+                for file_functions in data.iloc[0]["func_ast"]
+                for function_ast in file_functions
+            ]
+            self.assertEqual(
+                source_paths,
+                ["include/same.hh", "src/same.cpp"],
+            )
+            audit = json.loads(audit_output.read_text(encoding="utf-8"))
+            self.assertEqual(audit["scan"]["summary"]["selected_file_count"], 2)
+            self.assertEqual(
+                [record["source_path"] for record in audit["files"]],
+                ["include/same.hh", "src/same.cpp"],
+            )
+
+    def test_repository_can_select_exact_project_without_path_traversal(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            for project_name in ("alpha", "beta"):
+                project = root / project_name
+                project.mkdir()
+                (project / "main.cpp").write_text(
+                    f"int {project_name}() {{ return 1; }}\n",
+                    encoding="utf-8",
+                )
+            output = root / "alpha.pkl"
+            audit_output = root / "alpha.audit.json"
+
+            parse_repository(
+                str(root),
+                str(output),
+                str(audit_output),
+                projects=["alpha"],
+            )
+
+            data = pd.read_pickle(output)
+            self.assertEqual(data["project"].tolist(), ["alpha"])
+            audit = json.loads(audit_output.read_text(encoding="utf-8"))
+            self.assertEqual(audit["projects"], ["alpha"])
+            self.assertEqual(
+                audit["scan"]["summary"]["selected_file_count"],
+                1,
+            )
+
+            scanner = FileScanner()
+            with self.assertRaises(ValueError):
+                scanner.get_projects(str(root), ["../alpha"])
+
     def test_only_real_function_definitions_become_function_roots(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             source_path = Path(temporary_directory) / "complex.cpp"

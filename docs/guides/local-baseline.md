@@ -554,14 +554,78 @@ CLI 的 `--help`。`pip` 仅提示用户缓存目录不可写并自动禁用缓�
 缺失和诊断记录。研究稿据此把“方法无需逐仓库重建专用编译环境”纳入可复用性
 论证。此节是文档与架构决策记录，不改变上述 2026-07-23 统计值。
 
+## 2026-07-24 C++ 实验数据集冻结与 Parser 扫描治理
+
+本轮在不执行目标仓库构建、安装、代码生成、测试或程序的前提下，检查 27 个公开
+GitHub 候选：24 个新增候选和 Envoy、qBittorrent、React Native 三个原有种子。
+每个候选均以独立本地 Git 仓库固定完整 commit，并保存公开元数据和根目录许可
+文件证据。最终结论为 17 个保留、9 个条件保留、1 个淘汰，形成 26 项目正式
+数据集。Microsoft GSL 被淘汰是因为其核心公开头文件使用无扩展名命名，排除
+tests 后没有符合本轮标准扩展名合同的核心输入。
+
+Parser 修改前对全部候选运行逐文件基线，得到 11,636 个扫描文件、1,894,674
+有效代码行、139,012 个选中函数和 322,039 个候选；文件读取/Tree-sitter 建树
+成功率为 100%，但有 5 个符号链接输入、4,238 个异常文件、60,005 个 ERROR 和
+26,693 个 missing。证据位于忽略目录
+`outputs/dataset-experiment/baseline/`。
+
+基于基线证据实施以下通用修改：
+
+- 扫描扩展名补齐 `.c`、`.hh`，并保持 `.cc`、`.cpp`、`.cxx`、`.c++`、
+  `.h`、`.hpp`、`.hxx`；
+- 用目录段和文件 token 规则取代 `test` 子串过滤，确定性排除构建、缓存、
+  第三方、生成、测试、示例和基准输入；
+- 不跟随符号链接，拒绝越界路径，并把排除原因与计数写入 Parser 审计；
+- `cppFile` 与 AST `source_path` 统一为项目仓库相对 POSIX 路径；
+- `repo2data` 增加可重复的 `--project` 精确项目选择，并拒绝路径穿越。
+
+优化后正式语料包含 7,940 个核心源码文件、1,290,508 有效代码行、102,574
+个函数和 237,845 个候选，文件级解析成功率仍为 100%。异常文件降至 2,492，
+ERROR 降至 39,777，missing 降至 18,185，无函数输出文件由 3,063 降至
+1,566；最终符号链接输入、越界路径和重复仓库相对路径均为 0。可靠 AST 字节
+覆盖率由 82.13% 降至 78.52%，原因和低覆盖项目已明确记录，未通过静默删掉
+宏密集核心文件美化指标。
+
+26 个正式项目均通过标准 `repo2data` 入口生成独立四列 `dataset.pkl` 和
+`dataset.audit.json`。机器可读正式清单
+`docs/research/cpp-dataset-manifest.json` 保存完整 commit、许可证据、构建文件
+证据、稀疏范围、复现命令、基线/最终统计和产物位置；统计由
+`scripts/analyze_cpp_dataset.py` 从固定源码与实际产物重算。清单交叉校验重新
+读取 27 个本地仓库和 26 组标准 Parser 产物，结果为 0 个错误。
+
+Parser 源码指纹为
+`48064d7996bba06da13cbb83672a528ad4c50b794caef75b6fd40ae47ba288f3`。
+CLI11 和 qBittorrent 分别独立运行两次，确定性摘要逐字节一致：
+`ab02ad38b1a1a54ee29c7d665c05ee876870f385b5ba72490798f5d0e93da7fd`
+和
+`f85bc022c2612941f7c08e289979b3299fbfc34d518be2ea97235dd2aa378965`。
+
+最终验证通过：
+
+- `.venv/bin/python -m pip check`；
+- `.venv/bin/python -m compileall -q src scripts tests`；
+- `.venv/bin/python -m unittest discover -s tests -t . -v`，共 57 项；
+- `repo2data --help` 与数据集统计脚本入口；
+- 正式 manifest 交叉校验；
+- 全部纳入版本控制的 JSON 解析；
+- `git diff --check`。
+
+本轮只访问公开 GitHub 仓库与公开 API 元数据，没有下载新模型，没有调用 LLM，
+没有披露本地非公开源码，也没有暂存、提交、推送或创建 PR。完整筛选结论、逐项目
+排查和 Parser 回归分别见
+`docs/research/cpp-dataset-status-report.md`、
+`docs/research/cpp-dataset-project-audit.md` 和
+`docs/guides/cpp-dataset-parser-regression.md`。
+
 ## 当前阻碍与延期工作
 
 1. 中转端点、凭据加载、Luna 直接封装、判断和合成路径已通过九请求合成冒烟测试。完整语料的付费 Agent 评估仍有意延期，因为成本、源码披露范围和研究有效性需要单独的明确运行计划。
-2. Parser v2 已在当前三个快照上完成两次确定性全量运行，并完成两次确定性
-   model-ready 片段构建。历史 CPU UniXcoder 和 DBSCAN 产物基于旧候选；
-   新输入为 96,039 个片段，重新嵌入属于
-   新的高成本实验，应先固定语料和 profile。
-3. Baseline 实现和有界验证已获授权并完成。正式论文比较运行仍需要固定语料提交、训练/开发/测试 manifest、重复种子、完整 CIMAS token 测量，以及明确的源码披露/成本决策。
+2. Parser v2 在历史三个快照上的 96,039 个 model-ready 片段仍是旧语料证据。
+   新冻结的 26 项目数据集已完成 AST、审计和 237,845 个 Parser 候选统计，但尚未
+   执行全量 tokenizer 长度治理、UniXcoder 或 DBSCAN；这些属于新的高成本实验。
+3. Baseline 实现和有界验证已获授权并完成，固定源码 commit 与总语料 manifest
+   也已形成。正式论文比较运行仍需要冻结训练/开发/测试划分 manifest、重复种子、
+   完整 CIMAS token 测量，以及明确的源码披露/成本决策。
 4. `requirements-local.lock` 提高了可复现性；正式 `requirements.txt` 对科学计算包仍使用宽泛版本范围，但现已包含 Agent 技术栈。过时的非 C++ grammar 依赖已移除。
 5. 包预先导入导致的 CLI `runpy` 警告仍不影响运行。跨项目基础设施对齐期间，追加式运行日志器已消除早先的预先导入日志截断问题。
 

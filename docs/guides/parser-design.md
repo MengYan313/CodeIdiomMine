@@ -83,7 +83,7 @@ Tree-sitter C++ 容错 AST 与 C++ Adapter 提供必达的基础路径；高级�
 
 函数根额外保存：
 
-- 相对于解析输入根的稳定 `source_path`；
+- 相对于单个项目仓库根的稳定 POSIX `source_path`；
 - `sha256(source_path)` 生成的 `source_file_id`；
 - 原始文件内容的 `source_sha256`；
 - `mapping_version=2`、`mapping_exact=true`；
@@ -91,7 +91,7 @@ Tree-sitter C++ 容错 AST 与 C++ Adapter 提供必达的基础路径；高级�
 
 文件身份只在函数根存储一次，避免在数百万 AST 节点上重复相同字符串。候选进入嵌入阶段时会继承函数根的文件身份，因此所有下游候选都同时具有文件身份、原始字节区间和行列范围。路径移动会改变 `source_file_id`，内容变化会改变 `source_sha256`，两者分别表达位置身份和内容版本。
 
-`repo2data` 同时写出 `dataset.audit.json`，侧车 Schema 为 v2。它覆盖所有扫描文件，包括无函数文件和失败文件；主 pickle 的四列接口不变。
+`repo2data` 同时写出 `dataset.audit.json`，侧车 Schema 为 v2。它覆盖所有扫描文件，包括无函数文件和失败文件；主 pickle 的四列接口不变。四列中的 `cppFile` 与函数根 `source_path` 使用相同的项目仓库相对 POSIX 身份，不以 basename 合并同名文件。多项目输入根可用可重复的 `--project <精确目录名>` 参数限定范围，省略时仍扫描全部项目。
 
 ## 三种粒度与兼容 profile
 
