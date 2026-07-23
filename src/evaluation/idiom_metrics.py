@@ -30,6 +30,7 @@ import pandas as pd
 
 from ..common.logging import get_logger
 from ..common.node_kinds import BLOCK_KINDS, FUNCTION_KINDS, STATEMENT_KINDS
+from ..parser.candidates import QUALITY_PROFILE, SelectedCandidate, select_candidates
 
 logger = get_logger(__name__)
 
@@ -278,6 +279,74 @@ def _covered_interval_size(intervals: List[Tuple[int, int]]) -> int:
     return covered + end - start
 
 
+def _candidate_node_index(
+    func_ast: Sequence[Dict[str, Any]],
+    candidate: SelectedCandidate,
+) -> Optional[int]:
+    node_info = candidate.node_info
+    for index, value in enumerate(func_ast):
+        if value is node_info:
+            return index
+    extent = str(node_info.get("extent") or "")
+    kind = str(node_info.get("kind") or "")
+    return next(
+        (
+            index
+            for index, value in enumerate(func_ast)
+            if str(value.get("extent") or "") == extent
+            and str(value.get("kind") or "") == kind
+        ),
+        None,
+    )
+
+
+def _semantic_slice_intervals(
+    func_ast: Sequence[Dict[str, Any]],
+    node_info: Dict[str, Any],
+) -> List[Tuple[int, int]]:
+    """把连续源码切片映射为其中完整包含的 DFS AST 节点区间。"""
+    start_byte = node_info.get("start_byte")
+    end_byte = node_info.get("end_byte")
+    if not isinstance(start_byte, int) or not isinstance(end_byte, int):
+        return []
+    included = [
+        index
+        for index, value in enumerate(func_ast)
+        if isinstance(value.get("start_byte"), int)
+        and isinstance(value.get("end_byte"), int)
+        and start_byte <= int(value["start_byte"])
+        and int(value["end_byte"]) <= end_byte
+    ]
+    if not included:
+        return []
+    intervals: List[Tuple[int, int]] = []
+    run_start = included[0]
+    run_end = included[0] + 1
+    for index in included[1:]:
+        if index == run_end:
+            run_end += 1
+        else:
+            intervals.append((run_start, run_end))
+            run_start, run_end = index, index + 1
+    intervals.append((run_start, run_end))
+    return intervals
+
+
+def _quality_candidate_intervals(
+    func_ast: Sequence[Dict[str, Any]],
+    candidate: SelectedCandidate,
+) -> List[Tuple[int, int]]:
+    if candidate.origin == "semantic_def_use":
+        return _semantic_slice_intervals(
+            func_ast,
+            dict(candidate.node_info),
+        )
+    node_index = _candidate_node_index(func_ast, candidate)
+    if node_index is None:
+        return []
+    return [(node_index, _subtree_end(func_ast, node_index))]
+
+
 def compute_coverage_stats(
     idioms: List[Dict[str, Any]],
     data: pd.DataFrame,
@@ -321,22 +390,59 @@ def compute_coverage_stats(
             if not func_ast:
                 continue
             intervals: List[Tuple[int, int]] = []
-            for node_idx, node_info in enumerate(func_ast):
-                kind = str(node_info.get("kind") or "")
-                if kind not in CANDIDATE_KINDS:
-                    continue
-                if int(node_info.get("ast_num", 0) or 0) < MIN_CANDIDATE_CHILDREN:
-                    continue
-                signature = _code_signature(str(node_info.get("code_snippet") or ""))
-                if not signature:
-                    continue
-                idiom_indices = set(pattern_index.get((kind, signature), ()))
-                idiom_indices.update(pattern_index.get(("", signature), ()))
-                if not idiom_indices:
-                    continue
-                matched_idioms.update(idiom_indices)
-                intervals.append((node_idx, _subtree_end(func_ast, node_idx)))
-                match_count += 1
+            if int(func_ast[0].get("mapping_version", 0) or 0) >= 2:
+                for candidate in select_candidates(
+                    func_ast,
+                    profile=QUALITY_PROFILE,
+                ):
+                    node_info = candidate.node_info
+                    kind = str(node_info.get("kind") or "")
+                    signature = _code_signature(
+                        str(node_info.get("code_snippet") or "")
+                    )
+                    if not signature:
+                        continue
+                    idiom_indices = set(
+                        pattern_index.get((kind, signature), ())
+                    )
+                    idiom_indices.update(pattern_index.get(("", signature), ()))
+                    if not idiom_indices:
+                        continue
+                    candidate_intervals = _quality_candidate_intervals(
+                        func_ast,
+                        candidate,
+                    )
+                    if not candidate_intervals:
+                        continue
+                    matched_idioms.update(idiom_indices)
+                    intervals.extend(candidate_intervals)
+                    match_count += 1
+            else:
+                for node_idx, node_info in enumerate(func_ast):
+                    kind = str(node_info.get("kind") or "")
+                    if kind not in CANDIDATE_KINDS:
+                        continue
+                    if (
+                        int(node_info.get("ast_num", 0) or 0)
+                        < MIN_CANDIDATE_CHILDREN
+                    ):
+                        continue
+                    signature = _code_signature(
+                        str(node_info.get("code_snippet") or "")
+                    )
+                    if not signature:
+                        continue
+                    idiom_indices = set(
+                        pattern_index.get((kind, signature), ())
+                    )
+                    idiom_indices.update(pattern_index.get(("", signature), ()))
+                    if not idiom_indices:
+                        continue
+                    matched_idioms.update(idiom_indices)
+                    intervals.append(
+                        (node_idx, _subtree_end(func_ast, node_idx))
+                    )
+                    match_count += 1
 
             function_nodes = len(func_ast)
             function_covered = _covered_interval_size(intervals)

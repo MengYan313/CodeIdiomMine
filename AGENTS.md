@@ -30,6 +30,17 @@ CodeIdiomMine 用于从 C++ 仓库中挖掘重复出现的代码习语。当前�
 
 当前工程基线是仓库中的既有实现，而不是论文草案中的拟议实现。运行时和公共 CLI 有意仅支持 C++：未经用户明确授权，不得重新引入语言选择器、非 C++ 语法依赖或语言分派逻辑。除非用户明确授权范围清晰的修改，否则应保留 Tree-sitter C++ 解析器、DBSCAN 聚类、Agent 布局、数据 Schema、提示词、阈值和历史模型设置。
 
+### 零构建解析原则
+
+Parser 的长期架构不变量是：**免目标项目编译、免链接、免执行，源码可得即可解析**。本文档将其简称为零构建解析（Zero-Build Parsing, ZBP）。这里的“开箱即用”是指安装 CodeIdiomMine 自身依赖后，任意可读取的 C/C++ 源码快照都能直接进入 `源码 → AST → 基于 AST 的模式分析 → 原文片段` 主链路；它不表示项目零安装，也不保证任一抽取片段脱离上下文后可以独立编译或运行。
+
+后续 Parser 修改必须遵守以下约束：
+
+- 不得把目标仓库的 CMake/Make/Ninja 配置成功、依赖安装、代码生成、完整编译、链接、测试或程序执行设为解析前置条件，也不得为了“发现配置”而执行不可信项目脚本；
+- Tree-sitter C++ 的静态源码路径必须始终可独立产出基础 AST、诊断、原文映射和三种粒度候选；单文件异常只能被记录和降级，不能因项目不可构建而整体遗漏；
+- 已存在的 `compile_commands.json`、Clang 语义信息或可信隔离环境中的 `clang++ -fsyntax-only` 只能作为可选增强或下游模板验证。缺失或失败时必须保留零构建结果及明确能力标记，不能静默丢弃文件；
+- 论文应把 ZBP 同时解释为部署约束和方法级可复用性：解析方法无需为每个仓库复现专用构建环境，因而能迁移到宏密集、依赖不全、平台不匹配及不完整源码；不得把可选 Clang 增强写成全量语料的强制门槛。
+
 以下纳入版本控制的研究文档是必要背景资料，但不是当前实现规范：
 
 - `docs/research/01_C++代码习语挖掘研究稿.md`——拟议的 C++ 论文路线、实验、基线、消融和指标。
@@ -71,10 +82,12 @@ CodeIdiomMine 用于从 C++ 仓库中挖掘重复出现的代码习语。当前�
 
 ```bash
 .venv/bin/python -m src.parser.repo2data \
-  --input repos/cpp --output outputs/cpp/dataset.pkl
+  --input repos/cpp --output outputs/cpp/dataset.pkl \
+  --fragment-output outputs/cpp/fragments.pkl \
+  --embedding-model unixcoder --local-files-only
 
 .venv/bin/python -m src.mining.code_embedding \
-  --input outputs/cpp/dataset.pkl --output outputs/cpp/embeddings.pkl \
+  --input outputs/cpp/fragments.pkl --output outputs/cpp/embeddings.pkl \
   --model unixcoder
 
 .venv/bin/python -m src.mining.clustering \
@@ -116,6 +129,9 @@ CodeIdiomMine 用于从 C++ 仓库中挖掘重复出现的代码习语。当前�
 ## 已确认的架构与数据契约
 
 - 解析器输出 `dataset.pkl`：DataFrame 列为 `project`、`cppFile`、`func_ast`、`func_src`。`cppFile` 保留为历史 C++ 路径字段。
+- Parser 模型输入输出 `fragments.pkl`：保存 `fragment_schema_version`、目标 tokenizer、token 预算、对齐的 `fragment_src`/`fragment_info`、超限拒绝清单和降级统计。真实 embedding 不再直接读取 `dataset.pkl`。
+- Parser 映射合同为 v2：所有 AST 节点保留原始 `start_byte`、`end_byte` 和未经清洗的 `code_snippet`；函数根保存稳定文件身份、内容哈希、解析来源和可选 Def-Use 语义切片。`repo2data` 同时写出覆盖全部扫描文件的 `dataset.audit.json`，但不改变四列 pickle Schema。
+- Parser 片段构建默认使用 `quality-v2` 候选 profile，仍只输出函数、区域和语句三种粒度；局部 Def-Use 切片以区域候选和 `candidate_origin=semantic_def_use` 表示。`legacy` profile 只用于历史数据集的候选选择兼容。
 - 嵌入输出 `embeddings.pkl`：DataFrame 列为 `pros_name`、`pros_src`、`pros_emb`、`pros_info`；嵌入是位于 CPU 的 `torch.Tensor` 对象。
 - 聚类输出 `clusters.pkl`：由 `{pros_name, clusters}` 构成的列表；聚类 DataFrame 列为 `label`、`center_point`、`else_point`、`cluster_size`、`center_point_info`、`infos`、`loc_label`。
 - 判断输出 `{repo}_idiom.pkl`：记录包含 `center_point`、`info`、`cnt`、`avg_ast_num`、`loc_label`。

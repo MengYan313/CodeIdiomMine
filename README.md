@@ -8,6 +8,22 @@ CodeIdiomMine 面向 C++ 仓库提取 AST 片段，生成代码嵌入，聚类�
 
 项目已固定为仅支持 C++：解析、扫描、节点类型、嵌入和评价入口都不再接受语言参数，也不安装 Python、Java 或 JavaScript 的 Tree-sitter grammar。`repos/cpp`、`outputs/cpp` 和 `results/cpp` 作为既有 C++ 产物路径继续保留。其中 `repos/` 是 Git 忽略的本地源码输入目录，其内容不会随仓库克隆或提交。
 
+## 核心理念：源码可得即可解析
+
+CodeIdiomMine 的 Parser 遵循**零构建解析（Zero-Build Parsing, ZBP）**原则：
+对被分析的目标 C++ 项目，免编译、免链接、免执行，只要源码可读取就能直接生成
+AST、逐文件诊断、原文映射和候选片段。这使宏密集、依赖缺失、平台不匹配、
+无法复现构建环境或尚未写完整的源码仍能进入统一审计，而不会因一个构建错误使
+整个仓库消失。
+
+“开箱即用”针对的是 Parser 对输入项目的采用成本，并不等于 CodeIdiomMine
+自身无需安装依赖，也不表示每个原文片段脱离项目上下文后天然可独立编译。
+Parser 不运行目标仓库的构建脚本、包管理器、测试或二进制。现成的
+`compile_commands.json`、Clang 语义信息和可信隔离环境中的静态编译检查可以
+作为增强或下游模板验证，但缺失或失败时不能阻断 Tree-sitter 主链路，也不能
+静默删除基础候选。这个约束既是安全边界，也是论文“可复用性”的组成部分：
+被复用的不只是挖掘出的习语，还包括无需逐项目重建专用编译环境的解析方法。
+
 ## 目录结构
 
 ```text
@@ -63,11 +79,19 @@ CodeIdiomMine/
 
 ```bash
 .venv/bin/python -m src.parser.repo2data \
-  --input repos/cpp --output outputs/cpp/dataset.pkl
+  --input repos/cpp --output outputs/cpp/dataset.pkl \
+  --fragment-output outputs/cpp/fragments.pkl \
+  --embedding-model unixcoder --local-files-only
+
+.venv/bin/python -m src.parser.audit \
+  --source-root repos/cpp \
+  --dataset outputs/cpp/dataset.pkl \
+  --candidate-profile quality-v2 \
+  --output outputs/cpp/parser-audit.json
 
 .venv/bin/python -m src.mining.code_embedding \
-  --input outputs/cpp/dataset.pkl --output outputs/cpp/embeddings.pkl \
-  --model unixcoder
+  --input outputs/cpp/fragments.pkl --output outputs/cpp/embeddings.pkl \
+  --model unixcoder --candidate-profile quality-v2
 
 .venv/bin/python -m src.mining.clustering \
   --input outputs/cpp/embeddings.pkl --output outputs/cpp/clusters.pkl
@@ -80,6 +104,21 @@ CodeIdiomMine/
 
 .venv/bin/python -m src.evaluation.idiom_metrics
 ```
+
+Parser 会在 `dataset.pkl` 旁写出覆盖所有扫描文件的
+`dataset.audit.json`，其中包含 `ERROR`、missing、未覆盖源码和宏恢复证据。
+主数据集仍保持四列 Schema；AST 节点和 quality-v2 候选保留原始字节范围，
+不再删除注释或空行。长函数和区域可以额外产生局部 Def-Use 语义核心，
+但下游粒度仍只有函数、区域和语句三种。
+
+`fragments.pkl` 由 Parser 阶段针对目标 tokenizer 生成。默认 UniXcoder 总输入
+上限为 512 tokens，超长函数或区域会降级为合格区域、Def-Use 或语句，所有拒绝
+都有可追溯记录。embedding 只接受该 model-ready 产物并禁止静默截断。复杂 C++
+语法和长度治理详见
+[C++ Adapter 与模型输入治理](docs/guides/cpp-adapter-and-model-input.md)。
+设计、指标和全量结果另见
+[Parser v2 设计](docs/guides/parser-design.md)与
+[Parser 基线对比](docs/guides/parser-quality-report.md)。
 
 PKL 保持为阶段间唯一机器接口。需要人工检查时，生成全量汇总与限量 JSON 预览：
 
@@ -100,6 +139,11 @@ Agent 业务提示词和说明字段统一使用中文，代码、必要技术�
 
 - [文档索引](docs/README.md)
 - [仓库架构](docs/guides/repository-architecture.md)
+- [Parser v2 设计与使用](docs/guides/parser-design.md)
+- [C++ Adapter 与模型输入治理](docs/guides/cpp-adapter-and-model-input.md)
+- [Parser 基线与优化对比](docs/guides/parser-quality-report.md)
+- [Parser 代表性产物审计](docs/guides/parser-artifact-audit.md)
+- [Parser 风险与限制](docs/guides/parser-risks.md)
 - [评价指标规范](docs/guides/evaluation-metrics.md)
 - [baseline 复现与统一评价](docs/guides/baselines.md)
 - [两项目共享开发约定](docs/guides/shared-development-conventions.md)

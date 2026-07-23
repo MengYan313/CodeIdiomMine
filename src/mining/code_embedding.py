@@ -7,15 +7,23 @@
 
 import os
 import re
-from typing import List, Dict, Optional, Tuple
+from typing import Any, List, Dict, Mapping, Optional, Tuple
 
 import torch
-import numpy as np
 import pandas as pd
 from transformers import AutoTokenizer, AutoModel
 
-from ..common.node_kinds import BLOCK_KINDS, FUNCTION_KINDS, STATEMENT_KINDS
 from ..common.logging import get_logger
+from ..parser.candidates import (
+    QUALITY_PROFILE,
+    SUPPORTED_PROFILES,
+    select_candidates,
+)
+from ..parser.fragment_builder import (
+    FRAGMENT_SCHEMA_VERSION,
+    MODEL_INPUT_CONFIGS,
+)
+from ..parser.token_budget import TokenBudget, resolve_max_input_tokens
 
 # 创建日志记录器
 logger = get_logger(__name__)
@@ -32,25 +40,14 @@ class CodeEmbedder:
     """
     
     # 预定义模型配置
-    MODEL_CONFIGS = {
-        "codellama": {
-            "name": "codellama/CodeLlama-7b-hf",
-            "max_length": 2048,
-            "description": "CodeLLaMA 7B - 大型代码语言模型"
-        },
-        "unixcoder": {
-            "name": "microsoft/unixcoder-base",
-            "max_length": 512,
-            "description": "UniXcoder - 轻量级代码预训练模型"
-        },
-        "codebert": {
-            "name": "microsoft/codebert-base",
-            "max_length": 512,
-            "description": "CodeBERT - 基础代码预训练模型"
-        }
-    }
+    MODEL_CONFIGS = MODEL_INPUT_CONFIGS
     
-    def __init__(self, model_name: str = "unixcoder", device: Optional[str] = None):
+    def __init__(
+        self,
+        model_name: str = "unixcoder",
+        device: Optional[str] = None,
+        max_input_tokens: Optional[int] = None,
+    ):
         """
         初始化代码嵌入器
         
@@ -59,17 +56,25 @@ class CodeEmbedder:
                 - 简称："codellama", "unixcoder", "codebert"
                 - 完整 HuggingFace 模型名
             device: 设备（cuda/cpu），None 表示自动选择
+            max_input_tokens: 可选的更严格输入上限，不得超过模型配置值
         """
         # 解析模型名称
         if model_name in self.MODEL_CONFIGS:
             config = self.MODEL_CONFIGS[model_name]
             self.model_name = config["name"]
-            self.max_length = config["max_length"]
+            self.configured_max_length = int(config["max_length"])
             logger.info(f"使用预定义模型: {config['description']}")
         else:
             self.model_name = model_name
-            self.max_length = 512  # 默认长度
+            self.configured_max_length = 512
             logger.info(f"使用自定义模型: {model_name}")
+        self._requested_max_input_tokens = max_input_tokens
+        self.max_input_tokens = resolve_max_input_tokens(
+            self.configured_max_length,
+            max_input_tokens,
+        )
+        # 保留历史属性名；它现在明确表示实际允许送入模型的总 token 数。
+        self.max_length = self.max_input_tokens
         
         # 自动选择设备
         if device is None:
@@ -116,6 +121,11 @@ class CodeEmbedder:
                 logger.info(f"模型已加载到 {self.device}")
             
             self.model.eval()
+            self.token_budget = TokenBudget(
+                tokenizer=self.tokenizer,
+                model_name=self.model_name,
+                max_input_tokens=self.max_input_tokens,
+            )
             logger.info("模型加载成功")
             
         except Exception as e:
@@ -124,12 +134,33 @@ class CodeEmbedder:
             
             # 回退到 CodeBERT
             self.model_name = "microsoft/codebert-base"
-            self.max_length = 512
+            self.configured_max_length = 512
+            self.max_input_tokens = min(
+                self._requested_max_input_tokens or 512,
+                self.configured_max_length,
+            )
+            self.max_length = self.max_input_tokens
             self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
             self.model = AutoModel.from_pretrained(self.model_name)
             self.model.to(self.device)
             self.model.eval()
+            self.token_budget = TokenBudget(
+                tokenizer=self.tokenizer,
+                model_name=self.model_name,
+                max_input_tokens=self.max_input_tokens,
+            )
             logger.info("备选模型 CodeBERT 加载成功")
+
+    def get_token_count(self, code_snippet: str) -> int:
+        """返回实际 tokenizer 生成的总输入长度（含特殊 token）。"""
+        return self.token_budget.count(code_snippet)
+
+    def fits_token_budget(
+        self,
+        snippet_or_node: str | Mapping[str, Any],
+    ) -> bool:
+        """判断片段能否在不截断的情况下送入当前模型。"""
+        return self.token_budget.fits(snippet_or_node)
     
     def get_embedding(self, code_snippet: str) -> torch.Tensor:
         """
@@ -160,6 +191,9 @@ class CodeEmbedder:
             index for index, snippet in enumerate(code_snippets)
             if snippet and snippet.strip()
         ]
+        self.token_budget.validate(
+            [code_snippets[index] for index in nonempty_indices]
+        )
 
         for index, snippet in enumerate(code_snippets):
             if not snippet or not snippet.strip():
@@ -176,9 +210,8 @@ class CodeEmbedder:
             inputs = self.tokenizer(
                 batch_snippets,
                 return_tensors="pt",
-                truncation=True,
+                truncation=False,
                 padding=True,
-                max_length=self.max_length
             )
             inputs = {key: value.to(device) for key, value in inputs.items()}
 
@@ -232,7 +265,10 @@ def get_pros_src_and_embedding(
     min_nodes: int = 10,
     min_ast_num: int = 5,
     min_project_size: int = 1000,
-    batch_size: int = 8
+    batch_size: int = 8,
+    candidate_profile: str = QUALITY_PROFILE,
+    max_regions_per_function: int = 2,
+    max_statements_per_function: int = 2,
 ) -> Tuple[List[str], List[List[str]], List[List[torch.Tensor]], List[List[List]]]:
     """
     从 AST 数据中提取代码片段并生成嵌入
@@ -244,12 +280,27 @@ def get_pros_src_and_embedding(
         min_ast_num: 节点的最小子节点数量阈值（过滤太简单的代码片段）
         min_project_size: 项目的最小代码片段数量阈值
         batch_size: 模型批量推理大小
+        candidate_profile: ``quality-v2`` 或兼容旧行为的 ``legacy``
+        max_regions_per_function: quality-v2 中每个函数的基础区域候选上限
+        max_statements_per_function: quality-v2 中每个函数的语句候选上限
         
     Returns:
         (pros_name, pros_src, pros_emb, pros_info) 元组
     """
+    if hasattr(embedder, "token_budget"):
+        raise ValueError(
+            "真实 embedding 输入必须先由 src.parser.fragment_builder "
+            "生成 model-ready 片段；embedding 阶段不再负责超长降级"
+        )
     logger.info("开始提取 C++ 代码片段并生成嵌入")
-    logger.info(f"过滤条件: min_nodes={min_nodes}, min_ast_num={min_ast_num}, min_project_size={min_project_size}")
+    logger.info(
+        "过滤条件: min_nodes=%s, min_ast_num=%s, min_project_size=%s, "
+        "candidate_profile=%s",
+        min_nodes,
+        min_ast_num,
+        min_project_size,
+        candidate_profile,
+    )
     
     projects = data['project']
     files = data['cppFile']
@@ -263,42 +314,45 @@ def get_pros_src_and_embedding(
         logger.info(f"处理项目 [{i+1}/{len(asts)}]: {pro_name}")
         
         pro_src, pro_info = [], []
+        seen_source_candidates = set()
         
         for j, file_data in enumerate(project_data):
             file_name = files[i][j]
             logger.info(f"  处理文件 [{j+1}/{len(project_data)}]: {os.path.basename(file_name)}")
             
-            for k, func_data in enumerate(file_data):
-                if len(func_data) < min_nodes:
-                    continue
-                
-                extent_valid = "0-0-0-0"
-                extent_root = ""
-                
-                for l, node_info in enumerate(func_data):
-                    code_snippet = node_info.get("code_snippet", "")
-                    kind = node_info.get("kind", "")
-                    extent = node_info.get("extent", "")
-                    ast_num = node_info.get("ast_num", 0)
-                    
-                    if l == 0:
-                        extent_root = extent
-                    
-                    # 跳过空的代码片段或子节点数量太少的节点
-                    if not code_snippet or code_snippet == "" or ast_num < min_ast_num:
+            for func_data in file_data:
+                for candidate in select_candidates(
+                    func_data,
+                    profile=candidate_profile,
+                    min_nodes=min_nodes,
+                    min_ast_num=min_ast_num,
+                    max_regions_per_function=max_regions_per_function,
+                    max_statements_per_function=max_statements_per_function,
+                ):
+                    node_info = candidate.node_info
+                    code_snippet = str(node_info.get("code_snippet") or "")
+                    extent = str(node_info.get("extent") or "")
+                    source_file_id = str(
+                        node_info.get("source_file_id") or file_name
+                    )
+                    deduplication_key = (
+                        source_file_id,
+                        extent,
+                        candidate.level,
+                        candidate.origin,
+                    )
+                    if deduplication_key in seen_source_candidates:
                         continue
-                    
-                    # 处理函数和块级别的节点
-                    if kind in FUNCTION_KINDS or kind in BLOCK_KINDS:
-                        pro_src.append(code_snippet)
-                        pro_info.append([pro_name, file_name, extent_root, node_info])
-                    
-                    # 处理语句级别的节点（需要检查是否嵌套）
-                    elif kind in STATEMENT_KINDS:
-                        if not is_within_extent(extent_valid, extent):
-                            extent_valid = extent
-                            pro_src.append(code_snippet)
-                            pro_info.append([pro_name, file_name, extent_root, node_info])
+                    seen_source_candidates.add(deduplication_key)
+                    pro_src.append(code_snippet)
+                    pro_info.append(
+                        [
+                            pro_name,
+                            file_name,
+                            candidate.function_extent,
+                            node_info,
+                        ]
+                    )
         
         logger.info(f"  项目 {pro_name}: {len(pro_src)} 个代码片段")
         
@@ -319,6 +373,83 @@ def get_pros_src_and_embedding(
             logger.warning(f"  项目 {pro_name} 跳过（代码片段数 {len(pro_src)} < {min_project_size}）")
     
     logger.info(f"完成处理，共 {len(pros_name)} 个项目符合条件")
+    return pros_name, pros_src, pros_emb, pros_info
+
+
+def get_fragment_src_and_embedding(
+    fragments: pd.DataFrame,
+    embedder: CodeEmbedder,
+    *,
+    min_project_size: int = 1000,
+    batch_size: int = 8,
+    candidate_profile: str = QUALITY_PROFILE,
+) -> Tuple[List[str], List[List[str]], List[List[torch.Tensor]], List[List[List]]]:
+    """只嵌入 Parser 已完成降级的 model-ready 片段。"""
+    required = {
+        "project",
+        "fragment_schema_version",
+        "candidate_profile",
+        "model_name",
+        "max_input_tokens",
+        "fragment_src",
+        "fragment_info",
+    }
+    missing = sorted(required - set(fragments.columns))
+    if missing:
+        raise ValueError(
+            "输入不是 Parser model-ready 片段产物，缺少列: "
+            + ", ".join(missing)
+        )
+
+    pros_name: List[str] = []
+    pros_src: List[List[str]] = []
+    pros_emb: List[List[torch.Tensor]] = []
+    pros_info: List[List[List]] = []
+    for row_index in range(len(fragments)):
+        row = fragments.iloc[row_index]
+        schema_version = int(row["fragment_schema_version"])
+        if schema_version != FRAGMENT_SCHEMA_VERSION:
+            raise ValueError(
+                f"不支持的 fragment_schema_version: {schema_version}"
+            )
+        artifact_profile = str(row["candidate_profile"])
+        if artifact_profile != candidate_profile:
+            raise ValueError(
+                "片段 profile 与请求不一致："
+                f"{artifact_profile} != {candidate_profile}"
+            )
+        artifact_model = str(row["model_name"])
+        artifact_budget = int(row["max_input_tokens"])
+        if artifact_model != embedder.model_name:
+            raise ValueError(
+                "Parser 片段 tokenizer 与 embedding 模型不一致："
+                f"{artifact_model} != {embedder.model_name}"
+            )
+        if artifact_budget != embedder.max_input_tokens:
+            raise ValueError(
+                "Parser 片段 token 预算与 embedding 配置不一致："
+                f"{artifact_budget} != {embedder.max_input_tokens}"
+            )
+        sources = list(row["fragment_src"])
+        infos = list(row["fragment_info"])
+        if len(sources) != len(infos):
+            raise ValueError("fragment_src 与 fragment_info 长度不一致")
+        # 这里只做防御性合同校验；发现异常即失败，不在 embedding 阶段切分。
+        embedder.token_budget.validate(sources)
+        project = str(row["project"])
+        if len(sources) < min_project_size:
+            logger.warning(
+                "项目 %s 跳过（model-ready 片段数 %s < %s）",
+                project,
+                len(sources),
+                min_project_size,
+            )
+            continue
+        embeddings = embedder.get_embeddings(sources, batch_size=batch_size)
+        pros_name.append(project)
+        pros_src.append(sources)
+        pros_emb.append(embeddings)
+        pros_info.append(infos)
     return pros_name, pros_src, pros_emb, pros_info
 
 
@@ -366,18 +497,26 @@ def generate_embeddings(
     model_name: str = "unixcoder",
     device: Optional[str] = None,
     min_project_size: int = 100,  # 降低测试阈值
-    batch_size: int = 8
+    batch_size: int = 8,
+    candidate_profile: str = QUALITY_PROFILE,
+    max_regions_per_function: int = 2,
+    max_statements_per_function: int = 2,
+    max_input_tokens: Optional[int] = None,
 ):
     """
     生成代码嵌入的主函数
     
     Args:
-        input_file: 输入的 AST 数据文件路径
+        input_file: Parser 生成的 model-ready fragments.pkl
         output_file: 输出的嵌入数据文件路径
         model_name: 模型名称（"codellama", "unixcoder", "codebert" 或完整模型名）
         device: 设备（cuda/cpu）
         min_project_size: 项目最小代码片段数量（测试时可以设置较小值）
         batch_size: 模型批量推理大小
+        candidate_profile: 候选选择 profile
+        max_regions_per_function: 兼容参数；切分已在 Parser 阶段完成
+        max_statements_per_function: 兼容参数；切分已在 Parser 阶段完成
+        max_input_tokens: 可选的更严格模型输入 token 上限
     """
     logger.info("=" * 60)
     logger.info("代码嵌入生成")
@@ -390,15 +529,20 @@ def generate_embeddings(
     logger.info(f"数据列: {data.columns.tolist()}")
     
     # 初始化嵌入器
-    embedder = CodeEmbedder(model_name=model_name, device=device)
+    embedder = CodeEmbedder(
+        model_name=model_name,
+        device=device,
+        max_input_tokens=max_input_tokens,
+    )
     
-    # 生成嵌入
+    # 只消费 Parser 已完成长度降级的片段，不再从 AST 临时选取或截断。
     logger.info("开始生成嵌入...")
-    pros_name, pros_src, pros_emb, pros_info = get_pros_src_and_embedding(
+    pros_name, pros_src, pros_emb, pros_info = get_fragment_src_and_embedding(
         data,
         embedder,
         min_project_size=min_project_size,
-        batch_size=batch_size
+        batch_size=batch_size,
+        candidate_profile=candidate_profile,
     )
     
     # 保存结果
@@ -413,8 +557,8 @@ def main():
     parser = argparse.ArgumentParser(description='生成代码嵌入')
     parser.add_argument(
         '--input', '-i',
-        default='outputs/cpp/dataset.pkl',
-        help='输入的 AST 数据文件路径'
+        default='outputs/cpp/fragments.pkl',
+        help='Parser 生成的 model-ready 片段文件'
     )
     parser.add_argument(
         '--output', '-o',
@@ -443,6 +587,30 @@ def main():
         default=8,
         help='模型批量推理大小（默认: 8）'
     )
+    parser.add_argument(
+        '--candidate-profile',
+        choices=SUPPORTED_PROFILES,
+        default=QUALITY_PROFILE,
+        help='校验 Parser 片段产物的候选 profile（默认: quality-v2）',
+    )
+    parser.add_argument(
+        '--max-regions-per-function',
+        type=int,
+        default=2,
+        help='兼容旧命令；model-ready 片段已在 Parser 阶段确定',
+    )
+    parser.add_argument(
+        '--max-statements-per-function',
+        type=int,
+        default=2,
+        help='兼容旧命令；model-ready 片段已在 Parser 阶段确定',
+    )
+    parser.add_argument(
+        '--max-input-tokens',
+        type=int,
+        default=None,
+        help='可选的更严格总 token 上限；只能小于等于模型配置值',
+    )
     
     args = parser.parse_args()
     
@@ -452,13 +620,17 @@ def main():
         model_name=args.model,
         device=args.device,
         min_project_size=args.min_project_size,
-        batch_size=args.batch_size
+        batch_size=args.batch_size,
+        candidate_profile=args.candidate_profile,
+        max_regions_per_function=args.max_regions_per_function,
+        max_statements_per_function=args.max_statements_per_function,
+        max_input_tokens=args.max_input_tokens,
     )
 
 
 # 模块运行命令（从项目根目录运行）：
-# 运行示例：python -m src.mining.code_embedding --input outputs/cpp/dataset.pkl --output outputs/cpp/embeddings.pkl --model unixcoder
-# 后台运行示例：nohup python -m src.mining.code_embedding --input outputs/cpp/dataset.pkl --output outputs/cpp/embeddings.pkl --model unixcoder > logs/code_embedding.log 2>&1 &
+# 运行示例：python -m src.mining.code_embedding --input outputs/cpp/fragments.pkl --output outputs/cpp/embeddings.pkl --model unixcoder
+# 后台运行示例：nohup python -m src.mining.code_embedding --input outputs/cpp/fragments.pkl --output outputs/cpp/embeddings.pkl --model unixcoder > logs/code_embedding.log 2>&1 &
 
 if __name__ == "__main__":
     main()

@@ -4,6 +4,23 @@ CodeIdiomMine 从 C++ 仓库中提取候选 AST 片段，经代码嵌入和 DBSC
 
 本文描述当前实现。论文研究路线位于 `docs/research/`，不作为现有代码必须满足的规格。
 
+## 架构不变量：零构建解析
+
+Parser 的固定入口合同是：**免目标项目编译、免链接、免执行，源码可得即可解析**。
+目标仓库可以只是源码快照，不需要准备可工作的构建目录、第三方依赖、生成文件、
+工具链或运行环境。Tree-sitter C++ 路径独立完成 AST 构建、异常与覆盖统计、C++
+Adapter 恢复、片段分析和原文映射；一个文件异常不会终止其他文件。
+
+这一定义只约束被分析项目。CodeIdiomMine 自身仍需安装文档所列 Python 依赖，
+抽取出的原文片段也可能依赖其所在作用域。已有编译数据库或 Clang 能力可以作为
+可选语义增强，可信隔离环境中的静态编译可以验证阶段3/4模板，但二者都不能成为
+Parser 基础结果的门禁。任何后端失败都应以能力掩码、诊断或降级记录显式呈现，
+不能把“项目不可完整构建”转换成“项目没有候选”。
+
+该不变量使解析器本身成为可迁移的软件复用能力：面对不同构建系统、平台、宏环境
+和依赖完整度时，通用 AST 操作与 C++ Adapter 仍能按同一合同工作，而无需为每个
+仓库开发一次性构建集成。
+
 ## 运行约定
 
 - 从仓库根目录运行所有命令。
@@ -18,8 +35,8 @@ CodeIdiomMine 从 C++ 仓库中提取候选 AST 片段，经代码嵌入和 DBSC
 | 路径 | 职责 |
 |---|---|
 | `src/common/` | 统一日志、LLM 配置兼容导出与 C++ 函数、块、语句节点类型集合 |
-| `src/parser/` | C++ 文件扫描、Tree-sitter C++ 初始化、AST 与源码片段提取 |
-| `src/mining/` | 预训练模型嵌入、DBSCAN 聚类和可选贝叶斯调参 |
+| `src/parser/` | 通用 Tree-sitter 操作、C++ Adapter、异常/宏恢复、原文映射、Def-Use、目标 tokenizer 长度治理及 model-ready 片段 |
+| `src/mining/` | 对 Parser 已准备片段执行预训练模型嵌入、DBSCAN 聚类和可选贝叶斯调参 |
 | `src/agents/` | 通用 AutoGen 基类，以及习语判断、规划、代码组装与合成后再判断 |
 | `src/evaluation/` | 固定评价指标、三条 baseline、统一产物/指标合同、按仓库与全局聚合及明确标注的离线模拟验证 |
 | `src/llm/` | 两项目统一的模型分档、`.env`、AutoGen 客户端、JSON schema/单次修复与轻量对话封装 |
@@ -31,6 +48,9 @@ CodeIdiomMine 从 C++ 仓库中提取候选 AST 片段，经代码嵌入和 DBSC
 ```text
 repos/cpp/<project>/...
   -> outputs/cpp/dataset.pkl
+       \-> outputs/cpp/dataset.audit.json  # 全扫描文件异常与恢复侧车
+  -> outputs/cpp/fragments.pkl             # Parser 长度降级后的模型输入
+       \-> outputs/cpp/token-length-audit.json
   -> outputs/cpp/embeddings.pkl
   -> outputs/cpp/clusters.pkl
        \-> outputs/cpp/readables/{summary,preview,top100}.json  # 可再生成的分析视图
@@ -39,7 +59,9 @@ repos/cpp/<project>/...
   -> results/cpp/eval.json
 ```
 
-- `dataset.pkl`：DataFrame 列为 `project`、`cppFile`、`func_ast`、`func_src`。`cppFile` 是保留的数据契约字段。
+- `dataset.pkl`：DataFrame 列为 `project`、`cppFile`、`func_ast`、`func_src`。`cppFile` 是保留的数据契约字段。映射 v2 为每个节点保存原始字节范围和原文，为函数根保存文件身份、内容哈希、解析来源和可选语义切片。
+- `dataset.audit.json`：Parser 侧车 Schema v2，覆盖所有扫描文件，包括无函数和失败文件；记录 `ERROR`、missing、未覆盖区间、宏影子恢复和函数范围。它是审计证据，不是下一阶段输入。
+- `fragments.pkl`：Parser 片段 Schema v1；保存目标 tokenizer、token 预算、`quality-v2` 原文片段、既有 `fragment_info` 映射结构、超限拒绝清单和降级统计。embedding 的规范输入是该产物。
 - `embeddings.pkl`：DataFrame 列为 `pros_name`、`pros_src`、`pros_emb`、`pros_info`；嵌入以 CPU `torch.Tensor` 保存。
 - `clusters.pkl`：`list[{pros_name, clusters}]`；簇表包含 `label`、`center_point`、`else_point`、`cluster_size`、`center_point_info`、`infos`、`loc_label`。
 - `{repo}_idiom.pkl`：包含 `center_point`、与代表代码一致的 `info`、完整簇证据 `source_infos`、`cnt`、兼容字段 `avg_ast_num`、完整子树统计 `avg_subtree_size` 和 `loc_label`。
@@ -50,7 +72,20 @@ repos/cpp/<project>/...
 
 三条正式 baseline 分别由 `haggis_cpp.py`、`llm_direct_baseline.py` 和 `rules_embedding_baseline.py` 生成与判断阶段兼容的 `*_idiom.pkl`。`baseline_common.py` 维护公共记录与九指标名单，`baseline_validation.py` 拒绝 mock/不完整证据并调用现有评价器。方法定义、算法适配边界和完整命令见[Baseline 复现](baselines.md)。
 
-这些 pickle schema 是阶段间接口。`source_infos` 和 `avg_subtree_size` 是为可复现评价增加的向后兼容证据字段；旧产物缺少它们时，评估器退回代表实例和数据集定位。其他任务不得顺手改变字段或嵌套层级。
+这些 pickle schema 是阶段间接口。Parser v2 不改变四列外层 Schema，
+并保留历史 `extent` 和 `ast_num`；`mapping_version=2`、字节范围、文件身份、
+`subtree_size` 和 `candidate_origin` 是向后兼容证据字段。Parser 片段构建默认
+使用 `quality-v2`，也可显式用 `legacy` 复查历史选择规则；真实 embedding
+不再直接从四列 AST 数据集临时选择或截断候选。评价器自动识别 v2，并把
+`semantic_slice` 的原始字节范围映射回 AST 节点；旧数据仍使用历史规则。
+`source_infos` 和 `avg_subtree_size` 是为可复现评价增加的向后兼容证据字段；
+旧产物缺少它们时，评估器退回代表实例和数据集定位。其他任务不得顺手改变字段
+或嵌套层级。
+
+Parser 的恢复、映射、候选 profile 和 Def-Use 算法见
+[Parser v2 设计](parser-design.md)，全量证据见
+[Parser 基线与优化对比](parser-quality-report.md)。复杂 C++ 节点策略、宏边界和
+Parser 长度降级见[C++ Adapter 与模型输入治理](cpp-adapter-and-model-input.md)。
 
 `src.utils.export_artifacts` 不改变上述接口：PKL 保留完整嵌套 AST、CPU tensor 和簇成员，JSON 只作为可重新生成的人工分析投影。每阶段的 `*.summary.json` 统计全量输入；`dataset.preview.json` 和 `embeddings.preview.json` 默认各取前 100 条，`clusters.top100.json` 默认按项目分别取簇大小 Top100。真实 Agent 运行后还可按需导出 `judgment` 和 `synthesis` 的摘要及前 100 条。预览中的长源码会显式截断，嵌入只展示形状、范数和向量头部，因此这些 JSON 不得回流为下一阶段输入，也不得作为 Haggis、LLM-Direct 或 CIMAS-CPP 的产物截断清单。
 
@@ -59,7 +94,7 @@ repos/cpp/<project>/...
 项目不再提供语言扩展点：
 
 1. `src/common/node_kinds.py` 直接导出 C++ 节点集合，不维护语言映射；
-2. `src/parser/ast_parser.py` 固定加载 `tree-sitter-cpp`；
+2. `src/parser/ast_parser.py` 固定装配 `src/parser/cpp_adapter.py`，Adapter 固定加载 `tree-sitter-cpp`；
 3. `src/parser/file_scanner.py` 固定扫描 C/C++ 扩展名；
 4. parser、embedding 和 evaluation CLI 均无 `--language` 参数。
 

@@ -2,11 +2,18 @@
 
 from importlib import import_module
 
-__all__ = ['ASTParser', 'FileScanner', 'parse_repository', 'read_data']
+__all__ = [
+    'ASTParser',
+    'FileScanner',
+    'build_fragment_file',
+    'parse_repository',
+    'read_data',
+]
 
 _EXPORTS = {
     "ASTParser": (".ast_parser", "ASTParser"),
     "FileScanner": (".file_scanner", "FileScanner"),
+    "build_fragment_file": (".fragment_builder", "build_fragment_file"),
     "parse_repository": (".repo2data", "parse_repository"),
     "read_data": (".repo2data", "read_data"),
 }

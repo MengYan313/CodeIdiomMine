@@ -20,7 +20,7 @@
 .venv/bin/python -m unittest discover -s tests -t . -v
 ```
 
-测试覆盖 C++ 节点集合、扫描与 AST 提取、嵌入辅助函数、DBSCAN schema、Agent 确定性门限、评价辅助函数、LLM 消息构建、JSON schema/单次修复和可读产物导出。默认测试不得下载模型或调用外部 LLM。
+测试覆盖 C++ Adapter、预处理续行遮蔽、扫描与 AST 提取、Parser token 预算与超长函数降级、embedding 合同、DBSCAN schema、Agent 确定性门限、评价辅助函数、LLM 消息构建、JSON schema/单次修复和可读产物导出。默认测试使用假 tokenizer，不得下载模型或调用外部 LLM。
 
 ## 3. 导入和帮助入口
 
@@ -28,6 +28,9 @@
 .venv/bin/python -c "import src.common, src.parser, src.mining, src.agents, src.evaluation, src.llm, src.utils"
 
 .venv/bin/python -m src.parser.repo2data --help
+.venv/bin/python -m src.parser.audit --help
+.venv/bin/python -m src.parser.fragment_builder --help
+.venv/bin/python -m src.parser.token_length_audit --help
 .venv/bin/python -m src.mining.code_embedding --help
 .venv/bin/python -m src.mining.clustering --help
 .venv/bin/python -m src.agents.idiom_judgement --help
@@ -47,10 +50,50 @@ parser、embedding 和 evaluation 的帮助输出不应出现 `--language`；`AS
 ```bash
 .venv/bin/python -m src.parser.repo2data \
   --input /path/to/minimal/repos \
-  --output outputs/smoke/cpp/dataset.pkl
+  --output outputs/smoke/cpp/dataset.pkl \
+  --fragment-output outputs/smoke/cpp/fragments.pkl \
+  --embedding-model unixcoder \
+  --local-files-only
 ```
 
 验证输出是包含 `project`、`cppFile`、`func_ast`、`func_src` 的 DataFrame，并确认项目、文件和函数数量符合输入。
+
+同时检查同目录的 `dataset.audit.json`：
+
+- `summary.scanned_file_count` 等于扫描器输入数；
+- 无函数和解析失败文件仍出现在 `files`；
+- 每个异常都有原始字节范围；
+- `recovery.used` 为真时保留原始树和影子树两组统计；
+- 函数根的 `code_snippet` 等于原始 `[start_byte, end_byte)`。
+
+对同一输入运行两次后执行可重复审计：
+
+```bash
+.venv/bin/python -m src.parser.audit \
+  --source-root /path/to/minimal/repos \
+  --dataset outputs/smoke/cpp/dataset.pkl \
+  --repeat-dataset outputs/smoke/cpp/dataset-repeat.pkl \
+  --candidate-profile quality-v2 \
+  --output outputs/smoke/cpp/parser-audit.json
+```
+
+要求 `performance.byte_identical_repeat=true`，AST 和候选
+`exact_mapping_rate=1.0`。合成样本应覆盖模板、Concept、Lambda、复杂声明、
+条件编译和未闭合函数；具体断言见 `tests/parser/test_cpp_parser.py`。
+
+在真实 tokenizer 已缓存时，检查 Parser 长度产物：
+
+```bash
+.venv/bin/python -m src.parser.token_length_audit \
+  --dataset outputs/smoke/cpp/dataset.pkl \
+  --output outputs/smoke/cpp/token-length-audit.json \
+  --model unixcoder --local-files-only
+```
+
+要求 `fragments.pkl` 的 `decision_stage=parser`，每条
+`length_control.token_count <= max_input_tokens`，`fragment_src` 与
+`fragment_info` 数量一致，所有 `fragment_rejections` 都具有文件身份、范围和
+拒绝理由。相同输入重复构建的 pickle SHA-256 必须一致。
 
 ## 5. 嵌入与聚类
 
@@ -59,9 +102,10 @@ UniXcoder 首次下载在当前依赖栈约占 738 MB。确认网络、磁盘和
 ```bash
 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
 .venv/bin/python -m src.mining.code_embedding \
-  --input outputs/smoke/cpp/dataset.pkl \
+  --input outputs/smoke/cpp/fragments.pkl \
   --output outputs/smoke/cpp/embeddings.pkl \
-  --model unixcoder --device cpu --min-project-size 1 --batch-size 8
+  --model unixcoder --device cpu --min-project-size 1 --batch-size 8 \
+  --candidate-profile quality-v2
 
 .venv/bin/python -m src.mining.clustering \
   --input outputs/smoke/cpp/embeddings.pkl \
@@ -70,7 +114,12 @@ HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
 
 先验证默认 DBSCAN。`--optimize` 会对每个处理项目进行 50 次贝叶斯优化调用，不属于低成本冒烟检查。
 
-嵌入默认按 8 段批量推理，并按源码长度临时分组以减少 padding；结果会写回原始下标，仍保持每段 `(1, hidden_size)` CPU tensor、候选顺序和 pickle schema。内存受限时可减小 `--batch-size`，对照单段路径时可设为 `1`。
+嵌入默认按 8 段批量推理，并按源码长度临时分组以减少 padding；结果会写回原始下标，仍保持每段 `(1, hidden_size)` CPU tensor、候选顺序和 pickle schema。内存受限时可减小 `--batch-size`，对照单段路径时可设为 `1`。tokenizer 使用 `truncation=False`；超限、模型名不一致或预算不一致必须失败，不能在此阶段重新切分。
+
+quality-v2 的区域、语句和 Def-Use 选择发生在 Parser 片段构建阶段；历史数据集
+对照在 `src.parser.fragment_builder` 使用 `--candidate-profile legacy`。
+embedding 的同名参数只校验产物 profile，不重新选择候选。运行完整嵌入前必须先
+检查 Parser token 审计，因为当前真实语料共有 96,039 个 model-ready 候选。
 
 ## 6. 可读产物导出
 
@@ -113,7 +162,7 @@ Agent 结果存在后可运行 `--result-dir results/cpp --stages judgment synth
 .venv/bin/python -m src.evaluation.idiom_metrics
 ```
 
-默认模式是留一项目：当前项目为测试集，其他项目产出的同一个去重习语集合同时用于 IC 与 ISP。当前未参数化的候选通过保留关键字/运算符、抽象标识符和字面量的结构化词法签名匹配，并要求候选 AST 节点类型一致。`IC_macro` 是函数覆盖率宏平均，`IC_micro` 是节点覆盖率微平均，最终 `IC=(IC_macro+IC_micro)/2`；F1 使用最终 IC。习语库结构另按仓库报告习语种类数、平均聚类簇大小、平均跨文件支持数和 AvgAST。
+默认模式是留一项目：当前项目为测试集，其他项目产出的同一个去重习语集合同时用于 IC 与 ISP。当前未参数化的候选通过保留关键字/运算符、抽象标识符和字面量的结构化词法签名匹配，并要求候选 AST 节点类型一致。v2 的 `semantic_slice` 按显式字节范围映射回其中完整包含的 DFS AST 节点；历史数据仍走旧候选路径。`IC_macro` 是函数覆盖率宏平均，`IC_micro` 是节点覆盖率微平均，最终 `IC=(IC_macro+IC_micro)/2`；F1 使用最终 IC。习语库结构另按仓库报告习语种类数、平均聚类簇大小、平均跨文件支持数和 AvgAST。
 
 最终指标的分类理由、完整公式、全部成员计入规则、仓库宏平均与全局汇总方式、空分母处理及结论边界统一见[评价指标规范](evaluation-metrics.md)。本节只说明如何运行评价，不定义第二套口径。
 

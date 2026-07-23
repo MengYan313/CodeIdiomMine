@@ -222,7 +222,12 @@ repos/cpp/<project>/...
 | react-native | 1,415 | 1,149 | 6,484 | 716,154 | 742 | 3,062 |
 | 合计 | 4,804 | 4,445 | 28,495 | 4,449,866 | 5,185 | 21,741 |
 
-所有提取的函数源码均非空。`ERROR` 节点约占遍历节点总数的 0.12%，因此无需修改解析规则。生成的 `outputs/cpp/dataset.pkl` 具有要求的 `(3, 4)` DataFrame Schema，大小为 547,821,374 字节。
+所有提取的函数源码均非空。当时只按已保存函数 AST 统计到约 0.12% 的
+`ERROR`，并据此暂定无需修改解析规则。2026-07-23 的全源文件字节覆盖审计发现，
+旧函数根混入类、声明器和模板壳，且未入数据集的源码异常没有进入这个分母；
+因此该历史结论已由下文 Parser v2 基线取代。生成的
+`outputs/cpp/dataset.pkl` 具有要求的 `(3, 4)` DataFrame Schema，大小为
+547,821,374 字节。
 
 CPU 串行基准估算处理 21,741 个片段约需 20 分钟，因此新增保持 Schema 的批处理路径 `CodeEmbedder.get_embeddings`：按相近源码长度分组以减少 padding，恢复原始顺序，并为每个片段保留一个 `(1, hidden_size)` CPU tensor。批大小 8 将采样吞吐从约 18～26 片段/秒提高到约 41 片段/秒。真实单条/批量比较通过 `torch.allclose(atol=1e-5, rtol=1e-4)`；既有 `get_embedding` API 以及只实现该 API 的测试替身仍受支持。
 
@@ -444,7 +449,7 @@ Haggis-CPP 有界冒烟测试读取真实当前 AST 数据集，但将每个项�
 
 以下差异是背景记录，不是应自动修复的当前缺陷：
 
-- 当前代码仅支持 C++，与研究语言边界一致，但仍只使用 Tree-sitter；拟议实证研究以 Clang 为主、Tree-sitter 为后备。
+- 当前代码仅支持 C++，与研究语言边界一致，并以 Tree-sitter/C++ Adapter 实现零构建基础路径；2026-07-24 冻结后的拟议实证研究只把 Clang 作为安全编译信息可得子集上的可选增强。
 - 当前提取在大小/子节点阈值约束下选择函数、块和语句 AST 节点。它没有实现拟议的固定三层加 L-CSDC 双轨、能力 mask、compile database 处理或依赖元数据。
 - 当前嵌入仅为预训练模型输出的 mean pooling，没有 AST 结构向量或可选依赖摘要。
 - 当前聚类使用带可选贝叶斯调参的 DBSCAN，而不是按来源/粒度分层的拟议 HDBSCAN。
@@ -466,10 +471,96 @@ Haggis-CPP 有界冒烟测试读取真实当前 AST 数据集，但将每个项�
 - 共享规则纳入 `docs/guides/shared-development-conventions.md` 的版本控制；`repos/`、`outputs/`、`results/`、`logs/`、`tests/` 和 `docs/` 在两个仓库中具有相同语义职责。
 - 变更后验证通过 `pip check`、`src/tests/scripts` 的 `compileall`、全部 25 项离线测试和 13 文件跨仓库哈希检查。没有模型下载或 LLM 请求。
 
+## 2026-07-23 Parser v2 全量基线与优化
+
+对相同三个项目和 4,804 个扫描文件，在修改前后分别完整运行 Parser 两次。
+基线两次 SHA-256 均为
+`05acec5d266812793c78f436a1c4fee0b50c1ed7c3241aed0d0ab8269336da14`；
+v2 两次均为
+`33cfb3224e295ba2564a3ca807da410bf9d71bfc04cf7188ae8e57a264ff9f30`。
+
+全源文件审计得到 4,804/4,804 读取与解析成功、4,920,509 个 AST 节点、
+11,376 个 `ERROR`、2,261 个 missing、44,765 个预处理节点和
+98.0380% 的非空白字节可靠覆盖率。390,243 个未可靠覆盖字节及其
+45,201 个连续区间均写入审计，不再因文件无函数而被排除。
+
+Parser v2 的主要结果：
+
+- 函数根由旧 28,495 个增加为 33,720 个；旧根只有 19,421 个是实际
+  `function_definition`，v2 为 33,705 个真实定义和 15 个显式
+  `recovered_function`；
+- 189 个文件启用等长预处理影子，相关文件的 `ERROR + missing` 从
+  1,922 降至 1,413，并保留 55 个改变的恢复函数范围；
+- 3,686,548 个已保存 AST 节点都具有显式字节范围，原文逐字节匹配率为
+  100%；函数根和所有实际候选都有稳定文件身份；
+- quality-v2 选择 33,203 个函数、17,083 个基础区域、43,608 个真实语句
+  和 3,668 个局部 Def-Use 语义区域；
+- Def-Use 片段中位数为 13 行、569 字节，最大 80 行、3,962 字节，
+  全部可精确回映射；
+- 全量耗时由 23.16 秒增至 34.89 秒，峰值 RSS 由 3.185 GB 增至
+  4.047 GB；元数据压缩后的 pickle 为 576,492,303 字节，比冻结基线小
+  0.43%。
+
+主数据集继续使用 `project`、`cppFile`、`func_ast`、`func_src` 四列；
+`repo2data` 新增覆盖所有扫描文件的 `dataset.audit.json`。Parser 片段构建默认
+使用 `quality-v2`，历史候选选择可显式使用 `legacy`。评价器已能将
+`semantic_slice` 的字节范围映射回 AST 覆盖，旧数据仍保持原路径。
+
+同日进一步完成 C++ Adapter 与模型输入治理：
+
+- `src/parser/cpp_adapter.py` 集中 tree-sitter-cpp grammar、预处理影子、
+  函数/区域/语句和 Def-Use 节点规则；AST 遍历、映射和排序逻辑保持通用，
+  公共 CLI 仍然只支持 C++；
+- UniXcoder 的 512-token 合同下，97,562 条原始候选中有 1,881 条超限；
+- Parser 阶段生成 96,039 条 model-ready 片段：31,966 个函数、17,078 个
+  基础区域、43,605 个语句和 3,390 个 Def-Use 区域，最大 512 tokens、
+  超限 0、原文映射 100%；
+- 1,310 条超长函数记录中 1,225 条有区域、Def-Use 或语句后备，85 条无后备；
+  1,881 条去重超限候选全部写入 `fragment_rejections`；
+- 两次 `fragments.pkl` SHA-256 均为
+  `4e9bcc98f27d0c12f61719bd71cce80729ff34969af0920f9f12cc513e41e0b2`，
+  单次构建耗时 23.56 秒，产物约 46 MB；
+- embedding 只接受 Parser 片段产物，模型名、profile 或预算不一致即失败，
+  tokenizer 使用 `truncation=False`，不再承担超长切分。
+
+完整指标、命令、样本和风险分别见
+[Parser 基线与优化对比](parser-quality-report.md)、
+[C++ Adapter 与模型输入治理](cpp-adapter-and-model-input.md)、
+[Parser 代表性产物审计](parser-artifact-audit.md)和
+[Parser 风险与限制](parser-risks.md)。本次没有运行新的完整 UniXcoder、
+DBSCAN 或真实 Agent；未发生模型下载、付费请求或外部源码披露。
+
+最终验证通过 `pip check`、`src/tests` 的 `compileall`、全部 54 项离线测试、
+七个公共包与 Parser v2 模块的组合导入，以及 Parser、片段构建、token 审计、嵌入和评价
+CLI 的 `--help`。`pip` 仅提示用户缓存目录不可写并自动禁用缓存，
+随后明确报告 `No broken requirements found`；没有测试失败。
+
+## 2026-07-24 零构建解析原则冻结
+
+项目将 Parser 的长期输入合同固定为：**免目标项目编译、免链接、免执行，源码
+可得即可解析**，简称零构建解析（Zero-Build Parsing, ZBP）。这里的“开箱即用”
+指安装 CodeIdiomMine 自身依赖后，不需要为输入仓库复现构建系统、下载项目依赖、
+运行代码生成、编译、链接、测试或程序，即可执行 Tree-sitter AST、C++ Adapter、
+逐文件异常审计、原文映射和片段生成。
+
+当前 Parser v2 的全量证据已经满足该原则：三份仓库源码快照直接扫描，4,804 个
+文件均进入统计；宏恢复使用等长静态影子；Def-Use 使用函数内名称级分析；单文件
+失败不会中止全局；所有片段映射回原始字节范围。完整运行未执行输入项目的构建
+脚本、链接器、测试或二进制。
+
+该决策不否定后续可信环境中的静态验证。已有 `compile_commands.json`、Clang
+符号/类型/CFG 和 `clang++ -fsyntax-only` 可作为显式能力增强或阶段3/4模板验证，
+但不得成为 Parser 基础候选的全量门槛；失败时必须保留 Tree-sitter 结果、能力
+缺失和诊断记录。研究稿据此把“方法无需逐仓库重建专用编译环境”纳入可复用性
+论证。此节是文档与架构决策记录，不改变上述 2026-07-23 统计值。
+
 ## 当前阻碍与延期工作
 
 1. 中转端点、凭据加载、Luna 直接封装、判断和合成路径已通过九请求合成冒烟测试。完整语料的付费 Agent 评估仍有意延期，因为成本、源码披露范围和研究有效性需要单独的明确运行计划。
-2. 全语料解析器、CPU UniXcoder 和 DBSCAN 已在当前三个快照上成功完成。重新运行仍是高成本实验，应保留已记录的语料范围和参数。
+2. Parser v2 已在当前三个快照上完成两次确定性全量运行，并完成两次确定性
+   model-ready 片段构建。历史 CPU UniXcoder 和 DBSCAN 产物基于旧候选；
+   新输入为 96,039 个片段，重新嵌入属于
+   新的高成本实验，应先固定语料和 profile。
 3. Baseline 实现和有界验证已获授权并完成。正式论文比较运行仍需要固定语料提交、训练/开发/测试 manifest、重复种子、完整 CIMAS token 测量，以及明确的源码披露/成本决策。
 4. `requirements-local.lock` 提高了可复现性；正式 `requirements.txt` 对科学计算包仍使用宽泛版本范围，但现已包含 Agent 技术栈。过时的非 C++ grammar 依赖已移除。
 5. 包预先导入导致的 CLI `runpy` 警告仍不影响运行。跨项目基础设施对齐期间，追加式运行日志器已消除早先的预先导入日志截断问题。

@@ -179,6 +179,100 @@ class MetricHelperTests(unittest.TestCase):
         self.assertEqual(library["avg_cross_file_support"], 2)
         self.assertEqual(library["AvgAST"], 6)
 
+    def test_quality_semantic_slice_maps_back_to_ast_coverage(self):
+        semantic_slice = {
+            "depth": 1,
+            "extent": "2-2-3-18",
+            "kind": "semantic_slice",
+            "code_snippet": "auto value = load();\nuse(value);",
+            "ast_num": 2,
+            "subtree_size": 6,
+            "start_byte": 20,
+            "end_byte": 60,
+            "source_path": "sample.cpp",
+            "source_file_id": "f" * 64,
+            "source_sha256": "a" * 64,
+            "mapping_version": 2,
+            "mapping_exact": True,
+            "parse_origin": "raw",
+            "candidate_level": "region",
+            "candidate_origin": "semantic_def_use",
+            "analysis_version": "def-use-v1",
+            "parse_flags": 0,
+        }
+        function_ast = [
+            {
+                "depth": 0,
+                "extent": "1-0-5-1",
+                "kind": "function_definition",
+                "code_snippet": "void sample() { auto value = load(); use(value); }",
+                "ast_num": 3,
+                "subtree_size": 10,
+                "start_byte": 0,
+                "end_byte": 80,
+                "mapping_version": 2,
+                "mapping_exact": True,
+                "source_path": "sample.cpp",
+                "source_file_id": "f" * 64,
+                "source_sha256": "a" * 64,
+                "parse_origin": "raw",
+                "parse_flags": 0,
+                "semantic_slices": [semantic_slice],
+            },
+            {
+                "depth": 1,
+                "extent": "1-14-5-1",
+                "kind": "compound_statement",
+                "code_snippet": "{ auto value = load(); use(value); }",
+                "ast_num": 2,
+                "subtree_size": 9,
+                "start_byte": 14,
+                "end_byte": 80,
+                "parse_flags": 0,
+            },
+        ]
+        for index in range(8):
+            function_ast.append(
+                {
+                    "depth": 2,
+                    "extent": f"{2 + index // 4}-{index}-{2 + index // 4}-{index + 1}",
+                    "kind": "identifier",
+                    "code_snippet": "value",
+                    "ast_num": 0,
+                    "subtree_size": 1,
+                    "start_byte": 20 + index * 4,
+                    "end_byte": 23 + index * 4,
+                    "parse_flags": 0,
+                }
+            )
+        data = pd.DataFrame(
+            [{
+                "project": "sample",
+                "cppFile": ["sample.cpp"],
+                "func_ast": [[function_ast]],
+                "func_src": [[function_ast[0]["code_snippet"]]],
+            }]
+        )
+        info = [
+            "sample",
+            "sample.cpp",
+            function_ast[0]["extent"],
+            semantic_slice,
+        ]
+        idiom = {
+            "center_point": semantic_slice["code_snippet"],
+            "info": info,
+            "source_infos": [info],
+            "cnt": 1,
+        }
+
+        coverage = compute_coverage_stats([idiom], data, "sample", 0)
+
+        self.assertEqual(coverage["matched_idiom_indices"], {0})
+        self.assertEqual(coverage["match_count"], 1)
+        self.assertGreater(coverage["matched_node_count"], 0)
+        self.assertGreater(coverage["IC"], 0)
+
     def test_repository_macro_and_global_summary_use_final_ic(self):
         rows = []
         idioms_by_project = {}

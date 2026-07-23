@@ -80,6 +80,8 @@ class FileScanner:
         files_list = []
         
         for root, dirs, files in os.walk(project_path):
+            dirs.sort()
+            files.sort()
             # 跳过测试目录和隐藏目录
             if any(skip in root.lower() for skip in ["test", "__pycache__", ".git", ".svn"]):
                 continue
