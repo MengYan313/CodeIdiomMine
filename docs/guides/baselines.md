@@ -9,6 +9,10 @@
 
 本文只定义方法、产物和运行入口；九项固定指标的公式与聚合口径以[评价指标规范](evaluation-metrics.md)为唯一事实来源。
 
+四种方法都以单个完整仓库为独立发现单元。各仓库的候选、embedding、聚类和
+方法输出不得混合；发现前不做训练/开发/测试划分。多仓库比较只在各仓独立评价
+完成后汇总。
+
 ## 1. 四种方法
 
 | 方法 | 发现输入 | 核心处理 | 明确不使用 |
@@ -24,14 +28,16 @@
 
 正式实验必须遵守以下公共边界：
 
-- 使用相同的仓库版本、文件过滤和克隆族分组训练/开发/测试划分；
-- 各方法只在训练区域发现习语，开发区域只用于冻结方法自身参数，测试区域只用于评价；
+- 使用相同的仓库版本、文件过滤和完整合格源码；
+- 各方法都在单个仓库的完整语料上独立发现习语，仓库间不得交换候选或结果；
+- 方法参数在运行前按论文来源、固定资源预算、统一固定值或预先规定的无监督内部统计规则冻结；不得根据最终 IC、ISP、F1 或人工标签反复选择；
+- 参考/测量文件分区只在全仓发现结束后的最终评价阶段形成，不触发重新发现；
 - 公共适配器只做字段映射、来源证据规范化、精确去重和统一测量，不为某条 baseline 补做 AST 反统一、聚类、LLM 判断或合成；
 - 自动指标使用每个方法的完整有效输出，允许习语种类数不同；
 - Haggis-CPP、LLM-Direct-Budget 和 CIMAS-CPP 不设置最终种类数量上限；只有规则 baseline 使用其方法定义内的组合截断；
 - smoke 的函数数、候选数或迭代限制必须写进独立 manifest 和输出目录，不能作为正式实验结果。
 
-只有 `Rules-Embedding-Clustering` 对最终习语种类执行数量截断。其顺序固定为：过滤 `cluster_size < min_cluster_size` 的簇；按 `cluster_size` 降序、`label` 稳定打破并列；保留合格簇的 `selection_ratio`；最后施加每项目 `max_types` 上限。`selection_ratio` 必须显式设置且位于 `(0, 1)`，正式数值只能在开发集冻结；默认 `min_cluster_size=3`、`max_types=100`。因此 100 只是比例截断后的硬上限，并不表示每个项目固定取 Top100。
+只有 `Rules-Embedding-Clustering` 对最终习语种类执行数量截断。其顺序固定为：过滤 `cluster_size < min_cluster_size` 的簇；按 `cluster_size` 降序、`label` 稳定打破并列；保留合格簇的 `selection_ratio`；最后施加每项目 `max_types` 上限。`selection_ratio` 必须显式设置且位于 `(0, 1)`，正式数值必须在运行前作为统一固定值，或由只观察本仓聚类支持度分布的预注册无监督规则确定；默认 `min_cluster_size=3`、`max_types=100`。因此 100 只是比例截断后的硬上限，并不表示每个项目固定取 Top100。
 
 `Haggis-CPP` 输出所有通过 C++ 投影及后验支持、出现次数、文件数和节点数阈值的片段；`LLM-Direct-Budget` 输出预算内 reduce 阶段返回且能映射到真实证据的全部习语；`CIMAS-CPP` 输出完整判断或合成阶段的全部通过项。三者均不接受公共 Top100 或习语种类数量上限。LLM 的 `token_budget` 和 `max_output_tokens` 分别约束总调用成本和单次响应长度，不是最终习语种类截断。
 
@@ -68,10 +74,10 @@
 |---|---:|---|---|
 | `iterations` | 50 | Gibbs 总迭代数 | 应结合原论文配置、收敛诊断和资源预算冻结 |
 | `burn_in_fraction` | 0.75 | 丢弃的前段采样比例 | 与迭代数共同记录 |
-| `alpha` | 1.0 | DP 集中参数 | 仅在开发区域选择 |
+| `alpha` | 1.0 | DP 集中参数 | 依据论文或预注册配置冻结，不查看最终指标 |
 | `percent_roots_init` | 0.9 | 初始片段根比例 | 固定随机种子并记录 |
 | `min_posterior_support` | 0.5 | 后验样本支持阈值 | 属于 Haggis 方法内过滤，不是数量截断 |
-| `min_occurrences` | 3 | 最小唯一站点数 | 仅在开发区域选择 |
+| `min_occurrences` | 3 | 最小唯一站点数 | 依据方法内支持度规则预先冻结 |
 | `min_files` | 2 | 最小来源文件数 | 当前 C++ 输出质量过滤，需披露 |
 | `min_fragment_nodes` | 3 | 最小片段节点数 | 对应最小结构规模过滤 |
 
@@ -145,7 +151,7 @@ LLM 发现阶段只看到原始函数源码和机械生成的 `evidence_id`。AS
 4. 最终数量：`k = min(k_ratio, max_types)`；
 5. 输出排序后的前 `k` 个簇。
 
-默认 `min_cluster_size=3`、`max_types=100`；`selection_ratio` 没有隐式默认值，CLI 强制显式传入且要求 `0 < selection_ratio < 1`。比例必须通过开发区域冻结，不能查看测试指标后选择。旧的 `selection_ratio=1` 只执行数量上限，不符合当前组合截断合同。
+默认 `min_cluster_size=3`、`max_types=100`；`selection_ratio` 没有隐式默认值，CLI 强制显式传入且要求 `0 < selection_ratio < 1`。比例必须在正式运行前固定，或由预先规定且只使用聚类内部支持度分布的无监督规则确定，不能查看最终 IC、ISP、F1 或人工标签后选择。旧的 `selection_ratio=1` 只执行数量上限，不符合当前组合截断合同。
 
 manifest 对每个项目保存 `input_cluster_count`、`minimum_size_eligible_count`、`ratio_selected_count_before_cap`、`selected_cluster_count` 和 `selected_idiom_count`，从而可以核对每一步实际删除了多少簇。100 只是比例选择后的硬上限，并不保证每个项目输出100类。
 
@@ -153,7 +159,7 @@ manifest 对每个项目保存 `input_cluster_count`、`minimum_size_eligible_co
 
 - 簇大小是唯一原生排序分数，不引入 LLM 评分或 CIMAS 判定结果；
 - 最小簇大小、比例和数量上限必须作为一个整体配置报告；
-- 聚类在数据划分前运行会造成泄漏，正式实验必须先冻结训练区域再重新嵌入和聚类；
+- 聚类必须观察该仓库的全部合格候选；最终参考/测量分区不回溯改变 embedding 或聚类；
 - 大簇可能来自样板代码或密度塌缩，因此该 baseline 只能说明规则+表示学习端点表现，不能把频率直接解释为习语有效性；
 - 历史 `clusters.top100.json` 是人工预览/公式模拟清单，不是正式规则 baseline 的输入接口。
 
@@ -228,7 +234,7 @@ manifest 对每个项目保存 `input_cluster_count`、`minimum_size_eligible_co
   --clusters outputs/cpp/clusters.pkl \
   --output-dir results/baselines/rules-embedding-clustering/cpp \
   --min-cluster-size 3 \
-  --selection-ratio <开发集冻结的保留比例> --max-types 100
+  --selection-ratio <预注册固定值或无监督规则确定值> --max-types 100
 
 .venv/bin/python -m src.evaluation.baseline_validation \
   --method rules-embedding-clustering \
@@ -236,7 +242,7 @@ manifest 对每个项目保存 `input_cluster_count`、`minimum_size_eligible_co
   --dataset outputs/cpp/dataset.pkl
 ```
 
-运行 manifest 同时记录原始簇数、最小簇大小过滤后的合格簇数、比例截断数量、数量上限和最终产物数。比例与阈值只能在训练/开发区域选择，测试集不得参与。
+运行 manifest 同时记录原始簇数、最小簇大小过滤后的合格簇数、比例截断数量、数量上限和最终产物数。比例与阈值不得用最终参考/测量指标或人工标签调参。
 
 ### CIMAS-CPP
 

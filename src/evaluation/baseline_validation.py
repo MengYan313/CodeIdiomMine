@@ -10,7 +10,7 @@ from typing import Any, Dict, Mapping
 
 from ..common.logging import get_logger
 from .baseline_common import is_source_info, validate_metric_payload
-from .idiom_metrics import evaluate_cpp
+from .idiom_metrics import DEFAULT_EVALUATION_MODE, evaluate_cpp
 
 
 logger = get_logger(__name__)
@@ -113,7 +113,7 @@ def validate_method_metrics(
     dataset_path: str | Path,
     output_path: str | Path | None = None,
     artifact_stage: str = "judgment",
-    evaluation_mode: str = "leave_one_project_out",
+    evaluation_mode: str = DEFAULT_EVALUATION_MODE,
     test_fraction: float = 0.2,
     require_baseline_provenance: bool = True,
 ) -> Dict[str, Any]:
@@ -173,7 +173,8 @@ def main() -> None:
     parser.add_argument(
         "--mode",
         choices=("leave_one_project_out", "within_project_file_split"),
-        default="leave_one_project_out",
+        default=DEFAULT_EVALUATION_MODE,
+        help="正式默认是仓库内参考/测量分区；留一项目仅作历史兼容",
     )
     parser.add_argument("--test-fraction", type=float, default=0.2)
     parser.add_argument(

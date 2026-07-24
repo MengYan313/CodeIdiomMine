@@ -4,6 +4,18 @@ CodeIdiomMine 从 C++ 仓库中提取候选 AST 片段，经代码嵌入和 DBSC
 
 本文描述当前实现。论文研究路线位于 `docs/research/`，不作为现有代码必须满足的规格。
 
+## 最高优先级架构不变量：仓库隔离挖掘
+
+每个 C++ 仓库是完整且独立的挖掘单元。Parser、片段构建、embedding、DBSCAN、
+判断、合成和评价必须按仓库分别执行和保存；任何两个仓库的候选、向量或聚类
+输入都不得合并。单仓库完整合格源码是发现阶段的语料边界，不在 embedding 或
+DBSCAN 前拆为训练、开发、测试区域。
+
+最终评价可以在全仓发现结束后，根据来源文件确定性地形成参考分区和测量分区。
+该分区只用于计算仓库内部覆盖性、重复性和分区复现性，不触发重新解析、嵌入或
+聚类，也不表示未知仓库泛化。多仓库统计只能在各仓独立完成指标后做宏平均或
+必要的全局汇总。历史 `leave_one_project_out` 入口不属于正式架构。
+
 ## 架构不变量：零构建解析
 
 Parser 的固定入口合同是：**免目标项目编译、免链接、免执行，源码可得即可解析**。
@@ -47,16 +59,16 @@ Parser 基础结果的门禁。任何后端失败都应以能力掩码、诊断�
 
 ```text
 repos/<project>/...
-  -> outputs/cpp/dataset.pkl
-       \-> outputs/cpp/dataset.audit.json  # 全扫描文件异常与恢复侧车
-  -> outputs/cpp/fragments.pkl             # Parser 长度降级后的模型输入
-       \-> outputs/cpp/token-length-audit.json
-  -> outputs/cpp/embeddings.pkl
-  -> outputs/cpp/clusters.pkl
-       \-> outputs/cpp/readables/{summary,preview,top100}.json  # 可再生成的分析视图
-  -> results/cpp/{repo}_idiom.pkl
-  -> results/cpp/{repo}_idiom_syn.pkl
-  -> results/cpp/eval.json
+  -> outputs/cpp/<project>/dataset.pkl
+       \-> outputs/cpp/<project>/dataset.audit.json  # 全扫描文件异常与恢复侧车
+  -> outputs/cpp/<project>/fragments.pkl             # Parser 长度降级后的模型输入
+       \-> outputs/cpp/<project>/token-length-audit.json
+  -> outputs/cpp/<project>/embeddings.pkl
+  -> outputs/cpp/<project>/clusters.pkl
+       \-> outputs/cpp/<project>/readables/...
+  -> results/cpp/<project>/{project}_idiom.pkl
+  -> results/cpp/<project>/{project}_idiom_syn.pkl
+  -> results/cpp/<project>/eval.json
 ```
 
 - `dataset.pkl`：DataFrame 列为 `project`、`cppFile`、`func_ast`、`func_src`。`cppFile` 是保留的数据契约字段，其值为项目仓库相对 POSIX 路径，不能退化为 basename 或绝对路径。映射 v2 为每个节点保存原始字节范围和原文，为函数根保存文件身份、内容哈希、解析来源和可选语义切片。
@@ -66,7 +78,7 @@ repos/<project>/...
 - `clusters.pkl`：`list[{pros_name, clusters}]`；簇表包含 `label`、`center_point`、`else_point`、`cluster_size`、`center_point_info`、`infos`、`loc_label`。
 - `{repo}_idiom.pkl`：包含 `center_point`、与代表代码一致的 `info`、完整簇证据 `source_infos`、`cnt`、兼容字段 `avg_ast_num`、完整子树统计 `avg_subtree_size` 和 `loc_label`。
 - `{repo}_idiom_syn.pkl`：继续保留合并后全部 `source_infos`，并增加 `merge_rounds`、`synthesis_trace`。
-- `eval.json`：默认按留一项目方式，让同一训练习语集合同时在测试项目上计算 `IC_macro`、`IC_micro`、最终 `IC=(IC_macro+IC_micro)/2`、集合复现率 `ISP` 及使用最终 IC 的 `F1`；另按仓库报告习语种类数、平均聚类簇大小、平均跨文件支持数和 `AvgAST`，并保留必要分子分母。项目内文件划分和明确标注的聚类模拟评价由 CLI 模式显式选择。
+- `eval.json`：正式默认在每个仓库完成全仓发现后，对来源文件做确定性的参考/测量分区，并在测量分区上计算 `IC_macro`、`IC_micro`、最终 `IC=(IC_macro+IC_micro)/2`、集合复现率 `ISP` 及使用最终 IC 的 `F1`；另报告习语种类数、平均聚类簇大小、平均跨文件支持数和 `AvgAST`，并保留必要分子分母。兼容字段 `training_*`、`test_*` 只表示参考/测量分区。留一项目模式只作历史兼容，聚类模拟模式只作公式验证。
 
 指标的正式公式、统计单位、仓库宏平均、全局汇总和解释边界统一见[评价指标规范](evaluation-metrics.md)；其他文档只保留入口或实验记录，不另行定义不同口径。
 

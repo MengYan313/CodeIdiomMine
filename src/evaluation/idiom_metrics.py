@@ -1,17 +1,21 @@
-"""C++ 代码习语的留一项目评估指标。
+"""C++ 仓库专属代码习语的仓库内评价指标。
 
-同一个训练习语集合同时用于测试项目上的 IC 与 ISP：
+每个仓库先使用完整合格源码独立完成习语发现。最终评价阶段再把该仓库的文件
+确定性划分为参考分区和测量分区：只用参考分区中的已发现实例构造匹配变体，
+并在测量分区上同时计算 IC 与 ISP。该分区不触发重新解析、嵌入或聚类：
 
-* IC_macro：逐函数 AST 节点覆盖率的宏平均；
-* IC_micro：所有测试函数 AST 节点的总体覆盖率；
+* IC_macro：逐测量函数 AST 节点覆盖率的宏平均；
+* IC_micro：所有测量函数 AST 节点的总体覆盖率；
 * IC：IC_macro 与 IC_micro 的算术平均；
-* ISP：训练习语中至少有一个变体在测试项目复现的比例；
+* ISP：参考分区习语中至少有一个变体在测量分区复现的比例；
 * F1：最终 IC 与 ISP 的调和平均；
 * 习语库结构：种类数、簇成员数、跨文件支持数和完整子树 AvgAST。
 
 当前流水线尚未产出参数化 AST 模板。评估器因此把同一候选簇保存的来源实例
 视为模板变体，并执行保留 C++ 关键字/运算符、抽象标识符和字面量的结构化词法
 匹配。该匹配比空白子串稳定，同时仍要求候选节点类型一致。
+
+``leave_one_project_out`` 仅为读取历史实验保留，不是正式研究模式。
 """
 
 from __future__ import annotations
@@ -36,6 +40,7 @@ from ..parser.candidates import QUALITY_PROFILE, SelectedCandidate, select_candi
 logger = get_logger(__name__)
 
 CPP_LANGUAGE = "cpp"
+DEFAULT_EVALUATION_MODE = "within_project_file_split"
 MIN_CANDIDATE_CHILDREN = 5
 CANDIDATE_KINDS = FUNCTION_KINDS | BLOCK_KINDS | STATEMENT_KINDS
 
@@ -484,7 +489,10 @@ def compute_idiom_set_precision(
     training_idioms: List[Dict[str, Any]],
     test_func_srcs: List[str],
 ) -> float:
-    """计算训练习语中至少一个变体在测试函数复现的比例。"""
+    """计算参考习语中至少一个变体在测量函数复现的比例。
+
+    参数名 ``training_idioms`` 和 ``test_func_srcs`` 仅为 API 兼容保留。
+    """
     if not training_idioms or not test_func_srcs:
         return 0.0
     test_signatures = [f" {_code_signature(src)} " for src in test_func_srcs if src]
@@ -724,7 +732,10 @@ def _stable_file_split(
     files: Sequence[str],
     test_fraction: float,
 ) -> Tuple[set[int], set[int]]:
-    """按稳定哈希划分文件，避免依赖 Python 的随机哈希种子。"""
+    """按稳定哈希划分参考/测量文件，避免依赖随机哈希种子。
+
+    ``test_fraction`` 是兼容字段，语义是测量分区占比。
+    """
     if not 0 < test_fraction < 1:
         raise ValueError("test_fraction 必须位于 (0, 1)")
     file_count = len(files)
@@ -738,31 +749,34 @@ def _stable_file_split(
             f"{project_name}\0{str(files[index]).replace(os.sep, '/')}".encode("utf-8")
         ).digest(),
     )
-    test_count = min(file_count - 1, max(1, round(file_count * test_fraction)))
-    test_indices = set(ordered[:test_count])
-    return set(range(file_count)) - test_indices, test_indices
+    measurement_count = min(
+        file_count - 1,
+        max(1, round(file_count * test_fraction)),
+    )
+    measurement_indices = set(ordered[:measurement_count])
+    return set(range(file_count)) - measurement_indices, measurement_indices
 
 
-def _restrict_idioms_to_training_files(
+def _restrict_idioms_to_reference_files(
     idioms: List[Dict[str, Any]],
     dataset_files: Sequence[str],
-    training_file_indices: set[int],
+    reference_file_indices: set[int],
 ) -> List[Dict[str, Any]]:
-    """只保留训练文件提供的模板变体，防止测试实例进入匹配器。"""
+    """只保留参考文件中的已发现实例作为测量时的匹配变体。"""
     restricted: List[Dict[str, Any]] = []
     for idiom in idioms:
-        training_infos = []
+        reference_infos = []
         for info in _idiom_source_infos(idiom):
             file_idx = _match_file_path(str(info[1]), dataset_files)
-            if file_idx in training_file_indices:
-                training_infos.append(info)
-        if not training_infos:
+            if file_idx in reference_file_indices:
+                reference_infos.append(info)
+        if not reference_infos:
             continue
         record = dict(idiom)
-        record["info"] = training_infos[0]
-        record["source_infos"] = training_infos
-        record["center_point"] = _candidate_code(training_infos[0])
-        record["cnt"] = len(training_infos)
+        record["info"] = reference_infos[0]
+        record["source_infos"] = reference_infos
+        record["center_point"] = _candidate_code(reference_infos[0])
+        record["cnt"] = len(reference_infos)
         restricted.append(record)
     return _deduplicate_idioms(restricted)
 
@@ -774,7 +788,7 @@ def evaluate_project(
     project_idx: int,
     all_idioms: Dict[str, List[Dict[str, Any]]],
 ) -> Dict[str, Any]:
-    """以当前项目为测试集、其他项目的习语为训练输出执行一个 fold。"""
+    """执行历史留一仓库评价；仅为旧产物兼容保留。"""
     del idiom_path
     training_projects = sorted(repo for repo in all_idioms if repo != project_name)
     training_idioms = _deduplicate_idioms(
@@ -822,33 +836,42 @@ def evaluate_project_file_split(
     project_idioms: List[Dict[str, Any]],
     test_fraction: float,
 ) -> Dict[str, Any]:
-    """在同一项目内按文件划分训练/测试并计算同集合 IC/ISP。"""
+    """对全仓发现结果执行仓库内参考/测量分区评价。
+
+    ``project_idioms`` 已由完整仓库流水线产生。这里不重新运行任何发现阶段，
+    只按来源位置选取参考实例构造匹配变体，并在测量文件上计算 IC/ISP。
+    输出中的 ``training_*``、``test_*`` 字段仅为 Schema 兼容保留。
+    """
     row = data.iloc[project_idx]
     files = row.get("cppFile", [])
-    training_files, test_files = _stable_file_split(
+    reference_files, measurement_files = _stable_file_split(
         project_name, files, test_fraction
     )
-    training_idioms = _restrict_idioms_to_training_files(
-        project_idioms, files, training_files
+    reference_idioms = _restrict_idioms_to_reference_files(
+        project_idioms, files, reference_files
     )
     coverage = compute_coverage_stats(
-        training_idioms,
+        reference_idioms,
         data,
         project_name,
         project_idx,
-        included_file_indices=test_files,
+        included_file_indices=measurement_files,
     )
     matched_idiom_count = len(coverage["matched_idiom_indices"])
-    isp = matched_idiom_count / len(training_idioms) if training_idioms else 0.0
+    isp = (
+        matched_idiom_count / len(reference_idioms)
+        if reference_idioms
+        else 0.0
+    )
     ic_macro = float(coverage["IC_macro"])
     ic_micro = float(coverage["IC_micro"])
     ic = float(coverage["IC"])
-    size_stats = compute_idiom_size_stats(training_idioms, data)
+    size_stats = compute_idiom_size_stats(reference_idioms, data)
     return {
         "project": project_name,
         "training_projects": [project_name],
-        "training_file_count": len(training_files),
-        "test_file_count": len(test_files),
+        "training_file_count": len(reference_files),
+        "test_file_count": len(measurement_files),
         "test_fraction": test_fraction,
         "IC_macro": round(ic_macro, 4),
         "IC_micro": round(ic_micro, 4),
@@ -858,7 +881,7 @@ def evaluate_project_file_split(
         "avg_idiom_size": round(size_stats["mean"], 2),
         "median_idiom_size": round(size_stats["median"], 2),
         "idiom_size_iqr": round(size_stats["iqr"], 2),
-        "idiom_count": len(training_idioms),
+        "idiom_count": len(reference_idioms),
         "matched_idiom_count": matched_idiom_count,
         "matched_node_count": int(coverage["matched_node_count"]),
         "total_node_count": int(coverage["total_node_count"]),
@@ -877,47 +900,49 @@ def evaluate_mock_cluster_file_split(
 ) -> Dict[str, Any]:
     """把冻结模拟簇的全部成员视作已知实例，验证覆盖与指标公式。
 
-    聚类本身使用过全量项目，因此这里只是评价器的 evidence-oracle 冒烟，
-    不能用于估计真实的未知测试集泛化能力。
+    该模式不经过真实习语判断或人工质量核验，只是评价器的 evidence-oracle
+    冒烟，不能作为方法质量或论文结果。
     """
     row = data.iloc[project_idx]
     files = row.get("cppFile", [])
     func_asts = row.get("func_ast", [])
-    training_files, test_files = _stable_file_split(project_name, files, test_fraction)
+    reference_files, measurement_files = _stable_file_split(
+        project_name, files, test_fraction
+    )
 
-    training_idioms: List[Dict[str, Any]] = []
+    reference_idioms: List[Dict[str, Any]] = []
     matched_idioms: set[int] = set()
     evidence_by_file: Dict[int, Dict[str, set[int]]] = defaultdict(
         lambda: defaultdict(set)
     )
     for idiom in project_idioms:
-        training_infos: List[Sequence[Any]] = []
-        test_infos: List[Tuple[int, Sequence[Any]]] = []
+        reference_infos: List[Sequence[Any]] = []
+        measurement_infos: List[Tuple[int, Sequence[Any]]] = []
         for info in _idiom_source_infos(idiom):
             file_idx = _match_file_path(str(info[1]), files)
-            if file_idx in training_files:
-                training_infos.append(info)
-            elif file_idx in test_files:
-                test_infos.append((file_idx, info))
-        if not training_infos:
+            if file_idx in reference_files:
+                reference_infos.append(info)
+            elif file_idx in measurement_files:
+                measurement_infos.append((file_idx, info))
+        if not reference_infos:
             continue
-        training_idx = len(training_idioms)
+        reference_idx = len(reference_idioms)
         record = dict(idiom)
-        record["info"] = training_infos[0]
-        record["source_infos"] = training_infos
-        record["center_point"] = _candidate_code(training_infos[0])
-        record["cnt"] = len(training_infos)
-        training_idioms.append(record)
-        if test_infos:
-            matched_idioms.add(training_idx)
-        for file_idx, info in test_infos:
-            evidence_by_file[file_idx][_candidate_extent(info)].add(training_idx)
+        record["info"] = reference_infos[0]
+        record["source_infos"] = reference_infos
+        record["center_point"] = _candidate_code(reference_infos[0])
+        record["cnt"] = len(reference_infos)
+        reference_idioms.append(record)
+        if measurement_infos:
+            matched_idioms.add(reference_idx)
+        for file_idx, info in measurement_infos:
+            evidence_by_file[file_idx][_candidate_extent(info)].add(reference_idx)
 
     coverage_values: List[float] = []
     matched_nodes = 0
     total_nodes = 0
     match_count = 0
-    for file_idx in sorted(test_files):
+    for file_idx in sorted(measurement_files):
         extent_index = evidence_by_file.get(file_idx, {})
         for func_ast in func_asts[file_idx]:
             if not func_ast:
@@ -937,13 +962,13 @@ def evaluate_mock_cluster_file_split(
     ic_macro = sum(coverage_values) / len(coverage_values) if coverage_values else 0.0
     ic_micro = matched_nodes / total_nodes if total_nodes else 0.0
     ic = (ic_macro + ic_micro) / 2
-    isp = len(matched_idioms) / len(training_idioms) if training_idioms else 0.0
-    size_stats = compute_idiom_size_stats(training_idioms, data)
+    isp = len(matched_idioms) / len(reference_idioms) if reference_idioms else 0.0
+    size_stats = compute_idiom_size_stats(reference_idioms, data)
     return {
         "project": project_name,
         "training_projects": [project_name],
-        "training_file_count": len(training_files),
-        "test_file_count": len(test_files),
+        "training_file_count": len(reference_files),
+        "test_file_count": len(measurement_files),
         "test_fraction": test_fraction,
         "IC_macro": round(ic_macro, 4),
         "IC_micro": round(ic_micro, 4),
@@ -953,7 +978,7 @@ def evaluate_mock_cluster_file_split(
         "avg_idiom_size": round(size_stats["mean"], 2),
         "median_idiom_size": round(size_stats["median"], 2),
         "idiom_size_iqr": round(size_stats["iqr"], 2),
-        "idiom_count": len(training_idioms),
+        "idiom_count": len(reference_idioms),
         "matched_idiom_count": len(matched_idioms),
         "matched_node_count": matched_nodes,
         "total_node_count": total_nodes,
@@ -976,10 +1001,10 @@ def evaluate_cpp(
     dataset_path: str,
     output_path: str,
     artifact_stage: str = "judgment",
-    evaluation_mode: str = "leave_one_project_out",
+    evaluation_mode: str = DEFAULT_EVALUATION_MODE,
     test_fraction: float = 0.2,
 ) -> Dict[str, Any]:
-    """对所有 C++ 项目执行留一项目评价并保存 JSON。"""
+    """逐仓执行评价并在各仓完成后汇总保存 JSON。"""
     idiom_root = Path(idiom_dir)
     pattern, suffix = _artifact_pattern(artifact_stage)
     idiom_files = sorted(idiom_root.glob(pattern)) if idiom_root.exists() else []
@@ -1160,7 +1185,8 @@ def evaluate_cpp(
             ),
             "is_mock_evaluation": has_mock_inputs,
             "mock_warning": (
-                "聚类在文件划分前已使用完整项目；该结果只验证指标实现，不能作为论文实验。"
+                "冻结簇被直接模拟为习语且未经过真实判断或人工质量核验；"
+                "该结果只验证指标实现，不能作为方法质量或论文结果。"
                 if has_mock_inputs and evaluation_mode in {
                     "within_project_file_split",
                     "mock_cluster_file_split",
@@ -1189,7 +1215,7 @@ def run_evaluation(
     dataset_path: Optional[str] = None,
     output_path: Optional[str] = None,
     artifact_stage: str = "judgment",
-    evaluation_mode: str = "leave_one_project_out",
+    evaluation_mode: str = DEFAULT_EVALUATION_MODE,
     test_fraction: float = 0.2,
 ) -> Dict[str, Any]:
     project_root = Path(__file__).resolve().parents[2]
@@ -1235,14 +1261,17 @@ def main() -> None:
             "within_project_file_split",
             "mock_cluster_file_split",
         ),
-        default="leave_one_project_out",
-        help="留一项目泛化、项目内文件划分或冻结簇证据模拟",
+        default=DEFAULT_EVALUATION_MODE,
+        help=(
+            "仓库内参考/测量分区（正式默认）、历史留一项目兼容模式"
+            "或冻结簇证据模拟"
+        ),
     )
     parser.add_argument(
         "--test-fraction",
         type=float,
         default=0.2,
-        help="项目内文件划分的测试比例，默认 0.2",
+        help="仓库内文件划分的测量分区比例，默认 0.2；字段名为兼容保留",
     )
     args = parser.parse_args()
     run_evaluation(

@@ -1,6 +1,6 @@
 # CodeIdiomMine 本地开发基线
 
-最后验证：2026-07-18（Asia/Shanghai）
+最后验证：2026-07-24（Asia/Shanghai）
 
 本文是现有实现的长期项目事实记录，保存已经观察到的事实和可复现的冒烟测试；它不表示当前代码已经实现论文研究稿中的方案。
 
@@ -366,6 +366,10 @@ OpenAI 的[当前模型指南](https://developers.openai.com/api/docs/guides/lat
 
 更严格的模拟留一项目运行也保留为 `eval.json`。仓库宏平均为 `IC_macro=0.0027`、`IC_micro=0.0028`、最终 `IC=0.0027`、`ISP=0.1317` 和 `F1=0.0053`；较低的跨域覆盖是参数化模板/反统一阶段之前使用具体 DBSCAN 簇的已观察局限，不是评估器缺陷。
 
+上述留一项目结果只保留为 2026-07-18 的历史实现证据。2026-07-24 明确的
+“仓库隔离的专属习语挖掘”目标已取代其研究口径；不得把该数值用于正式实验或
+恢复跨仓库泛化目标。
+
 可复现命令：
 
 ```bash
@@ -402,7 +406,7 @@ OpenAI 的[当前模型指南](https://developers.openai.com/api/docs/guides/lat
 | qBittorrent | 0.0030 | 0.0400 | 0.0056 | 100 | 12.55 | 3.81 | 97.21 |
 | React Native | 0.0046 | 0.2800 | 0.0091 | 100 | 12.18 | 3.47 | 157.60 |
 
-这些值保留为适配器和指标在完整簇输入上运行过的历史证据，不是早先的 `mock_cluster_file_split` 证据 oracle 运行。作为规则 baseline 配置，它们已被取代，因为 `selection_ratio=1.0` 没有执行当前要求的比例截断。正式替代配置必须在开发数据上冻结小于 1 的比例后再运行；仓库不能根据测试集臆造这一科学参数。
+这些值保留为适配器和指标在完整簇输入上运行过的历史证据，不是早先的 `mock_cluster_file_split` 证据 oracle 运行。作为规则 baseline 配置，它们已被取代，因为 `selection_ratio=1.0` 没有执行当前要求的比例截断。正式替代配置必须在运行前把小于 1 的比例冻结为统一固定值，或用只观察聚类内部支持度分布的预注册无监督规则确定；不得根据最终 IC、ISP、F1 或人工标签臆造参数。
 
 修正后的三阶段选择器还在完整当前簇产物上进行配置冒烟测试，使用 `min_cluster_size=3`、`selection_ratio=0.5` 和 `max_types=100`。比例 0.5 只是连线验证值，不是根据测试结果选择的论文参数。Envoy 有 839 个大小合格簇，比例选择提出 420 个，上限保留 100 个；qBittorrent 有 219 个，提出 110 个并保留 100 个；React Native 有 175 个，提出并保留 88 个。因此最终种类数为 100/100/88，而不是强制每项目 Top100。九项指标全部通过；证据位于被忽略的 `results/baseline-smoke/rules-combined/cpp/`。
 
@@ -449,7 +453,7 @@ Haggis-CPP 有界冒烟测试读取真实当前 AST 数据集，但将每个项�
 - 当前代码没有第三阶段簇对齐、AST 反统一、类型化占位符或保持绑定关系的抽象。
 - 当前判断使用语义、语法/逻辑和判断 Agent，并设置确定性双分数门控。它没有独立代码异味 Agent、三方人工复核、确定性解析器证据或 Clang 验证。
 - 当前合成按 `loc_label` 分组，请求 LLM 规划/组装，并最多重新判断三轮。它没有强制拟议的 AST 感知静态关系触发、绑定规则或纯语法验证。
-- 当前评估实现一致的留一项目 IC/ISP/F1、宏/微 AST 覆盖、候选级 AST 大小统计、精确计数、结构化词法匹配器、明确的项目文件/mock 验证模式，以及适用于所有已实现方法的共享九指标合同。它仍未实现研究稿提出的 OY、IV、Cost、经人工验证的 V 指标、置信区间，或正式克隆族划分后只在训练集重新挖掘。
+- 当前评估实现一致的仓库内参考/测量分区 IC/ISP/F1、宏/微 AST 覆盖、候选级 AST 大小统计、精确计数、结构化词法匹配器、明确的 mock 验证模式，以及适用于所有已实现方法的共享九指标合同。留一项目入口仅为历史兼容。它仍未实现研究稿提出的 OY、IV、Cost、经人工验证的 V 指标和置信区间。
 - Haggis-CPP、LLM-Direct-Budget 和 Rules-Embedding-Clustering 已实现并通过冒烟验证。正式全语料重复实验、人工标注、冻结语料 manifest、与完整 CIMAS 运行的成本匹配，以及更细论文消融仍处于延期状态。
 - 融合研究方案定义与 WPF2React 共享的论文视角，不表示代码、数据或仓库合并。
 
@@ -610,18 +614,107 @@ CLI11 和 qBittorrent 分别独立运行两次，确定性摘要逐字节一致�
 `docs/research/cpp-dataset-project-audit.md` 和
 `docs/guides/cpp-dataset-parser-regression.md`。
 
+## 2026-07-24 仓库隔离研究目标纠正
+
+项目最高优先级目标现固定为：针对每个给定 C++ 仓库，使用该仓库全部合格源码
+独立挖掘仓库专属习语。不同仓库的候选、embedding 和 DBSCAN 输入不得混合；
+发现前不做训练/开发/测试划分；最终评价分区只表示参考/测量位置，不重新运行
+发现流程，也不表示未知仓库泛化。旧研究稿、指南和评价器默认中的留一仓库、
+DBSCAN 前拆分及“全仓聚类是泄漏”等表述均由该目标取代。
+
+本轮只执行了本地只读核查，没有运行 tokenizer、UniXcoder、DBSCAN 优化或真实
+LLM：
+
+- `outputs/dataset-experiment/final/` 下有 26 份 canonical `dataset.pkl` 和
+  26 份 `dataset.audit.json`，没有逐仓 `fragments.pkl`；
+- 26 个本地仓库 HEAD 均与各自 `analysis.json` 记录的固定 commit 一致；
+- 26 份数据集的 `analysis.json` 共记录 237,845 次 `quality-v2` 候选出现，
+  逐仓 `dataset.pkl` SHA-256 需要在阶段1 manifest 中单独保存；
+- 产物记录的 Parser 源码指纹为
+  `48064d7996bba06da13cbb83672a528ad4c50b794caef75b6fd40ae47ba288f3`，
+  当前指纹为
+  `bcb4596eb2a96a892b3743723ae43ac058558ea274d9b839e077cb1d653dd222`；
+- 指纹差异来自 `file_scanner.py` 和 `repo2data.py` 的扫描诊断、路径安全、
+  项目选择和进度改动，实际 AST、候选和语义切片模块未变；当前扫描器对 26 个
+  固定仓库选出的逐文件清单与已有 26 份审计记录完全一致。
+
+因此，指纹不同是必须记录的差异，但现有证据尚不足以要求无条件重跑全部 26 个
+仓库。正式阶段1应先在小型、宏/模板密集和大型仓库上用当前 Parser 做分层重复
+解析，对比文件清单、函数/候选统计、映射字段和确定性摘要；若差异只限新增审计
+元数据，可继续复用 26 份 canonical AST 并补建片段；若 AST、候选、文件身份或
+原文字节映射变化，则只对受影响仓库重建，不覆盖旧产物。
+
+评价器正式默认已从 `leave_one_project_out` 改为
+`within_project_file_split`。后者先接收完整仓库发现结果，再只按来源位置形成
+参考/测量分区；保留的 `training_*`、`test_*` JSON 字段只是兼容名称。历史留一
+模式仍可显式调用，但不得进入正式结果。
+
+口径修正后的离线验证通过 `pip check`、`src/tests` 的 `compileall`、全部 58 项
+确定性测试、相关 CLI 的 `--help` 入口、正式 manifest 交叉校验和
+`git diff --check`。manifest 校验确认 26 个正式项目、1 个排除项目和 0 个错误。
+本轮没有下载模型、运行 embedding/DBSCAN、调用 LLM，也没有暂存、提交或推送。
+
+## 2026-07-25 阶段1正式实验
+
+阶段1正式实验位于已忽略的
+`outputs/experiments/repo-isolated-v1/`。本轮只加载本地缓存的 UniXcoder
+tokenizer，没有加载模型权重、运行 embedding/DBSCAN 或调用 LLM。
+
+先对 `concurrentqueue`、`tomlplusplus`、`qbittorrent` 和 `envoy` 执行当前
+Parser 双跑，覆盖最小、模板密集、Qt/宏密集和大型仓库。四个仓库的当前
+DataFrame 与 canonical `dataset.pkl` 精确一致，当前两次输出字节一致，
+canonical 与当前审计核心也一致，因此正式决定复用 26 份 canonical AST。
+
+随后对 26 个仓库分别执行首次 `fragments.pkl` 构建、重复构建和 token-length
+audit，共 78 个逐仓任务。正式配置固定为 `quality-v2`、
+`microsoft/unixcoder-base`、512 个总输入 token、禁止静默截断和仅使用本地缓存。
+全部 26 份重复 pickle 在语义和字节层面一致。
+
+阶段1汇总如下：
+
+- 扫描 7,940 个文件，0 个解析失败，得到 102,574 个函数；
+- `analysis.json` 按函数观察到 237,845 次候选；按稳定文件身份、extent、层级和
+  来源去重后为 237,833 个唯一原始候选，差额是 4 个仓库中的 12 个跨嵌套函数
+  重复 `semantic_def_use` 记录，不是候选丢失；
+- 最终得到 233,912 个 model-ready 候选和 5,182 条超预算拒绝记录；
+- model-ready 类型分布为函数 77,880、区域 41,566、Def-Use 8,413、语句
+  106,053，超预算数为 0；
+- 4,558 个超预算函数记录中，3,008 个具有至少一种合格后备候选，1,550 个没有
+  合格后备；后者显式计数，没有截断或静默进入 embedding；
+- 全量映射审计覆盖 12,967,439 个 canonical AST 节点，字节范围解析率、原文
+  逐字匹配率和显式 byte range 比例均为 100%；102,574 个函数根全部具有稳定
+  文件身份；
+- 234 条确定性分层边界样本合同复核全部通过；另独立阅读四个代表仓库的 20 条
+  样本，未发现半语句、半 token、跨文件或静默截断。该复核不冒充论文级人工金标；
+- 78 个片段/重复/token 任务累计任务时间 410.32 秒。全量映射审计耗时
+  94.05 秒、峰值约 9.55 GiB；逐仓任务的最大峰值约 3.11 GiB。
+
+`experiment-manifest.json`、`stage1-summary.json`、
+`stage1-acceptance-report.md`、`stage1-statistics.csv`、映射审计、Parser 复核、
+分层样本及每仓 `stage1-manifest.json` 保存完整命令、SHA、计数、耗时、峰值内存
+和验收结果。联合映射审计 pickle 在成功保存 SHA 后已删除；它从未进入
+fragments、embedding 或 DBSCAN。全局 `stage2_ready=true`，阶段1正式出口为
+`outputs/experiments/repo-isolated-v1/repos/<repo>/stage1/fragments.pkl`。
+收尾验证通过 `pip check`、`src`、`tests` 与阶段1脚本的 `compileall`、全部
+58 项确定性离线测试、26 仓正式 manifest 校验、正式产物 `SHA256SUMS` 和
+`git diff --check`。
+
 ## 当前阻碍与延期工作
 
 1. 中转端点、凭据加载、Luna 直接封装、判断和合成路径已通过九请求合成冒烟测试。完整语料的付费 Agent 评估仍有意延期，因为成本、源码披露范围和研究有效性需要单独的明确运行计划。
-2. Parser v2 在历史三个快照上的 96,039 个 model-ready 片段仍是旧语料证据。
-   新冻结的 26 项目数据集已完成 AST、审计和 237,845 个 Parser 候选统计，但尚未
-   执行全量 tokenizer 长度治理、UniXcoder 或 DBSCAN；这些属于新的高成本实验。
+2. 新冻结的 26 项目已完成正式阶段1和全量 tokenizer 长度治理；UniXcoder
+   embedding 与逐仓 DBSCAN 尚未运行。历史三个快照上的 96,039 个片段仍只作旧
+   语料证据，不得与新正式产物混用。
 3. Baseline 实现和有界验证已获授权并完成，固定源码 commit 与总语料 manifest
-   也已形成。正式论文比较运行仍需要冻结训练/开发/测试划分 manifest、重复种子、
-   完整 CIMAS token 测量，以及明确的源码披露/成本决策。
+   也已形成。阶段2正式运行仍需要冻结 DBSCAN 参数规则、重复检查、完整 CIMAS
+   token 测量，以及明确的源码披露/成本决策；不需要 DBSCAN 前 split manifest。
 4. `requirements-local.lock` 提高了可复现性；正式 `requirements.txt` 对科学计算包仍使用宽泛版本范围，但现已包含 Agent 技术栈。过时的非 C++ grammar 依赖已移除。
 5. 包预先导入导致的 CLI `runpy` 警告仍不影响运行。跨项目基础设施对齐期间，追加式运行日志器已消除早先的预先导入日志截断问题。
 
 ## 建议的下一项决策
 
-下一项实验级决策是冻结语料提交和训练/开发/测试 manifest，再测量完整 CIMAS-CPP token 用量，以此定义 `LLM-Direct-Budget`。在完成冻结前，不应启动完整付费 LLM 评估，也不应把有界冒烟数值重新解释为论文结果。
+下一项实验级决策是使用 `concurrentqueue` 的正式 `fragments.pkl` 执行离线
+UniXcoder embedding 与固定 DBSCAN 参数 smoke，验证向量确定性、聚类产物、
+噪声率和资源需求。smoke 通过并冻结无监督参数规则后，再启动 26 仓库逐仓
+阶段2。完整付费 LLM 仍需先测量调用范围、源码披露和成本；不得把有界冒烟数值
+重新解释为论文结果。

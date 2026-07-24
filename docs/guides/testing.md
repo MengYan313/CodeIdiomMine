@@ -108,6 +108,10 @@ parser、embedding 和 evaluation 的帮助输出不应出现 `--language`；`AS
 
 UniXcoder 首次下载在当前依赖栈约占 738 MB。确认网络、磁盘和运行时间后再执行；已有缓存时优先离线复用。
 
+每次命令只处理一个仓库，并把该仓库的 `fragments.pkl`、`embeddings.pkl` 和
+`clusters.pkl` 保存到同一独立目录。不得把不同仓库的片段或 embedding 合并后
+聚类。以下 `outputs/smoke/cpp/` 只代表一个最小仓库：
+
 ```bash
 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
 .venv/bin/python -m src.mining.code_embedding \
@@ -171,7 +175,18 @@ Agent 结果存在后可运行 `--result-dir results/cpp --stages judgment synth
 .venv/bin/python -m src.evaluation.idiom_metrics
 ```
 
-默认模式是留一项目：当前项目为测试集，其他项目产出的同一个去重习语集合同时用于 IC 与 ISP。当前未参数化的候选通过保留关键字/运算符、抽象标识符和字面量的结构化词法签名匹配，并要求候选 AST 节点类型一致。v2 的 `semantic_slice` 按显式字节范围映射回其中完整包含的 DFS AST 节点；历史数据仍走旧候选路径。`IC_macro` 是函数覆盖率宏平均，`IC_micro` 是节点覆盖率微平均，最终 `IC=(IC_macro+IC_micro)/2`；F1 使用最终 IC。习语库结构另按仓库报告习语种类数、平均聚类簇大小、平均跨文件支持数和 AvgAST。
+正式默认模式是仓库内参考/测量文件分区。当前仓库已经使用全部合格源码完成
+Parser、embedding、DBSCAN、判断和合成；评价器随后按稳定哈希划分来源文件，
+只用参考分区中的已发现实例构造匹配变体，在测量分区计算 IC 与 ISP。该分区不
+重新运行任何发现阶段。当前未参数化的候选通过保留关键字/运算符、抽象标识符和
+字面量的结构化词法签名匹配，并要求候选 AST 节点类型一致。v2 的
+`semantic_slice` 按显式字节范围映射回其中完整包含的 DFS AST 节点；历史数据
+仍走旧候选路径。`IC_macro` 是函数覆盖率宏平均，`IC_micro` 是节点覆盖率微平均，
+最终 `IC=(IC_macro+IC_micro)/2`；F1 使用最终 IC。习语库结构另按仓库报告习语
+种类数、平均聚类簇大小、平均跨文件支持数和 AvgAST。
+
+兼容字段 `training_*`、`test_*` 在该模式中只表示参考/测量分区。显式模式
+`leave_one_project_out` 只用于复核历史产物，不属于正式研究流程。
 
 最终指标的分类理由、完整公式、全部成员计入规则、仓库宏平均与全局汇总方式、空分母处理及结论边界统一见[评价指标规范](evaluation-metrics.md)。本节只说明如何运行评价，不定义第二套口径。
 
@@ -190,7 +205,13 @@ Agent 结果存在后可运行 `--result-dir results/cpp --stages judgment synth
   --mode mock_cluster_file_split --test-fraction 0.2
 ```
 
-`clusters.top100.json` 在这里仅作为已存在的冻结语料清单：构造器只读取 `project/label` 集合，不读取或输出 `rank`，评价器也不计算任何排序或 Top-K 指标。`mock_cluster_file_split` 把每个冻结簇在训练/测试文件中的**全部成员**当作已知匹配证据，专用于检查指标分子分母、extent 并集和多项目汇总；输出带 `is_mock_evaluation` 和 `mock_warning`。由于 DBSCAN 在文件划分前已经看过整个项目，该结果不能作为模型质量或论文结果。正式跨项目泛化使用默认 `leave_one_project_out`；正式项目内实验则必须先按克隆族/文件划分语料，再只在训练区域重新运行挖掘流程。
+`clusters.top100.json` 在这里仅作为已存在的冻结语料清单：构造器只读取
+`project/label` 集合，不读取或输出 `rank`，评价器也不计算任何排序或 Top-K
+指标。`mock_cluster_file_split` 把每个冻结簇在参考/测量文件中的**全部成员**
+当作已知匹配证据，专用于检查指标分子分母、extent 并集和多项目汇总；输出带
+`is_mock_evaluation` 和 `mock_warning`。该结果不能作为模型质量或论文结果，
+原因是冻结簇未经真实判断、合成或人工质量核验，并被直接当作 evidence oracle；
+DBSCAN 使用完整仓库本身符合正式发现目标，不是泄漏。
 
 ## 9. Baseline 与主方法的统一验证
 

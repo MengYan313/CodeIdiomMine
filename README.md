@@ -6,6 +6,14 @@ CodeIdiomMine 从 C++ 仓库提取 AST 候选片段，经代码嵌入和 DBSCAN 
 
 Parser 遵循零构建解析：被分析项目无需编译、链接或执行，只要源码可读取即可生成 AST、诊断和候选片段。CodeIdiomMine 自身仍需安装 Python 依赖。
 
+## 核心研究边界
+
+仓库是完整、独立的挖掘单元。每个给定 C++ 仓库都使用全部合格源码独立执行
+`Parser → fragments → embedding → DBSCAN → 判断 → 合成 → 评价`；不同仓库
+的候选、向量和聚类输入不得混合。单仓库在 DBSCAN 前不拆分训练集、开发集或
+测试集。最终评价才按来源文件形成确定性的参考分区和测量分区，只测量仓库内部
+覆盖、重复和分区复现，不重新挖掘，也不表示跨仓库或未知数据泛化。
+
 ## 目录
 
 ```text
@@ -37,7 +45,7 @@ CodeIdiomMine/
 
 ## 最小流水线
 
-以下离线命令以本地 `repos/cli11` 为例，并要求 UniXcoder 已在本机缓存；若已获准首次下载模型，可移除 `--local-files-only`。
+以下命令以本地 `repos/cli11` 这一独立挖掘单元为例，并要求 UniXcoder 已在本机缓存；若已获准首次下载模型，可移除 `--local-files-only`。处理多个仓库时应分别使用 `outputs/cpp/<repo>/` 和 `results/cpp/<repo>/`，不要合并它们的 `fragments.pkl`、`embeddings.pkl` 或 `clusters.pkl`。
 
 ```bash
 .venv/bin/python -m src.parser.repo2data \
@@ -48,11 +56,14 @@ CodeIdiomMine/
 
 .venv/bin/python -m src.mining.code_embedding \
   --input outputs/cpp/cli11/fragments.pkl \
-  --output outputs/cpp/cli11/embeddings.pkl --model unixcoder
+  --output outputs/cpp/cli11/embeddings.pkl \
+  --model unixcoder --device cpu --batch-size 8 \
+  --candidate-profile quality-v2
 
 .venv/bin/python -m src.mining.clustering \
   --input outputs/cpp/cli11/embeddings.pkl \
-  --output outputs/cpp/cli11/clusters.pkl
+  --output outputs/cpp/cli11/clusters.pkl \
+  --eps 0.5 --min-samples 2
 
 .venv/bin/python -m src.agents.idiom_judgement \
   --input outputs/cpp/cli11/clusters.pkl --output-dir results/cpp/cli11
