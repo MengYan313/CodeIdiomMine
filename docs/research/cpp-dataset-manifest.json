@@ -39,8 +39,8 @@
       },
       "parse": {
         "analysis_commands": {
-          "baseline": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/dataset-candidates/btop --project btop --output outputs/dataset-experiment/baseline/btop/analysis.json",
-          "final": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/dataset-candidates/btop --project btop --output outputs/dataset-experiment/final/btop/analysis.json"
+          "baseline": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/btop --project btop --output outputs/dataset-experiment/baseline/btop/analysis.json",
+          "final": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/btop --project btop --output outputs/dataset-experiment/final/btop/analysis.json"
         },
         "baseline": {
           "artifact_path": "outputs/dataset-experiment/baseline/btop/analysis.json",
@@ -268,19 +268,19 @@
             "source_inventory_sha256": "f76d0c84d25f2f0e28e593794ecf23b23719458d5959d900e8f7c6054624c966"
           }
         },
-        "reproduction_command": ".venv/bin/python -m src.parser.repo2data --input repos/dataset-candidates --project btop --output outputs/dataset-experiment/final/btop/dataset.pkl --audit-output outputs/dataset-experiment/final/btop/dataset.audit.json"
+        "reproduction_command": ".venv/bin/python -m src.parser.repo2data --input repos --project btop --output outputs/dataset-experiment/final/btop/dataset.pkl --audit-output outputs/dataset-experiment/final/btop/dataset.audit.json"
       },
       "revision": {
         "commit": "cece4df4db2112f63d94347f6ee2f89ee7224c7b",
         "commit_date": "2026-07-21T18:58:09Z",
         "is_shallow": true,
-        "local_path": "repos/dataset-candidates/btop",
+        "local_path": "repos/btop",
         "remote_url": "https://github.com/aristocratos/btop.git",
         "reproduction_commands": [
-          "git init repos/dataset-candidates/btop",
-          "git -C repos/dataset-candidates/btop remote add origin https://github.com/aristocratos/btop.git",
-          "git -C repos/dataset-candidates/btop fetch --depth 1 origin cece4df4db2112f63d94347f6ee2f89ee7224c7b",
-          "git -C repos/dataset-candidates/btop checkout --detach FETCH_HEAD"
+          "git init repos/btop",
+          "git -C repos/btop remote add origin https://github.com/aristocratos/btop.git",
+          "git -C repos/btop fetch --depth 1 origin cece4df4db2112f63d94347f6ee2f89ee7224c7b",
+          "git -C repos/btop checkout --detach FETCH_HEAD"
         ],
         "sparse_paths": []
       },
@@ -408,8 +408,8 @@
       },
       "parse": {
         "analysis_commands": {
-          "baseline": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/dataset-candidates/catch2 --project catch2 --output outputs/dataset-experiment/baseline/catch2/analysis.json",
-          "final": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/dataset-candidates/catch2 --project catch2 --output outputs/dataset-experiment/final/catch2/analysis.json"
+          "baseline": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/catch2 --project catch2 --output outputs/dataset-experiment/baseline/catch2/analysis.json",
+          "final": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/catch2 --project catch2 --output outputs/dataset-experiment/final/catch2/analysis.json"
         },
         "baseline": {
           "artifact_path": "outputs/dataset-experiment/baseline/catch2/analysis.json",
@@ -637,19 +637,19 @@
             "source_inventory_sha256": "e19880628d002ab3461cb87dc17d52fcdc06bc15d072c4d87aa2b19a126443ed"
           }
         },
-        "reproduction_command": ".venv/bin/python -m src.parser.repo2data --input repos/dataset-candidates --project catch2 --output outputs/dataset-experiment/final/catch2/dataset.pkl --audit-output outputs/dataset-experiment/final/catch2/dataset.audit.json"
+        "reproduction_command": ".venv/bin/python -m src.parser.repo2data --input repos --project catch2 --output outputs/dataset-experiment/final/catch2/dataset.pkl --audit-output outputs/dataset-experiment/final/catch2/dataset.audit.json"
       },
       "revision": {
         "commit": "0cc833ea95bb7136c99be1b5b105780cae5766ff",
         "commit_date": "2026-07-23T00:10:28+02:00",
         "is_shallow": true,
-        "local_path": "repos/dataset-candidates/catch2",
+        "local_path": "repos/catch2",
         "remote_url": "https://github.com/catchorg/Catch2.git",
         "reproduction_commands": [
-          "git init repos/dataset-candidates/catch2",
-          "git -C repos/dataset-candidates/catch2 remote add origin https://github.com/catchorg/Catch2.git",
-          "git -C repos/dataset-candidates/catch2 fetch --depth 1 origin 0cc833ea95bb7136c99be1b5b105780cae5766ff",
-          "git -C repos/dataset-candidates/catch2 checkout --detach FETCH_HEAD"
+          "git init repos/catch2",
+          "git -C repos/catch2 remote add origin https://github.com/catchorg/Catch2.git",
+          "git -C repos/catch2 fetch --depth 1 origin 0cc833ea95bb7136c99be1b5b105780cae5766ff",
+          "git -C repos/catch2 checkout --detach FETCH_HEAD"
         ],
         "sparse_paths": []
       },
@@ -796,8 +796,8 @@
       },
       "parse": {
         "analysis_commands": {
-          "baseline": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/dataset-candidates/cereal --project cereal --output outputs/dataset-experiment/baseline/cereal/analysis.json",
-          "final": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/dataset-candidates/cereal --project cereal --output outputs/dataset-experiment/final/cereal/analysis.json"
+          "baseline": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/cereal --project cereal --output outputs/dataset-experiment/baseline/cereal/analysis.json",
+          "final": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/cereal --project cereal --output outputs/dataset-experiment/final/cereal/analysis.json"
         },
         "baseline": {
           "artifact_path": "outputs/dataset-experiment/baseline/cereal/analysis.json",
@@ -1025,19 +1025,19 @@
             "source_inventory_sha256": "9d312739f5ddcff6206e2a5cea24de6d4135997676b2ba55715a09adcaece00e"
           }
         },
-        "reproduction_command": ".venv/bin/python -m src.parser.repo2data --input repos/dataset-candidates --project cereal --output outputs/dataset-experiment/final/cereal/dataset.pkl --audit-output outputs/dataset-experiment/final/cereal/dataset.audit.json"
+        "reproduction_command": ".venv/bin/python -m src.parser.repo2data --input repos --project cereal --output outputs/dataset-experiment/final/cereal/dataset.pkl --audit-output outputs/dataset-experiment/final/cereal/dataset.audit.json"
       },
       "revision": {
         "commit": "22a1b369f39be918ca79206a83c4facd759f9105",
         "commit_date": "2026-03-10T23:41:29-07:00",
         "is_shallow": true,
-        "local_path": "repos/dataset-candidates/cereal",
+        "local_path": "repos/cereal",
         "remote_url": "https://github.com/USCiLab/cereal.git",
         "reproduction_commands": [
-          "git init repos/dataset-candidates/cereal",
-          "git -C repos/dataset-candidates/cereal remote add origin https://github.com/USCiLab/cereal.git",
-          "git -C repos/dataset-candidates/cereal fetch --depth 1 origin 22a1b369f39be918ca79206a83c4facd759f9105",
-          "git -C repos/dataset-candidates/cereal checkout --detach FETCH_HEAD"
+          "git init repos/cereal",
+          "git -C repos/cereal remote add origin https://github.com/USCiLab/cereal.git",
+          "git -C repos/cereal fetch --depth 1 origin 22a1b369f39be918ca79206a83c4facd759f9105",
+          "git -C repos/cereal checkout --detach FETCH_HEAD"
         ],
         "sparse_paths": []
       },
@@ -1164,8 +1164,8 @@
       },
       "parse": {
         "analysis_commands": {
-          "baseline": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/dataset-candidates/cli11 --project cli11 --output outputs/dataset-experiment/baseline/cli11/analysis.json",
-          "final": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/dataset-candidates/cli11 --project cli11 --output outputs/dataset-experiment/final/cli11/analysis.json"
+          "baseline": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/cli11 --project cli11 --output outputs/dataset-experiment/baseline/cli11/analysis.json",
+          "final": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/cli11 --project cli11 --output outputs/dataset-experiment/final/cli11/analysis.json"
         },
         "baseline": {
           "artifact_path": "outputs/dataset-experiment/baseline/cli11/analysis.json",
@@ -1393,19 +1393,19 @@
             "source_inventory_sha256": "47a26581bb00f4e0cb00961fbd3e5784d1d7efa5cde28f658f9667b2367f62b9"
           }
         },
-        "reproduction_command": ".venv/bin/python -m src.parser.repo2data --input repos/dataset-candidates --project cli11 --output outputs/dataset-experiment/final/cli11/dataset.pkl --audit-output outputs/dataset-experiment/final/cli11/dataset.audit.json"
+        "reproduction_command": ".venv/bin/python -m src.parser.repo2data --input repos --project cli11 --output outputs/dataset-experiment/final/cli11/dataset.pkl --audit-output outputs/dataset-experiment/final/cli11/dataset.audit.json"
       },
       "revision": {
         "commit": "df471341501680d80b51c6173d24a692120ec6e2",
         "commit_date": "2026-07-10T05:36:19-07:00",
         "is_shallow": true,
-        "local_path": "repos/dataset-candidates/cli11",
+        "local_path": "repos/cli11",
         "remote_url": "https://github.com/CLIUtils/CLI11.git",
         "reproduction_commands": [
-          "git init repos/dataset-candidates/cli11",
-          "git -C repos/dataset-candidates/cli11 remote add origin https://github.com/CLIUtils/CLI11.git",
-          "git -C repos/dataset-candidates/cli11 fetch --depth 1 origin df471341501680d80b51c6173d24a692120ec6e2",
-          "git -C repos/dataset-candidates/cli11 checkout --detach FETCH_HEAD"
+          "git init repos/cli11",
+          "git -C repos/cli11 remote add origin https://github.com/CLIUtils/CLI11.git",
+          "git -C repos/cli11 fetch --depth 1 origin df471341501680d80b51c6173d24a692120ec6e2",
+          "git -C repos/cli11 checkout --detach FETCH_HEAD"
         ],
         "sparse_paths": []
       },
@@ -1557,8 +1557,8 @@
       },
       "parse": {
         "analysis_commands": {
-          "baseline": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/dataset-candidates/concurrentqueue --project concurrentqueue --output outputs/dataset-experiment/baseline/concurrentqueue/analysis.json",
-          "final": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/dataset-candidates/concurrentqueue --project concurrentqueue --output outputs/dataset-experiment/final/concurrentqueue/analysis.json"
+          "baseline": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/concurrentqueue --project concurrentqueue --output outputs/dataset-experiment/baseline/concurrentqueue/analysis.json",
+          "final": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/concurrentqueue --project concurrentqueue --output outputs/dataset-experiment/final/concurrentqueue/analysis.json"
         },
         "baseline": {
           "artifact_path": "outputs/dataset-experiment/baseline/concurrentqueue/analysis.json",
@@ -1786,19 +1786,19 @@
             "source_inventory_sha256": "c8f010a9e86d5d5aa3a8d8a9ad207907cbc0b513cdbf0e6a2a78dcca4a56f2e4"
           }
         },
-        "reproduction_command": ".venv/bin/python -m src.parser.repo2data --input repos/dataset-candidates --project concurrentqueue --output outputs/dataset-experiment/final/concurrentqueue/dataset.pkl --audit-output outputs/dataset-experiment/final/concurrentqueue/dataset.audit.json"
+        "reproduction_command": ".venv/bin/python -m src.parser.repo2data --input repos --project concurrentqueue --output outputs/dataset-experiment/final/concurrentqueue/dataset.pkl --audit-output outputs/dataset-experiment/final/concurrentqueue/dataset.audit.json"
       },
       "revision": {
         "commit": "683b9e31ea15eb69f1b81cc1defc7850d5f20b71",
         "commit_date": "2026-07-11T13:15:50-04:00",
         "is_shallow": true,
-        "local_path": "repos/dataset-candidates/concurrentqueue",
+        "local_path": "repos/concurrentqueue",
         "remote_url": "https://github.com/cameron314/concurrentqueue.git",
         "reproduction_commands": [
-          "git init repos/dataset-candidates/concurrentqueue",
-          "git -C repos/dataset-candidates/concurrentqueue remote add origin https://github.com/cameron314/concurrentqueue.git",
-          "git -C repos/dataset-candidates/concurrentqueue fetch --depth 1 origin 683b9e31ea15eb69f1b81cc1defc7850d5f20b71",
-          "git -C repos/dataset-candidates/concurrentqueue checkout --detach FETCH_HEAD"
+          "git init repos/concurrentqueue",
+          "git -C repos/concurrentqueue remote add origin https://github.com/cameron314/concurrentqueue.git",
+          "git -C repos/concurrentqueue fetch --depth 1 origin 683b9e31ea15eb69f1b81cc1defc7850d5f20b71",
+          "git -C repos/concurrentqueue checkout --detach FETCH_HEAD"
         ],
         "sparse_paths": []
       },
@@ -1926,8 +1926,8 @@
       },
       "parse": {
         "analysis_commands": {
-          "baseline": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/dataset-candidates/cpp-httplib --project cpp-httplib --output outputs/dataset-experiment/baseline/cpp-httplib/analysis.json",
-          "final": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/dataset-candidates/cpp-httplib --project cpp-httplib --output outputs/dataset-experiment/final/cpp-httplib/analysis.json"
+          "baseline": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/cpp-httplib --project cpp-httplib --output outputs/dataset-experiment/baseline/cpp-httplib/analysis.json",
+          "final": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/cpp-httplib --project cpp-httplib --output outputs/dataset-experiment/final/cpp-httplib/analysis.json"
         },
         "baseline": {
           "artifact_path": "outputs/dataset-experiment/baseline/cpp-httplib/analysis.json",
@@ -2151,19 +2151,19 @@
             "source_inventory_sha256": "648695b3b0f682da053128b70feea48cd82fd31f41bdcf38899daef3bfc6ad12"
           }
         },
-        "reproduction_command": ".venv/bin/python -m src.parser.repo2data --input repos/dataset-candidates --project cpp-httplib --output outputs/dataset-experiment/final/cpp-httplib/dataset.pkl --audit-output outputs/dataset-experiment/final/cpp-httplib/dataset.audit.json"
+        "reproduction_command": ".venv/bin/python -m src.parser.repo2data --input repos --project cpp-httplib --output outputs/dataset-experiment/final/cpp-httplib/dataset.pkl --audit-output outputs/dataset-experiment/final/cpp-httplib/dataset.audit.json"
       },
       "revision": {
         "commit": "c64bf21a5ea10c196187cda52ccd776725968e3c",
         "commit_date": "2026-07-22T12:01:20-04:00",
         "is_shallow": true,
-        "local_path": "repos/dataset-candidates/cpp-httplib",
+        "local_path": "repos/cpp-httplib",
         "remote_url": "https://github.com/yhirose/cpp-httplib.git",
         "reproduction_commands": [
-          "git init repos/dataset-candidates/cpp-httplib",
-          "git -C repos/dataset-candidates/cpp-httplib remote add origin https://github.com/yhirose/cpp-httplib.git",
-          "git -C repos/dataset-candidates/cpp-httplib fetch --depth 1 origin c64bf21a5ea10c196187cda52ccd776725968e3c",
-          "git -C repos/dataset-candidates/cpp-httplib checkout --detach FETCH_HEAD"
+          "git init repos/cpp-httplib",
+          "git -C repos/cpp-httplib remote add origin https://github.com/yhirose/cpp-httplib.git",
+          "git -C repos/cpp-httplib fetch --depth 1 origin c64bf21a5ea10c196187cda52ccd776725968e3c",
+          "git -C repos/cpp-httplib checkout --detach FETCH_HEAD"
         ],
         "sparse_paths": []
       },
@@ -2308,8 +2308,8 @@
       },
       "parse": {
         "analysis_commands": {
-          "baseline": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/dataset-candidates/drogon --project drogon --output outputs/dataset-experiment/baseline/drogon/analysis.json",
-          "final": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/dataset-candidates/drogon --project drogon --output outputs/dataset-experiment/final/drogon/analysis.json"
+          "baseline": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/drogon --project drogon --output outputs/dataset-experiment/baseline/drogon/analysis.json",
+          "final": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/drogon --project drogon --output outputs/dataset-experiment/final/drogon/analysis.json"
         },
         "baseline": {
           "artifact_path": "outputs/dataset-experiment/baseline/drogon/analysis.json",
@@ -2537,19 +2537,19 @@
             "source_inventory_sha256": "704b57a8266307f2087812c1bbe702de6c2a389d37b2c1eeedddf86a2f41e8ed"
           }
         },
-        "reproduction_command": ".venv/bin/python -m src.parser.repo2data --input repos/dataset-candidates --project drogon --output outputs/dataset-experiment/final/drogon/dataset.pkl --audit-output outputs/dataset-experiment/final/drogon/dataset.audit.json"
+        "reproduction_command": ".venv/bin/python -m src.parser.repo2data --input repos --project drogon --output outputs/dataset-experiment/final/drogon/dataset.pkl --audit-output outputs/dataset-experiment/final/drogon/dataset.audit.json"
       },
       "revision": {
         "commit": "74fc004c8dc8244fe3b6c56628601053b5a15c37",
         "commit_date": "2026-07-23T18:03:23+08:00",
         "is_shallow": true,
-        "local_path": "repos/dataset-candidates/drogon",
+        "local_path": "repos/drogon",
         "remote_url": "https://github.com/drogonframework/drogon.git",
         "reproduction_commands": [
-          "git init repos/dataset-candidates/drogon",
-          "git -C repos/dataset-candidates/drogon remote add origin https://github.com/drogonframework/drogon.git",
-          "git -C repos/dataset-candidates/drogon fetch --depth 1 origin 74fc004c8dc8244fe3b6c56628601053b5a15c37",
-          "git -C repos/dataset-candidates/drogon checkout --detach FETCH_HEAD"
+          "git init repos/drogon",
+          "git -C repos/drogon remote add origin https://github.com/drogonframework/drogon.git",
+          "git -C repos/drogon fetch --depth 1 origin 74fc004c8dc8244fe3b6c56628601053b5a15c37",
+          "git -C repos/drogon checkout --detach FETCH_HEAD"
         ],
         "sparse_paths": []
       },
@@ -2683,8 +2683,8 @@
       },
       "parse": {
         "analysis_commands": {
-          "baseline": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/dataset-candidates/entt --project entt --output outputs/dataset-experiment/baseline/entt/analysis.json",
-          "final": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/dataset-candidates/entt --project entt --output outputs/dataset-experiment/final/entt/analysis.json"
+          "baseline": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/entt --project entt --output outputs/dataset-experiment/baseline/entt/analysis.json",
+          "final": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/entt --project entt --output outputs/dataset-experiment/final/entt/analysis.json"
         },
         "baseline": {
           "artifact_path": "outputs/dataset-experiment/baseline/entt/analysis.json",
@@ -2912,19 +2912,19 @@
             "source_inventory_sha256": "c6b6b83810cddbc975e0cb209b104c2cd0c24c0c7a4bcc7110d428b7ee993fbc"
           }
         },
-        "reproduction_command": ".venv/bin/python -m src.parser.repo2data --input repos/dataset-candidates --project entt --output outputs/dataset-experiment/final/entt/dataset.pkl --audit-output outputs/dataset-experiment/final/entt/dataset.audit.json"
+        "reproduction_command": ".venv/bin/python -m src.parser.repo2data --input repos --project entt --output outputs/dataset-experiment/final/entt/dataset.pkl --audit-output outputs/dataset-experiment/final/entt/dataset.audit.json"
       },
       "revision": {
         "commit": "85c6bba014049b5de8fad49d25424df2f1f6a8c1",
         "commit_date": "2026-07-22T18:17:29+02:00",
         "is_shallow": true,
-        "local_path": "repos/dataset-candidates/entt",
+        "local_path": "repos/entt",
         "remote_url": "https://github.com/skypjack/entt.git",
         "reproduction_commands": [
-          "git init repos/dataset-candidates/entt",
-          "git -C repos/dataset-candidates/entt remote add origin https://github.com/skypjack/entt.git",
-          "git -C repos/dataset-candidates/entt fetch --depth 1 origin 85c6bba014049b5de8fad49d25424df2f1f6a8c1",
-          "git -C repos/dataset-candidates/entt checkout --detach FETCH_HEAD"
+          "git init repos/entt",
+          "git -C repos/entt remote add origin https://github.com/skypjack/entt.git",
+          "git -C repos/entt fetch --depth 1 origin 85c6bba014049b5de8fad49d25424df2f1f6a8c1",
+          "git -C repos/entt checkout --detach FETCH_HEAD"
         ],
         "sparse_paths": []
       },
@@ -3062,8 +3062,8 @@
       },
       "parse": {
         "analysis_commands": {
-          "baseline": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/dataset-candidates/envoy --project envoy --output outputs/dataset-experiment/baseline/envoy/analysis.json",
-          "final": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/dataset-candidates/envoy --project envoy --output outputs/dataset-experiment/final/envoy/analysis.json"
+          "baseline": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/envoy --project envoy --output outputs/dataset-experiment/baseline/envoy/analysis.json",
+          "final": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/envoy --project envoy --output outputs/dataset-experiment/final/envoy/analysis.json"
         },
         "baseline": {
           "artifact_path": "outputs/dataset-experiment/baseline/envoy/analysis.json",
@@ -3292,21 +3292,21 @@
             "source_inventory_sha256": "b766a08b40ee7497e93592afc9fff7d845f7c2cb6d76ac35098d92390dffc8b7"
           }
         },
-        "reproduction_command": ".venv/bin/python -m src.parser.repo2data --input repos/dataset-candidates --project envoy --output outputs/dataset-experiment/final/envoy/dataset.pkl --audit-output outputs/dataset-experiment/final/envoy/dataset.audit.json"
+        "reproduction_command": ".venv/bin/python -m src.parser.repo2data --input repos --project envoy --output outputs/dataset-experiment/final/envoy/dataset.pkl --audit-output outputs/dataset-experiment/final/envoy/dataset.audit.json"
       },
       "revision": {
         "commit": "be513213e888c443f4e00b1343cc05149f4f92a7",
         "commit_date": "2026-07-23T15:38:55+01:00",
         "is_shallow": true,
-        "local_path": "repos/dataset-candidates/envoy",
+        "local_path": "repos/envoy",
         "remote_url": "https://github.com/envoyproxy/envoy.git",
         "reproduction_commands": [
-          "git init repos/dataset-candidates/envoy",
-          "git -C repos/dataset-candidates/envoy remote add origin https://github.com/envoyproxy/envoy.git",
-          "git -C repos/dataset-candidates/envoy sparse-checkout init --cone",
-          "git -C repos/dataset-candidates/envoy sparse-checkout set source envoy contrib mobile/library/common",
-          "git -C repos/dataset-candidates/envoy fetch --depth 1 origin be513213e888c443f4e00b1343cc05149f4f92a7",
-          "git -C repos/dataset-candidates/envoy checkout --detach FETCH_HEAD"
+          "git init repos/envoy",
+          "git -C repos/envoy remote add origin https://github.com/envoyproxy/envoy.git",
+          "git -C repos/envoy sparse-checkout init --cone",
+          "git -C repos/envoy sparse-checkout set source envoy contrib mobile/library/common",
+          "git -C repos/envoy fetch --depth 1 origin be513213e888c443f4e00b1343cc05149f4f92a7",
+          "git -C repos/envoy checkout --detach FETCH_HEAD"
         ],
         "sparse_paths": [
           "source",
@@ -3465,8 +3465,8 @@
       },
       "parse": {
         "analysis_commands": {
-          "baseline": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/dataset-candidates/fmt --project fmt --output outputs/dataset-experiment/baseline/fmt/analysis.json",
-          "final": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/dataset-candidates/fmt --project fmt --output outputs/dataset-experiment/final/fmt/analysis.json"
+          "baseline": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/fmt --project fmt --output outputs/dataset-experiment/baseline/fmt/analysis.json",
+          "final": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/fmt --project fmt --output outputs/dataset-experiment/final/fmt/analysis.json"
         },
         "baseline": {
           "artifact_path": "outputs/dataset-experiment/baseline/fmt/analysis.json",
@@ -3694,19 +3694,19 @@
             "source_inventory_sha256": "ad1907025225f2ff0ce4e98ed37e690fd0a4b792f2d58b055b3825cbc2fd0eae"
           }
         },
-        "reproduction_command": ".venv/bin/python -m src.parser.repo2data --input repos/dataset-candidates --project fmt --output outputs/dataset-experiment/final/fmt/dataset.pkl --audit-output outputs/dataset-experiment/final/fmt/dataset.audit.json"
+        "reproduction_command": ".venv/bin/python -m src.parser.repo2data --input repos --project fmt --output outputs/dataset-experiment/final/fmt/dataset.pkl --audit-output outputs/dataset-experiment/final/fmt/dataset.audit.json"
       },
       "revision": {
         "commit": "6439aa09b108a6999dbf3cc30fc1a9c7be80e73c",
         "commit_date": "2026-07-23T08:14:21-07:00",
         "is_shallow": true,
-        "local_path": "repos/dataset-candidates/fmt",
+        "local_path": "repos/fmt",
         "remote_url": "https://github.com/fmtlib/fmt.git",
         "reproduction_commands": [
-          "git init repos/dataset-candidates/fmt",
-          "git -C repos/dataset-candidates/fmt remote add origin https://github.com/fmtlib/fmt.git",
-          "git -C repos/dataset-candidates/fmt fetch --depth 1 origin 6439aa09b108a6999dbf3cc30fc1a9c7be80e73c",
-          "git -C repos/dataset-candidates/fmt checkout --detach FETCH_HEAD"
+          "git init repos/fmt",
+          "git -C repos/fmt remote add origin https://github.com/fmtlib/fmt.git",
+          "git -C repos/fmt fetch --depth 1 origin 6439aa09b108a6999dbf3cc30fc1a9c7be80e73c",
+          "git -C repos/fmt checkout --detach FETCH_HEAD"
         ],
         "sparse_paths": []
       },
@@ -3833,8 +3833,8 @@
       },
       "parse": {
         "analysis_commands": {
-          "baseline": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/dataset-candidates/gsl --project gsl --output outputs/dataset-experiment/baseline/gsl/analysis.json",
-          "final": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/dataset-candidates/gsl --project gsl --output outputs/dataset-experiment/final/gsl/analysis.json"
+          "baseline": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/gsl --project gsl --output outputs/dataset-experiment/baseline/gsl/analysis.json",
+          "final": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/gsl --project gsl --output outputs/dataset-experiment/final/gsl/analysis.json"
         },
         "baseline": {
           "artifact_path": "outputs/dataset-experiment/baseline/gsl/analysis.json",
@@ -4021,19 +4021,19 @@
             "source_inventory_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
           }
         },
-        "reproduction_command": ".venv/bin/python -m src.parser.repo2data --input repos/dataset-candidates --project gsl --output outputs/dataset-experiment/final/gsl/dataset.pkl --audit-output outputs/dataset-experiment/final/gsl/dataset.audit.json"
+        "reproduction_command": ".venv/bin/python -m src.parser.repo2data --input repos --project gsl --output outputs/dataset-experiment/final/gsl/dataset.pkl --audit-output outputs/dataset-experiment/final/gsl/dataset.audit.json"
       },
       "revision": {
         "commit": "a75212b9f3b14162edd62d540cbf9273d5a59d20",
         "commit_date": "2026-07-13T14:53:09-06:00",
         "is_shallow": true,
-        "local_path": "repos/dataset-candidates/gsl",
+        "local_path": "repos/gsl",
         "remote_url": "https://github.com/microsoft/GSL.git",
         "reproduction_commands": [
-          "git init repos/dataset-candidates/gsl",
-          "git -C repos/dataset-candidates/gsl remote add origin https://github.com/microsoft/GSL.git",
-          "git -C repos/dataset-candidates/gsl fetch --depth 1 origin a75212b9f3b14162edd62d540cbf9273d5a59d20",
-          "git -C repos/dataset-candidates/gsl checkout --detach FETCH_HEAD"
+          "git init repos/gsl",
+          "git -C repos/gsl remote add origin https://github.com/microsoft/GSL.git",
+          "git -C repos/gsl fetch --depth 1 origin a75212b9f3b14162edd62d540cbf9273d5a59d20",
+          "git -C repos/gsl checkout --detach FETCH_HEAD"
         ],
         "sparse_paths": []
       },
@@ -4154,8 +4154,8 @@
       },
       "parse": {
         "analysis_commands": {
-          "baseline": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/dataset-candidates/json --project json --output outputs/dataset-experiment/baseline/json/analysis.json",
-          "final": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/dataset-candidates/json --project json --output outputs/dataset-experiment/final/json/analysis.json"
+          "baseline": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/json --project json --output outputs/dataset-experiment/baseline/json/analysis.json",
+          "final": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/json --project json --output outputs/dataset-experiment/final/json/analysis.json"
         },
         "baseline": {
           "artifact_path": "outputs/dataset-experiment/baseline/json/analysis.json",
@@ -4383,19 +4383,19 @@
             "source_inventory_sha256": "9c00a559270f52f63bc3fd5a0384a612691132ad3208fa90c59b4e80f19c5241"
           }
         },
-        "reproduction_command": ".venv/bin/python -m src.parser.repo2data --input repos/dataset-candidates --project json --output outputs/dataset-experiment/final/json/dataset.pkl --audit-output outputs/dataset-experiment/final/json/dataset.audit.json"
+        "reproduction_command": ".venv/bin/python -m src.parser.repo2data --input repos --project json --output outputs/dataset-experiment/final/json/dataset.pkl --audit-output outputs/dataset-experiment/final/json/dataset.audit.json"
       },
       "revision": {
         "commit": "3296a3ad8c87bfdb8a635f158003b28f06436b6f",
         "commit_date": "2026-07-23T16:02:29Z",
         "is_shallow": true,
-        "local_path": "repos/dataset-candidates/json",
+        "local_path": "repos/json",
         "remote_url": "https://github.com/nlohmann/json.git",
         "reproduction_commands": [
-          "git init repos/dataset-candidates/json",
-          "git -C repos/dataset-candidates/json remote add origin https://github.com/nlohmann/json.git",
-          "git -C repos/dataset-candidates/json fetch --depth 1 origin 3296a3ad8c87bfdb8a635f158003b28f06436b6f",
-          "git -C repos/dataset-candidates/json checkout --detach FETCH_HEAD"
+          "git init repos/json",
+          "git -C repos/json remote add origin https://github.com/nlohmann/json.git",
+          "git -C repos/json fetch --depth 1 origin 3296a3ad8c87bfdb8a635f158003b28f06436b6f",
+          "git -C repos/json checkout --detach FETCH_HEAD"
         ],
         "sparse_paths": []
       },
@@ -4567,8 +4567,8 @@
       },
       "parse": {
         "analysis_commands": {
-          "baseline": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/dataset-candidates/leveldb --project leveldb --output outputs/dataset-experiment/baseline/leveldb/analysis.json",
-          "final": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/dataset-candidates/leveldb --project leveldb --output outputs/dataset-experiment/final/leveldb/analysis.json"
+          "baseline": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/leveldb --project leveldb --output outputs/dataset-experiment/baseline/leveldb/analysis.json",
+          "final": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/leveldb --project leveldb --output outputs/dataset-experiment/final/leveldb/analysis.json"
         },
         "baseline": {
           "artifact_path": "outputs/dataset-experiment/baseline/leveldb/analysis.json",
@@ -4796,19 +4796,19 @@
             "source_inventory_sha256": "9327daf2f7549c25c81ed2c8489a4cb5ba2ceeda192e7a63441ebf6c55ea5f6c"
           }
         },
-        "reproduction_command": ".venv/bin/python -m src.parser.repo2data --input repos/dataset-candidates --project leveldb --output outputs/dataset-experiment/final/leveldb/dataset.pkl --audit-output outputs/dataset-experiment/final/leveldb/dataset.audit.json"
+        "reproduction_command": ".venv/bin/python -m src.parser.repo2data --input repos --project leveldb --output outputs/dataset-experiment/final/leveldb/dataset.pkl --audit-output outputs/dataset-experiment/final/leveldb/dataset.audit.json"
       },
       "revision": {
         "commit": "7ee830d02b623e8ffe0b95d59a74db1e58da04c5",
         "commit_date": "2026-03-10T21:06:29-07:00",
         "is_shallow": true,
-        "local_path": "repos/dataset-candidates/leveldb",
+        "local_path": "repos/leveldb",
         "remote_url": "https://github.com/google/leveldb.git",
         "reproduction_commands": [
-          "git init repos/dataset-candidates/leveldb",
-          "git -C repos/dataset-candidates/leveldb remote add origin https://github.com/google/leveldb.git",
-          "git -C repos/dataset-candidates/leveldb fetch --depth 1 origin 7ee830d02b623e8ffe0b95d59a74db1e58da04c5",
-          "git -C repos/dataset-candidates/leveldb checkout --detach FETCH_HEAD"
+          "git init repos/leveldb",
+          "git -C repos/leveldb remote add origin https://github.com/google/leveldb.git",
+          "git -C repos/leveldb fetch --depth 1 origin 7ee830d02b623e8ffe0b95d59a74db1e58da04c5",
+          "git -C repos/leveldb checkout --detach FETCH_HEAD"
         ],
         "sparse_paths": []
       },
@@ -4927,8 +4927,8 @@
       },
       "parse": {
         "analysis_commands": {
-          "baseline": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/dataset-candidates/libzmq --project libzmq --output outputs/dataset-experiment/baseline/libzmq/analysis.json",
-          "final": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/dataset-candidates/libzmq --project libzmq --output outputs/dataset-experiment/final/libzmq/analysis.json"
+          "baseline": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/libzmq --project libzmq --output outputs/dataset-experiment/baseline/libzmq/analysis.json",
+          "final": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/libzmq --project libzmq --output outputs/dataset-experiment/final/libzmq/analysis.json"
         },
         "baseline": {
           "artifact_path": "outputs/dataset-experiment/baseline/libzmq/analysis.json",
@@ -5156,19 +5156,19 @@
             "source_inventory_sha256": "5e855bd514e6f7f8425edc49a7caf033c0a8a694be28f4485098daca18a1e5a8"
           }
         },
-        "reproduction_command": ".venv/bin/python -m src.parser.repo2data --input repos/dataset-candidates --project libzmq --output outputs/dataset-experiment/final/libzmq/dataset.pkl --audit-output outputs/dataset-experiment/final/libzmq/dataset.audit.json"
+        "reproduction_command": ".venv/bin/python -m src.parser.repo2data --input repos --project libzmq --output outputs/dataset-experiment/final/libzmq/dataset.pkl --audit-output outputs/dataset-experiment/final/libzmq/dataset.audit.json"
       },
       "revision": {
         "commit": "6b708e4a453a31e240211792f42e4f0c67b7fc03",
         "commit_date": "2026-07-20T16:54:23+03:00",
         "is_shallow": true,
-        "local_path": "repos/dataset-candidates/libzmq",
+        "local_path": "repos/libzmq",
         "remote_url": "https://github.com/zeromq/libzmq.git",
         "reproduction_commands": [
-          "git init repos/dataset-candidates/libzmq",
-          "git -C repos/dataset-candidates/libzmq remote add origin https://github.com/zeromq/libzmq.git",
-          "git -C repos/dataset-candidates/libzmq fetch --depth 1 origin 6b708e4a453a31e240211792f42e4f0c67b7fc03",
-          "git -C repos/dataset-candidates/libzmq checkout --detach FETCH_HEAD"
+          "git init repos/libzmq",
+          "git -C repos/libzmq remote add origin https://github.com/zeromq/libzmq.git",
+          "git -C repos/libzmq fetch --depth 1 origin 6b708e4a453a31e240211792f42e4f0c67b7fc03",
+          "git -C repos/libzmq checkout --detach FETCH_HEAD"
         ],
         "sparse_paths": []
       },
@@ -5308,8 +5308,8 @@
       },
       "parse": {
         "analysis_commands": {
-          "baseline": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/dataset-candidates/magic_enum --project magic_enum --output outputs/dataset-experiment/baseline/magic_enum/analysis.json",
-          "final": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/dataset-candidates/magic_enum --project magic_enum --output outputs/dataset-experiment/final/magic_enum/analysis.json"
+          "baseline": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/magic_enum --project magic_enum --output outputs/dataset-experiment/baseline/magic_enum/analysis.json",
+          "final": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/magic_enum --project magic_enum --output outputs/dataset-experiment/final/magic_enum/analysis.json"
         },
         "baseline": {
           "artifact_path": "outputs/dataset-experiment/baseline/magic_enum/analysis.json",
@@ -5537,19 +5537,19 @@
             "source_inventory_sha256": "0dd33f43e6fcbb6c506ed83e1537358e10416ff37d5d33ec41174fc70ed4d198"
           }
         },
-        "reproduction_command": ".venv/bin/python -m src.parser.repo2data --input repos/dataset-candidates --project magic_enum --output outputs/dataset-experiment/final/magic_enum/dataset.pkl --audit-output outputs/dataset-experiment/final/magic_enum/dataset.audit.json"
+        "reproduction_command": ".venv/bin/python -m src.parser.repo2data --input repos --project magic_enum --output outputs/dataset-experiment/final/magic_enum/dataset.pkl --audit-output outputs/dataset-experiment/final/magic_enum/dataset.audit.json"
       },
       "revision": {
         "commit": "61173726dbdfb0ea2ce87f0c474e89dea2690a5a",
         "commit_date": "2026-07-20T20:45:18+04:00",
         "is_shallow": true,
-        "local_path": "repos/dataset-candidates/magic_enum",
+        "local_path": "repos/magic_enum",
         "remote_url": "https://github.com/Neargye/magic_enum.git",
         "reproduction_commands": [
-          "git init repos/dataset-candidates/magic_enum",
-          "git -C repos/dataset-candidates/magic_enum remote add origin https://github.com/Neargye/magic_enum.git",
-          "git -C repos/dataset-candidates/magic_enum fetch --depth 1 origin 61173726dbdfb0ea2ce87f0c474e89dea2690a5a",
-          "git -C repos/dataset-candidates/magic_enum checkout --detach FETCH_HEAD"
+          "git init repos/magic_enum",
+          "git -C repos/magic_enum remote add origin https://github.com/Neargye/magic_enum.git",
+          "git -C repos/magic_enum fetch --depth 1 origin 61173726dbdfb0ea2ce87f0c474e89dea2690a5a",
+          "git -C repos/magic_enum checkout --detach FETCH_HEAD"
         ],
         "sparse_paths": []
       },
@@ -5691,8 +5691,8 @@
       },
       "parse": {
         "analysis_commands": {
-          "baseline": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/dataset-candidates/mosh --project mosh --output outputs/dataset-experiment/baseline/mosh/analysis.json",
-          "final": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/dataset-candidates/mosh --project mosh --output outputs/dataset-experiment/final/mosh/analysis.json"
+          "baseline": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/mosh --project mosh --output outputs/dataset-experiment/baseline/mosh/analysis.json",
+          "final": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/mosh --project mosh --output outputs/dataset-experiment/final/mosh/analysis.json"
         },
         "baseline": {
           "artifact_path": "outputs/dataset-experiment/baseline/mosh/analysis.json",
@@ -5920,19 +5920,19 @@
             "source_inventory_sha256": "3725f642d9f1b1db0a0d1142c3a72d70b74f15c8421dbf05f6cad0ceeb45b181"
           }
         },
-        "reproduction_command": ".venv/bin/python -m src.parser.repo2data --input repos/dataset-candidates --project mosh --output outputs/dataset-experiment/final/mosh/dataset.pkl --audit-output outputs/dataset-experiment/final/mosh/dataset.audit.json"
+        "reproduction_command": ".venv/bin/python -m src.parser.repo2data --input repos --project mosh --output outputs/dataset-experiment/final/mosh/dataset.pkl --audit-output outputs/dataset-experiment/final/mosh/dataset.audit.json"
       },
       "revision": {
         "commit": "decd9b705eb81626f694335b8d5940538beb06da",
         "commit_date": "2026-03-22T16:20:13-04:00",
         "is_shallow": true,
-        "local_path": "repos/dataset-candidates/mosh",
+        "local_path": "repos/mosh",
         "remote_url": "https://github.com/mobile-shell/mosh.git",
         "reproduction_commands": [
-          "git init repos/dataset-candidates/mosh",
-          "git -C repos/dataset-candidates/mosh remote add origin https://github.com/mobile-shell/mosh.git",
-          "git -C repos/dataset-candidates/mosh fetch --depth 1 origin decd9b705eb81626f694335b8d5940538beb06da",
-          "git -C repos/dataset-candidates/mosh checkout --detach FETCH_HEAD"
+          "git init repos/mosh",
+          "git -C repos/mosh remote add origin https://github.com/mobile-shell/mosh.git",
+          "git -C repos/mosh fetch --depth 1 origin decd9b705eb81626f694335b8d5940538beb06da",
+          "git -C repos/mosh checkout --detach FETCH_HEAD"
         ],
         "sparse_paths": []
       },
@@ -6051,8 +6051,8 @@
       },
       "parse": {
         "analysis_commands": {
-          "baseline": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/dataset-candidates/ninja --project ninja --output outputs/dataset-experiment/baseline/ninja/analysis.json",
-          "final": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/dataset-candidates/ninja --project ninja --output outputs/dataset-experiment/final/ninja/analysis.json"
+          "baseline": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/ninja --project ninja --output outputs/dataset-experiment/baseline/ninja/analysis.json",
+          "final": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/ninja --project ninja --output outputs/dataset-experiment/final/ninja/analysis.json"
         },
         "baseline": {
           "artifact_path": "outputs/dataset-experiment/baseline/ninja/analysis.json",
@@ -6280,19 +6280,19 @@
             "source_inventory_sha256": "7ddde5990e3aef9fc1bf512222ec5745e17f4a8ba7b6ea20cdf056c311c50c88"
           }
         },
-        "reproduction_command": ".venv/bin/python -m src.parser.repo2data --input repos/dataset-candidates --project ninja --output outputs/dataset-experiment/final/ninja/dataset.pkl --audit-output outputs/dataset-experiment/final/ninja/dataset.audit.json"
+        "reproduction_command": ".venv/bin/python -m src.parser.repo2data --input repos --project ninja --output outputs/dataset-experiment/final/ninja/dataset.pkl --audit-output outputs/dataset-experiment/final/ninja/dataset.audit.json"
       },
       "revision": {
         "commit": "fc6bb98eee5a9710055cb9fe74375a6523831e28",
         "commit_date": "2026-07-22T21:56:26+02:00",
         "is_shallow": true,
-        "local_path": "repos/dataset-candidates/ninja",
+        "local_path": "repos/ninja",
         "remote_url": "https://github.com/ninja-build/ninja.git",
         "reproduction_commands": [
-          "git init repos/dataset-candidates/ninja",
-          "git -C repos/dataset-candidates/ninja remote add origin https://github.com/ninja-build/ninja.git",
-          "git -C repos/dataset-candidates/ninja fetch --depth 1 origin fc6bb98eee5a9710055cb9fe74375a6523831e28",
-          "git -C repos/dataset-candidates/ninja checkout --detach FETCH_HEAD"
+          "git init repos/ninja",
+          "git -C repos/ninja remote add origin https://github.com/ninja-build/ninja.git",
+          "git -C repos/ninja fetch --depth 1 origin fc6bb98eee5a9710055cb9fe74375a6523831e28",
+          "git -C repos/ninja checkout --detach FETCH_HEAD"
         ],
         "sparse_paths": []
       },
@@ -6413,8 +6413,8 @@
       },
       "parse": {
         "analysis_commands": {
-          "baseline": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/dataset-candidates/polybar --project polybar --output outputs/dataset-experiment/baseline/polybar/analysis.json",
-          "final": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/dataset-candidates/polybar --project polybar --output outputs/dataset-experiment/final/polybar/analysis.json"
+          "baseline": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/polybar --project polybar --output outputs/dataset-experiment/baseline/polybar/analysis.json",
+          "final": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/polybar --project polybar --output outputs/dataset-experiment/final/polybar/analysis.json"
         },
         "baseline": {
           "artifact_path": "outputs/dataset-experiment/baseline/polybar/analysis.json",
@@ -6642,19 +6642,19 @@
             "source_inventory_sha256": "9cdbba415e990012984aafd4391c2fd8adae1e7e69dab14750478c1fb0e6eed2"
           }
         },
-        "reproduction_command": ".venv/bin/python -m src.parser.repo2data --input repos/dataset-candidates --project polybar --output outputs/dataset-experiment/final/polybar/dataset.pkl --audit-output outputs/dataset-experiment/final/polybar/dataset.audit.json"
+        "reproduction_command": ".venv/bin/python -m src.parser.repo2data --input repos --project polybar --output outputs/dataset-experiment/final/polybar/dataset.pkl --audit-output outputs/dataset-experiment/final/polybar/dataset.audit.json"
       },
       "revision": {
         "commit": "f99e0b1c7a5b094f5a04b14101899d0cb4ece69d",
         "commit_date": "2025-09-24T10:29:01+02:00",
         "is_shallow": true,
-        "local_path": "repos/dataset-candidates/polybar",
+        "local_path": "repos/polybar",
         "remote_url": "https://github.com/polybar/polybar.git",
         "reproduction_commands": [
-          "git init repos/dataset-candidates/polybar",
-          "git -C repos/dataset-candidates/polybar remote add origin https://github.com/polybar/polybar.git",
-          "git -C repos/dataset-candidates/polybar fetch --depth 1 origin f99e0b1c7a5b094f5a04b14101899d0cb4ece69d",
-          "git -C repos/dataset-candidates/polybar checkout --detach FETCH_HEAD"
+          "git init repos/polybar",
+          "git -C repos/polybar remote add origin https://github.com/polybar/polybar.git",
+          "git -C repos/polybar fetch --depth 1 origin f99e0b1c7a5b094f5a04b14101899d0cb4ece69d",
+          "git -C repos/polybar checkout --detach FETCH_HEAD"
         ],
         "sparse_paths": []
       },
@@ -6788,8 +6788,8 @@
       },
       "parse": {
         "analysis_commands": {
-          "baseline": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/dataset-candidates/qbittorrent --project qbittorrent --output outputs/dataset-experiment/baseline/qbittorrent/analysis.json",
-          "final": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/dataset-candidates/qbittorrent --project qbittorrent --output outputs/dataset-experiment/final/qbittorrent/analysis.json"
+          "baseline": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/qbittorrent --project qbittorrent --output outputs/dataset-experiment/baseline/qbittorrent/analysis.json",
+          "final": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/qbittorrent --project qbittorrent --output outputs/dataset-experiment/final/qbittorrent/analysis.json"
         },
         "baseline": {
           "artifact_path": "outputs/dataset-experiment/baseline/qbittorrent/analysis.json",
@@ -7017,19 +7017,19 @@
             "source_inventory_sha256": "b766b60e3c7b8a9c0301949b2f0de055af0eedb05bc701dcdaf6663746642aed"
           }
         },
-        "reproduction_command": ".venv/bin/python -m src.parser.repo2data --input repos/dataset-candidates --project qbittorrent --output outputs/dataset-experiment/final/qbittorrent/dataset.pkl --audit-output outputs/dataset-experiment/final/qbittorrent/dataset.audit.json"
+        "reproduction_command": ".venv/bin/python -m src.parser.repo2data --input repos --project qbittorrent --output outputs/dataset-experiment/final/qbittorrent/dataset.pkl --audit-output outputs/dataset-experiment/final/qbittorrent/dataset.audit.json"
       },
       "revision": {
         "commit": "e70f13d46a42b204559d0e7b16a19eeca522fe9e",
         "commit_date": "2026-07-20T19:00:40+08:00",
         "is_shallow": true,
-        "local_path": "repos/dataset-candidates/qbittorrent",
+        "local_path": "repos/qbittorrent",
         "remote_url": "https://github.com/qbittorrent/qBittorrent.git",
         "reproduction_commands": [
-          "git init repos/dataset-candidates/qbittorrent",
-          "git -C repos/dataset-candidates/qbittorrent remote add origin https://github.com/qbittorrent/qBittorrent.git",
-          "git -C repos/dataset-candidates/qbittorrent fetch --depth 1 origin e70f13d46a42b204559d0e7b16a19eeca522fe9e",
-          "git -C repos/dataset-candidates/qbittorrent checkout --detach FETCH_HEAD"
+          "git init repos/qbittorrent",
+          "git -C repos/qbittorrent remote add origin https://github.com/qbittorrent/qBittorrent.git",
+          "git -C repos/qbittorrent fetch --depth 1 origin e70f13d46a42b204559d0e7b16a19eeca522fe9e",
+          "git -C repos/qbittorrent checkout --detach FETCH_HEAD"
         ],
         "sparse_paths": []
       },
@@ -7160,8 +7160,8 @@
       },
       "parse": {
         "analysis_commands": {
-          "baseline": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/dataset-candidates/react-native --project react-native --output outputs/dataset-experiment/baseline/react-native/analysis.json",
-          "final": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/dataset-candidates/react-native --project react-native --output outputs/dataset-experiment/final/react-native/analysis.json"
+          "baseline": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/react-native --project react-native --output outputs/dataset-experiment/baseline/react-native/analysis.json",
+          "final": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/react-native --project react-native --output outputs/dataset-experiment/final/react-native/analysis.json"
         },
         "baseline": {
           "artifact_path": "outputs/dataset-experiment/baseline/react-native/analysis.json",
@@ -7389,21 +7389,21 @@
             "source_inventory_sha256": "32a45801ee46445ea077e7423bf4e859e517bb00ac6c83ced6d521a5e23cfc6a"
           }
         },
-        "reproduction_command": ".venv/bin/python -m src.parser.repo2data --input repos/dataset-candidates --project react-native --output outputs/dataset-experiment/final/react-native/dataset.pkl --audit-output outputs/dataset-experiment/final/react-native/dataset.audit.json"
+        "reproduction_command": ".venv/bin/python -m src.parser.repo2data --input repos --project react-native --output outputs/dataset-experiment/final/react-native/dataset.pkl --audit-output outputs/dataset-experiment/final/react-native/dataset.audit.json"
       },
       "revision": {
         "commit": "bf691fa53c2faf2fc9825ea25625871b65808647",
         "commit_date": "2026-07-23T06:52:14-07:00",
         "is_shallow": true,
-        "local_path": "repos/dataset-candidates/react-native",
+        "local_path": "repos/react-native",
         "remote_url": "https://github.com/facebook/react-native.git",
         "reproduction_commands": [
-          "git init repos/dataset-candidates/react-native",
-          "git -C repos/dataset-candidates/react-native remote add origin https://github.com/facebook/react-native.git",
-          "git -C repos/dataset-candidates/react-native sparse-checkout init --cone",
-          "git -C repos/dataset-candidates/react-native sparse-checkout set packages/react-native/ReactCommon",
-          "git -C repos/dataset-candidates/react-native fetch --depth 1 origin bf691fa53c2faf2fc9825ea25625871b65808647",
-          "git -C repos/dataset-candidates/react-native checkout --detach FETCH_HEAD"
+          "git init repos/react-native",
+          "git -C repos/react-native remote add origin https://github.com/facebook/react-native.git",
+          "git -C repos/react-native sparse-checkout init --cone",
+          "git -C repos/react-native sparse-checkout set packages/react-native/ReactCommon",
+          "git -C repos/react-native fetch --depth 1 origin bf691fa53c2faf2fc9825ea25625871b65808647",
+          "git -C repos/react-native checkout --detach FETCH_HEAD"
         ],
         "sparse_paths": [
           "packages/react-native/ReactCommon"
@@ -7557,8 +7557,8 @@
       },
       "parse": {
         "analysis_commands": {
-          "baseline": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/dataset-candidates/simdjson --project simdjson --output outputs/dataset-experiment/baseline/simdjson/analysis.json",
-          "final": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/dataset-candidates/simdjson --project simdjson --output outputs/dataset-experiment/final/simdjson/analysis.json"
+          "baseline": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/simdjson --project simdjson --output outputs/dataset-experiment/baseline/simdjson/analysis.json",
+          "final": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/simdjson --project simdjson --output outputs/dataset-experiment/final/simdjson/analysis.json"
         },
         "baseline": {
           "artifact_path": "outputs/dataset-experiment/baseline/simdjson/analysis.json",
@@ -7786,19 +7786,19 @@
             "source_inventory_sha256": "4c8dcd6f9f16b33858f3653b29b3891c13c9f6ca05ba0b87568613d6fb1f8587"
           }
         },
-        "reproduction_command": ".venv/bin/python -m src.parser.repo2data --input repos/dataset-candidates --project simdjson --output outputs/dataset-experiment/final/simdjson/dataset.pkl --audit-output outputs/dataset-experiment/final/simdjson/dataset.audit.json"
+        "reproduction_command": ".venv/bin/python -m src.parser.repo2data --input repos --project simdjson --output outputs/dataset-experiment/final/simdjson/dataset.pkl --audit-output outputs/dataset-experiment/final/simdjson/dataset.audit.json"
       },
       "revision": {
         "commit": "8e6bac94877f2d3d026000d36ce81e0aaf38d26f",
         "commit_date": "2026-07-14T16:36:12-04:00",
         "is_shallow": true,
-        "local_path": "repos/dataset-candidates/simdjson",
+        "local_path": "repos/simdjson",
         "remote_url": "https://github.com/simdjson/simdjson.git",
         "reproduction_commands": [
-          "git init repos/dataset-candidates/simdjson",
-          "git -C repos/dataset-candidates/simdjson remote add origin https://github.com/simdjson/simdjson.git",
-          "git -C repos/dataset-candidates/simdjson fetch --depth 1 origin 8e6bac94877f2d3d026000d36ce81e0aaf38d26f",
-          "git -C repos/dataset-candidates/simdjson checkout --detach FETCH_HEAD"
+          "git init repos/simdjson",
+          "git -C repos/simdjson remote add origin https://github.com/simdjson/simdjson.git",
+          "git -C repos/simdjson fetch --depth 1 origin 8e6bac94877f2d3d026000d36ce81e0aaf38d26f",
+          "git -C repos/simdjson checkout --detach FETCH_HEAD"
         ],
         "sparse_paths": []
       },
@@ -7950,8 +7950,8 @@
       },
       "parse": {
         "analysis_commands": {
-          "baseline": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/dataset-candidates/spdlog --project spdlog --output outputs/dataset-experiment/baseline/spdlog/analysis.json",
-          "final": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/dataset-candidates/spdlog --project spdlog --output outputs/dataset-experiment/final/spdlog/analysis.json"
+          "baseline": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/spdlog --project spdlog --output outputs/dataset-experiment/baseline/spdlog/analysis.json",
+          "final": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/spdlog --project spdlog --output outputs/dataset-experiment/final/spdlog/analysis.json"
         },
         "baseline": {
           "artifact_path": "outputs/dataset-experiment/baseline/spdlog/analysis.json",
@@ -8179,19 +8179,19 @@
             "source_inventory_sha256": "c5177e7a07738cf6f26d1765152c65eb070a3458411051c891559cca12f2d3df"
           }
         },
-        "reproduction_command": ".venv/bin/python -m src.parser.repo2data --input repos/dataset-candidates --project spdlog --output outputs/dataset-experiment/final/spdlog/dataset.pkl --audit-output outputs/dataset-experiment/final/spdlog/dataset.audit.json"
+        "reproduction_command": ".venv/bin/python -m src.parser.repo2data --input repos --project spdlog --output outputs/dataset-experiment/final/spdlog/dataset.pkl --audit-output outputs/dataset-experiment/final/spdlog/dataset.audit.json"
       },
       "revision": {
         "commit": "2ee3cf8204ed5048627644e00a51a7d93fbc4786",
         "commit_date": "2026-07-11T21:49:25+03:00",
         "is_shallow": true,
-        "local_path": "repos/dataset-candidates/spdlog",
+        "local_path": "repos/spdlog",
         "remote_url": "https://github.com/gabime/spdlog.git",
         "reproduction_commands": [
-          "git init repos/dataset-candidates/spdlog",
-          "git -C repos/dataset-candidates/spdlog remote add origin https://github.com/gabime/spdlog.git",
-          "git -C repos/dataset-candidates/spdlog fetch --depth 1 origin 2ee3cf8204ed5048627644e00a51a7d93fbc4786",
-          "git -C repos/dataset-candidates/spdlog checkout --detach FETCH_HEAD"
+          "git init repos/spdlog",
+          "git -C repos/spdlog remote add origin https://github.com/gabime/spdlog.git",
+          "git -C repos/spdlog fetch --depth 1 origin 2ee3cf8204ed5048627644e00a51a7d93fbc4786",
+          "git -C repos/spdlog checkout --detach FETCH_HEAD"
         ],
         "sparse_paths": []
       },
@@ -8313,8 +8313,8 @@
       },
       "parse": {
         "analysis_commands": {
-          "baseline": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/dataset-candidates/taskflow --project taskflow --output outputs/dataset-experiment/baseline/taskflow/analysis.json",
-          "final": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/dataset-candidates/taskflow --project taskflow --output outputs/dataset-experiment/final/taskflow/analysis.json"
+          "baseline": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/taskflow --project taskflow --output outputs/dataset-experiment/baseline/taskflow/analysis.json",
+          "final": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/taskflow --project taskflow --output outputs/dataset-experiment/final/taskflow/analysis.json"
         },
         "baseline": {
           "artifact_path": "outputs/dataset-experiment/baseline/taskflow/analysis.json",
@@ -8542,19 +8542,19 @@
             "source_inventory_sha256": "06a033cd4a7c91800e2bd1458419910550637f156d76231b13e8388da43ee40e"
           }
         },
-        "reproduction_command": ".venv/bin/python -m src.parser.repo2data --input repos/dataset-candidates --project taskflow --output outputs/dataset-experiment/final/taskflow/dataset.pkl --audit-output outputs/dataset-experiment/final/taskflow/dataset.audit.json"
+        "reproduction_command": ".venv/bin/python -m src.parser.repo2data --input repos --project taskflow --output outputs/dataset-experiment/final/taskflow/dataset.pkl --audit-output outputs/dataset-experiment/final/taskflow/dataset.audit.json"
       },
       "revision": {
         "commit": "ec97c0095bd10907584a3b408e181410796b48fe",
         "commit_date": "2026-07-15T12:48:24-05:00",
         "is_shallow": true,
-        "local_path": "repos/dataset-candidates/taskflow",
+        "local_path": "repos/taskflow",
         "remote_url": "https://github.com/taskflow/taskflow.git",
         "reproduction_commands": [
-          "git init repos/dataset-candidates/taskflow",
-          "git -C repos/dataset-candidates/taskflow remote add origin https://github.com/taskflow/taskflow.git",
-          "git -C repos/dataset-candidates/taskflow fetch --depth 1 origin ec97c0095bd10907584a3b408e181410796b48fe",
-          "git -C repos/dataset-candidates/taskflow checkout --detach FETCH_HEAD"
+          "git init repos/taskflow",
+          "git -C repos/taskflow remote add origin https://github.com/taskflow/taskflow.git",
+          "git -C repos/taskflow fetch --depth 1 origin ec97c0095bd10907584a3b408e181410796b48fe",
+          "git -C repos/taskflow checkout --detach FETCH_HEAD"
         ],
         "sparse_paths": []
       },
@@ -8729,8 +8729,8 @@
       },
       "parse": {
         "analysis_commands": {
-          "baseline": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/dataset-candidates/tomlplusplus --project tomlplusplus --output outputs/dataset-experiment/baseline/tomlplusplus/analysis.json",
-          "final": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/dataset-candidates/tomlplusplus --project tomlplusplus --output outputs/dataset-experiment/final/tomlplusplus/analysis.json"
+          "baseline": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/tomlplusplus --project tomlplusplus --output outputs/dataset-experiment/baseline/tomlplusplus/analysis.json",
+          "final": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/tomlplusplus --project tomlplusplus --output outputs/dataset-experiment/final/tomlplusplus/analysis.json"
         },
         "baseline": {
           "artifact_path": "outputs/dataset-experiment/baseline/tomlplusplus/analysis.json",
@@ -8958,19 +8958,19 @@
             "source_inventory_sha256": "ce659e92974759ab9e99856d0459ddd75a635b623e90e712ab633424e77d6e2f"
           }
         },
-        "reproduction_command": ".venv/bin/python -m src.parser.repo2data --input repos/dataset-candidates --project tomlplusplus --output outputs/dataset-experiment/final/tomlplusplus/dataset.pkl --audit-output outputs/dataset-experiment/final/tomlplusplus/dataset.audit.json"
+        "reproduction_command": ".venv/bin/python -m src.parser.repo2data --input repos --project tomlplusplus --output outputs/dataset-experiment/final/tomlplusplus/dataset.pkl --audit-output outputs/dataset-experiment/final/tomlplusplus/dataset.audit.json"
       },
       "revision": {
         "commit": "1e8829b793b66ad17011732a146b8077d379b011",
         "commit_date": "2026-07-21T12:39:07+03:00",
         "is_shallow": true,
-        "local_path": "repos/dataset-candidates/tomlplusplus",
+        "local_path": "repos/tomlplusplus",
         "remote_url": "https://github.com/marzer/tomlplusplus.git",
         "reproduction_commands": [
-          "git init repos/dataset-candidates/tomlplusplus",
-          "git -C repos/dataset-candidates/tomlplusplus remote add origin https://github.com/marzer/tomlplusplus.git",
-          "git -C repos/dataset-candidates/tomlplusplus fetch --depth 1 origin 1e8829b793b66ad17011732a146b8077d379b011",
-          "git -C repos/dataset-candidates/tomlplusplus checkout --detach FETCH_HEAD"
+          "git init repos/tomlplusplus",
+          "git -C repos/tomlplusplus remote add origin https://github.com/marzer/tomlplusplus.git",
+          "git -C repos/tomlplusplus fetch --depth 1 origin 1e8829b793b66ad17011732a146b8077d379b011",
+          "git -C repos/tomlplusplus checkout --detach FETCH_HEAD"
         ],
         "sparse_paths": []
       },
@@ -9106,8 +9106,8 @@
       },
       "parse": {
         "analysis_commands": {
-          "baseline": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/dataset-candidates/uwebsockets --project uwebsockets --output outputs/dataset-experiment/baseline/uwebsockets/analysis.json",
-          "final": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/dataset-candidates/uwebsockets --project uwebsockets --output outputs/dataset-experiment/final/uwebsockets/analysis.json"
+          "baseline": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/uwebsockets --project uwebsockets --output outputs/dataset-experiment/baseline/uwebsockets/analysis.json",
+          "final": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/uwebsockets --project uwebsockets --output outputs/dataset-experiment/final/uwebsockets/analysis.json"
         },
         "baseline": {
           "artifact_path": "outputs/dataset-experiment/baseline/uwebsockets/analysis.json",
@@ -9335,19 +9335,19 @@
             "source_inventory_sha256": "a188eb14766269e993578b862913e4335d2892a222ac0c4f34dba5919411d9e6"
           }
         },
-        "reproduction_command": ".venv/bin/python -m src.parser.repo2data --input repos/dataset-candidates --project uwebsockets --output outputs/dataset-experiment/final/uwebsockets/dataset.pkl --audit-output outputs/dataset-experiment/final/uwebsockets/dataset.audit.json"
+        "reproduction_command": ".venv/bin/python -m src.parser.repo2data --input repos --project uwebsockets --output outputs/dataset-experiment/final/uwebsockets/dataset.pkl --audit-output outputs/dataset-experiment/final/uwebsockets/dataset.audit.json"
       },
       "revision": {
         "commit": "fe7c01a477b688a7743f754fee33bdd78d52ad91",
         "commit_date": "2026-07-07T01:22:16+02:00",
         "is_shallow": true,
-        "local_path": "repos/dataset-candidates/uwebsockets",
+        "local_path": "repos/uwebsockets",
         "remote_url": "https://github.com/uNetworking/uWebSockets.git",
         "reproduction_commands": [
-          "git init repos/dataset-candidates/uwebsockets",
-          "git -C repos/dataset-candidates/uwebsockets remote add origin https://github.com/uNetworking/uWebSockets.git",
-          "git -C repos/dataset-candidates/uwebsockets fetch --depth 1 origin fe7c01a477b688a7743f754fee33bdd78d52ad91",
-          "git -C repos/dataset-candidates/uwebsockets checkout --detach FETCH_HEAD"
+          "git init repos/uwebsockets",
+          "git -C repos/uwebsockets remote add origin https://github.com/uNetworking/uWebSockets.git",
+          "git -C repos/uwebsockets fetch --depth 1 origin fe7c01a477b688a7743f754fee33bdd78d52ad91",
+          "git -C repos/uwebsockets checkout --detach FETCH_HEAD"
         ],
         "sparse_paths": []
       },
@@ -9472,8 +9472,8 @@
       },
       "parse": {
         "analysis_commands": {
-          "baseline": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/dataset-candidates/yaml-cpp --project yaml-cpp --output outputs/dataset-experiment/baseline/yaml-cpp/analysis.json",
-          "final": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/dataset-candidates/yaml-cpp --project yaml-cpp --output outputs/dataset-experiment/final/yaml-cpp/analysis.json"
+          "baseline": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/yaml-cpp --project yaml-cpp --output outputs/dataset-experiment/baseline/yaml-cpp/analysis.json",
+          "final": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/yaml-cpp --project yaml-cpp --output outputs/dataset-experiment/final/yaml-cpp/analysis.json"
         },
         "baseline": {
           "artifact_path": "outputs/dataset-experiment/baseline/yaml-cpp/analysis.json",
@@ -9701,19 +9701,19 @@
             "source_inventory_sha256": "eb68fb267ef4172f1c283bc656dcf284e07506842b1cdbca45be62029739c72e"
           }
         },
-        "reproduction_command": ".venv/bin/python -m src.parser.repo2data --input repos/dataset-candidates --project yaml-cpp --output outputs/dataset-experiment/final/yaml-cpp/dataset.pkl --audit-output outputs/dataset-experiment/final/yaml-cpp/dataset.audit.json"
+        "reproduction_command": ".venv/bin/python -m src.parser.repo2data --input repos --project yaml-cpp --output outputs/dataset-experiment/final/yaml-cpp/dataset.pkl --audit-output outputs/dataset-experiment/final/yaml-cpp/dataset.audit.json"
       },
       "revision": {
         "commit": "356643ba267039367d87fa70ce3d8f87144f55e9",
         "commit_date": "2026-07-13T13:15:33+02:00",
         "is_shallow": true,
-        "local_path": "repos/dataset-candidates/yaml-cpp",
+        "local_path": "repos/yaml-cpp",
         "remote_url": "https://github.com/jbeder/yaml-cpp.git",
         "reproduction_commands": [
-          "git init repos/dataset-candidates/yaml-cpp",
-          "git -C repos/dataset-candidates/yaml-cpp remote add origin https://github.com/jbeder/yaml-cpp.git",
-          "git -C repos/dataset-candidates/yaml-cpp fetch --depth 1 origin 356643ba267039367d87fa70ce3d8f87144f55e9",
-          "git -C repos/dataset-candidates/yaml-cpp checkout --detach FETCH_HEAD"
+          "git init repos/yaml-cpp",
+          "git -C repos/yaml-cpp remote add origin https://github.com/jbeder/yaml-cpp.git",
+          "git -C repos/yaml-cpp fetch --depth 1 origin 356643ba267039367d87fa70ce3d8f87144f55e9",
+          "git -C repos/yaml-cpp checkout --detach FETCH_HEAD"
         ],
         "sparse_paths": []
       },
@@ -9854,8 +9854,8 @@
       },
       "parse": {
         "analysis_commands": {
-          "baseline": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/dataset-candidates/yoga --project yoga --output outputs/dataset-experiment/baseline/yoga/analysis.json",
-          "final": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/dataset-candidates/yoga --project yoga --output outputs/dataset-experiment/final/yoga/analysis.json"
+          "baseline": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/yoga --project yoga --output outputs/dataset-experiment/baseline/yoga/analysis.json",
+          "final": ".venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo --repo repos/yoga --project yoga --output outputs/dataset-experiment/final/yoga/analysis.json"
         },
         "baseline": {
           "artifact_path": "outputs/dataset-experiment/baseline/yoga/analysis.json",
@@ -10083,19 +10083,19 @@
             "source_inventory_sha256": "48dbb8d88977fe29123368bc8fff06ed9d9e04413a8ec1e91097d1b153cf8c82"
           }
         },
-        "reproduction_command": ".venv/bin/python -m src.parser.repo2data --input repos/dataset-candidates --project yoga --output outputs/dataset-experiment/final/yoga/dataset.pkl --audit-output outputs/dataset-experiment/final/yoga/dataset.audit.json"
+        "reproduction_command": ".venv/bin/python -m src.parser.repo2data --input repos --project yoga --output outputs/dataset-experiment/final/yoga/dataset.pkl --audit-output outputs/dataset-experiment/final/yoga/dataset.audit.json"
       },
       "revision": {
         "commit": "1dc925c5f262597cadbe549d5e96a0cda77facc8",
         "commit_date": "2026-07-22T13:43:13-07:00",
         "is_shallow": true,
-        "local_path": "repos/dataset-candidates/yoga",
+        "local_path": "repos/yoga",
         "remote_url": "https://github.com/facebook/yoga.git",
         "reproduction_commands": [
-          "git init repos/dataset-candidates/yoga",
-          "git -C repos/dataset-candidates/yoga remote add origin https://github.com/facebook/yoga.git",
-          "git -C repos/dataset-candidates/yoga fetch --depth 1 origin 1dc925c5f262597cadbe549d5e96a0cda77facc8",
-          "git -C repos/dataset-candidates/yoga checkout --detach FETCH_HEAD"
+          "git init repos/yoga",
+          "git -C repos/yoga remote add origin https://github.com/facebook/yoga.git",
+          "git -C repos/yoga fetch --depth 1 origin 1dc925c5f262597cadbe549d5e96a0cda77facc8",
+          "git -C repos/yoga checkout --detach FETCH_HEAD"
         ],
         "sparse_paths": []
       },

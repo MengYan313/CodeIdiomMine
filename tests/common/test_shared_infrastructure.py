@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 from src.agents.base import register_agent
 from src.common.logging import AppLogger
+from src.common.progress import progress
 from src.llm.client import create_model_client
 from src.llm.config import LLMConfig, get_openai_model_info
 from src.llm.json_output import JsonOutputError, complete_json_object
@@ -57,6 +58,9 @@ class SharedConfigurationTests(unittest.TestCase):
         log_path = AppLogger.get_log_path("migration smoke")
         self.assertEqual(log_path.parent.name, "logs")
         self.assertEqual(log_path.name, "migration_smoke.log")
+
+    def test_progress_can_run_silently(self):
+        self.assertEqual(list(progress(range(3), desc="测试", disable=True)), [0, 1, 2])
 
 
 class SharedAgentRegistrationTests(unittest.IsolatedAsyncioTestCase):

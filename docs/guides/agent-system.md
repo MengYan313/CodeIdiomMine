@@ -72,7 +72,7 @@ SemanticClarityAgent   SyntaxLogicAgent            │
 
 - **库内调用**：`CodeIdiomPipeline(model=..., quiet=False)`，`await pipeline.evaluate(code)`，`await pipeline.shutdown()`。  
   `quiet=True` 时关闭步骤打印，供合成流水线反复调用再判定时减少日志。
-- **命令行批量**：`.venv/bin/python -m src.agents.idiom_judgement`，读取聚类产物，对每个 `center_point` 调用上述流水线，写出 `{repo}_idiom.pkl`。
+- **命令行批量**：入口与参数见 [Agent README](../../src/agents/README.md)；批量任务读取聚类产物，对每个 `center_point` 调用上述流水线，写出 `{repo}_idiom.pkl`。
 
 ---
 
@@ -97,9 +97,7 @@ SemanticClarityAgent   SyntaxLogicAgent            │
 
 ### 3.3 入口
 
-```bash
-.venv/bin/python -m src.agents.idiom_synthesis --input-dir results/cpp --output-dir results/cpp
-```
+启动命令见 [Agent README](../../src/agents/README.md)。
 
 写出 `{repo}_idiom_syn.pkl`，条目中包含 `center_point`、`loc_label`、聚合后的 `cnt` / `avg_ast_num`、`source_infos`、`merge_rounds`、`synthesis_trace` 等。
 
@@ -179,30 +177,9 @@ result = await runtime.send_message(
 
 ---
 
-## 六、快速开始
+## 六、库内调用
 
-### 6.1 依赖与环境
-
-```bash
-.venv/bin/python -m pip install autogen-core 'autogen-ext[openai]' python-dotenv
-export OPENAI_API_KEY="your-api-key"
-export OPENAI_BASE_URL="your-base-url"   # 可选
-export OPENAI_MODEL_LOW="gpt-5.6-luna"
-export OPENAI_MODEL_MEDIUM="gpt-5.6-terra"
-export OPENAI_MODEL_HIGH="gpt-5.6-sol"
-```
-
-项目根目录可提供 `.env`，所有 LLM 入口会统一加载它。三档仅保存选项，当前默认调用固定解析到低档 `OPENAI_MODEL_LOW`。
-
-### 6.2 单独运行各 Agent 模块（自测）
-
-```bash
-.venv/bin/python -m src.agents.semantic_clarity_agent
-.venv/bin/python -m src.agents.syntax_logic_agent
-.venv/bin/python -m src.agents.idiom_judge_agent
-```
-
-### 6.3 判定流水线示例
+安装、环境变量与批量启动命令分别见根 [README](../../README.md) 和 [Agent README](../../src/agents/README.md)。库内调用示例：
 
 ```python
 import asyncio
@@ -221,7 +198,7 @@ async def main():
 asyncio.run(main())
 ```
 
-### 6.4 单独向某个 Agent 发消息（正确注册方式）
+### 6.2 单独向某个 Agent 发消息（正确注册方式）
 
 ```python
 import asyncio
@@ -250,15 +227,6 @@ async def main():
 
 asyncio.run(main())
 ```
-
-### 6.5 批量判定与合成
-
-```bash
-.venv/bin/python -m src.agents.idiom_judgement --input outputs/cpp/clusters.pkl --limit 5 -q
-.venv/bin/python -m src.agents.idiom_synthesis --input-dir results/cpp --output-dir results/cpp
-```
-
----
 
 ## 七、LLM 输出约定
 

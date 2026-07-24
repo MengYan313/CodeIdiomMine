@@ -14,6 +14,7 @@ from .ast_parser import ASTParser
 from .file_scanner import FileScanner
 from .fragment_builder import build_fragment_file
 from ..common.logging import get_logger
+from ..common.progress import progress
 
 # 创建日志记录器
 logger = get_logger(__name__)
@@ -33,7 +34,7 @@ def parse_repository(
     解析仓库中的所有源代码文件
     
     Args:
-        input_path: 输入路径，例如 CodeIdiomMine/repos/cpp
+        input_path: 输入路径，例如 CodeIdiomMine/repos
         output_path: 输出路径，例如 CodeIdiomMine/outputs/cpp
         fragment_output_path: 可选的 Parser model-ready 片段输出路径
         projects: 可选的精确项目目录名列表；省略时解析全部项目
@@ -78,7 +79,13 @@ def parse_repository(
         funcs_in_pro_src = []  # 存储当前项目的所有函数源代码（2D: 文件-函数）
         
         # 遍历项目中的每个文件
-        for j, file_path in enumerate(pro_file_list[i]):
+        project_files = progress(
+            pro_file_list[i],
+            desc=f"解析 {project_name}",
+            unit="文件",
+            leave=False,
+        )
+        for j, file_path in enumerate(project_files):
             logger.info(f"  处理文件 [{j+1}/{len(pro_file_list[i])}]: {os.path.basename(file_path)}")
             
             try:
@@ -324,8 +331,8 @@ def main():
     )
     parser.add_argument(
         '--input', '-i',
-        default='repos/cpp',
-        help='输入项目路径（例如: repos/cpp）'
+        default='repos',
+        help='输入项目路径（例如: repos）'
     )
     parser.add_argument(
         '--output', '-o',
@@ -378,10 +385,6 @@ def main():
         args.project,
     )
 
-
-# 模块运行命令（从项目根目录运行）：
-# 运行示例：python -m src.parser.repo2data --input repos/cpp --output outputs/cpp/dataset.pkl
-# 后台运行示例：nohup python -m src.parser.repo2data --input repos/cpp --output outputs/cpp/dataset.pkl > logs/repo2data.log 2>&1 &
 
 if __name__ == "__main__":
     main()

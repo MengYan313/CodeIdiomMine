@@ -36,8 +36,9 @@ htmlcov/
 .env.*
 !.env.example
 
-# Local source-repository inputs (never version controlled)
-/repos/
+# Local source-repository inputs (only the module README is version controlled)
+/repos/*
+!/repos/README.md
 
 # Project-generated artifacts
 /outputs/

@@ -11,6 +11,7 @@ SHARED_PATHS = (
     ".env.example",
     "src/common/logging.py",
     "src/common/model_config.py",
+    "src/common/progress.py",
     "src/logger.py",
     "src/llm/__init__.py",
     "src/llm/agent.py",

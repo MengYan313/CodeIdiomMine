@@ -14,6 +14,7 @@ import pandas as pd
 from transformers import AutoTokenizer, AutoModel
 
 from ..common.logging import get_logger
+from ..common.progress import progress
 from ..parser.candidates import (
     QUALITY_PROFILE,
     SUPPORTED_PROFILES,
@@ -204,7 +205,8 @@ class CodeEmbedder:
         nonempty_indices.sort(key=lambda index: len(code_snippets[index]))
         device = next(self.model.parameters()).device
 
-        for start in range(0, len(nonempty_indices), batch_size):
+        batch_starts = range(0, len(nonempty_indices), batch_size)
+        for start in progress(batch_starts, desc="生成嵌入", unit="批", leave=False):
             batch_indices = nonempty_indices[start:start + batch_size]
             batch_snippets = [code_snippets[index] for index in batch_indices]
             inputs = self.tokenizer(
@@ -405,7 +407,9 @@ def get_fragment_src_and_embedding(
     pros_src: List[List[str]] = []
     pros_emb: List[List[torch.Tensor]] = []
     pros_info: List[List[List]] = []
-    for row_index in range(len(fragments)):
+    for row_index in progress(
+        range(len(fragments)), desc="嵌入项目", unit="项目"
+    ):
         row = fragments.iloc[row_index]
         schema_version = int(row["fragment_schema_version"])
         if schema_version != FRAGMENT_SCHEMA_VERSION:
@@ -627,10 +631,6 @@ def main():
         max_input_tokens=args.max_input_tokens,
     )
 
-
-# 模块运行命令（从项目根目录运行）：
-# 运行示例：python -m src.mining.code_embedding --input outputs/cpp/fragments.pkl --output outputs/cpp/embeddings.pkl --model unixcoder
-# 后台运行示例：nohup python -m src.mining.code_embedding --input outputs/cpp/fragments.pkl --output outputs/cpp/embeddings.pkl --model unixcoder > logs/code_embedding.log 2>&1 &
 
 if __name__ == "__main__":
     main()

@@ -78,31 +78,7 @@ Parser 的长期架构不变量是：**免目标项目编译、免链接、免�
 
 ## 运行项目
 
-所有功能都应从仓库根目录以模块方式运行。直接执行 `python src/parser/repo2data.py` 会破坏相对导入。
-
-```bash
-.venv/bin/python -m src.parser.repo2data \
-  --input repos/cpp --output outputs/cpp/dataset.pkl \
-  --fragment-output outputs/cpp/fragments.pkl \
-  --embedding-model unixcoder --local-files-only
-
-.venv/bin/python -m src.mining.code_embedding \
-  --input outputs/cpp/fragments.pkl --output outputs/cpp/embeddings.pkl \
-  --model unixcoder
-
-.venv/bin/python -m src.mining.clustering \
-  --input outputs/cpp/embeddings.pkl --output outputs/cpp/clusters.pkl
-
-.venv/bin/python -m src.agents.idiom_judgement \
-  --input outputs/cpp/clusters.pkl --output-dir results/cpp
-
-.venv/bin/python -m src.agents.idiom_synthesis \
-  --input-dir results/cpp --output-dir results/cpp
-
-.venv/bin/python -m src.evaluation.idiom_metrics
-```
-
-`src/utils/pkl2csv.py` 可通过 `.venv/bin/python -m src.utils.pkl2csv ...` 运行。
+所有功能都应从仓库根目录以模块方式运行。直接执行 `python src/...py` 会破坏相对导入。启动命令只维护在根 `README.md`、`repos/README.md` 及 `src/*/README.md`，详细设计文档和本文件只引用这些入口。
 
 ## 验证层级
 
@@ -112,7 +88,7 @@ Parser 的长期架构不变量是：**免目标项目编译、免链接、免�
 2. `.venv/bin/python -m compileall -q src`。
 3. `.venv/bin/python -m unittest discover -s tests -t . -v`。
 4. 导入受影响的包，并运行受影响模块的 `--help` 入口。
-5. 先使用最小仓库输入，再完整处理 `repos/cpp`。
+5. 先使用最小仓库输入，再完整处理 `repos`。
 6. 尽可能复用已缓存的 UniXcoder 模型。在当前解析的依赖栈中，全新机器需要向 Hugging Face 缓存下载约 738 MB。
 7. 先在最小嵌入数据上运行 DBSCAN，再启用 `--optimize`（50 次贝叶斯优化调用）。
 8. Agent 冒烟测试可以使用确定性的假模型客户端验证路由和 Schema。真实判断与合成需要 `OPENAI_API_KEY`，并会发起付费网络调用；运行前必须说明模型、调用次数、可能成本和隐私影响。

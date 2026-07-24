@@ -46,7 +46,7 @@ Parser 基础结果的门禁。任何后端失败都应以能力掩码、诊断�
 ## 数据流与契约
 
 ```text
-repos/cpp/<project>/...
+repos/<project>/...
   -> outputs/cpp/dataset.pkl
        \-> outputs/cpp/dataset.audit.json  # 全扫描文件异常与恢复侧车
   -> outputs/cpp/fragments.pkl             # Parser 长度降级后的模型输入
@@ -98,7 +98,7 @@ Parser 长度降级见[C++ Adapter 与模型输入治理](cpp-adapter-and-model-
 3. `src/parser/file_scanner.py` 确定性扫描标准 C/C++ 扩展名，以完整目录段排除构建、缓存、第三方、生成、测试、示例和基准输入，并拒绝符号链接与越界路径；
 4. parser、embedding 和 evaluation CLI 均无 `--language` 参数。
 
-`repos/cpp`、`outputs/cpp` 和 `results/cpp` 中的 `cpp` 是固定的现有产物命名空间，不是可切换语言参数。扫描器接受 `.c`、`.cc`、`.cpp`、`.cxx`、`.c++`、`.h`、`.hh`、`.hpp` 和 `.hxx`，具体清洗规则及排除计数以源码和 `dataset.audit.json` 为准。`repo2data --project <目录名>` 可从多项目输入根中精确选择一个或多个项目，不构成语言选择器。重新引入其他语言属于新的架构变更，不能通过增加一个 CLI 选项或静默回退实现。
+`repos`、`outputs/cpp` 和 `results/cpp` 中的 `cpp` 是固定的现有产物命名空间，不是可切换语言参数。扫描器接受 `.c`、`.cc`、`.cpp`、`.cxx`、`.c++`、`.h`、`.hh`、`.hpp` 和 `.hxx`，具体清洗规则及排除计数以源码和 `dataset.audit.json` 为准。`repo2data --project <目录名>` 可从多项目输入根中精确选择一个或多个项目，不构成语言选择器。重新引入其他语言属于新的架构变更，不能通过增加一个 CLI 选项或静默回退实现。
 
 ## Agent 子系统
 

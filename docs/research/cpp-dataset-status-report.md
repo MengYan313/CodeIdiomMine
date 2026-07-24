@@ -2,7 +2,7 @@
 
 ## 结论
 
-本轮于 2026-07-24 完成候选搜索、许可核验、固定版本、基线解析、通用 Parser 优化、全量重解析和产物一致性校验。最终数据集包含 26 个公开 GitHub C++ 项目，其中 17 个“保留”、9 个“条件保留”；另有 1 个候选 `microsoft/GSL` 被“淘汰”。三个原有种子项目 Envoy、qBittorrent 与 React Native 均已用独立浅克隆固定到完整 commit，没有改写原有 `repos/cpp/` 快照。
+本轮于 2026-07-24 完成候选搜索、许可核验、固定版本、基线解析、通用 Parser 优化、全量重解析和产物一致性校验。最终数据集包含 26 个公开 GitHub C++ 项目，其中 17 个“保留”、9 个“条件保留”；另有 1 个候选 `microsoft/GSL` 被“淘汰”。26 个正式固定版本仓库现已直接平铺在 `repos/`；旧的三项目快照、重复 smoke 副本和已淘汰的 GSL 本地副本均已删除。
 
 本轮检查了 27 个候选，其中 24 个是新增候选、3 个是原有种子项目，未超过 35 个新增候选的搜索上限。达到 26 个许可明确、领域和规模足够多样的正式项目后停止扩展。
 
@@ -81,19 +81,19 @@ include 与 call 关系只按 AST 可直接观察的目标文本计数；namespa
 
 ```bash
 .venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo \
-  --repo repos/dataset-candidates/cli11 \
+  --repo repos/cli11 \
   --project cli11 \
   --output outputs/dataset-experiment/final/cli11/analysis.json
 
 .venv/bin/python -m src.parser.repo2data \
-  --input repos/dataset-candidates \
+  --input repos \
   --project cli11 \
   --output outputs/dataset-experiment/final/cli11/dataset.pkl \
   --audit-output outputs/dataset-experiment/final/cli11/dataset.audit.json
 
 .venv/bin/python -m scripts.analyze_cpp_dataset build-manifest \
   --selection docs/research/cpp-dataset-selection.json \
-  --repositories-root repos/dataset-candidates \
+  --repositories-root repos \
   --metadata-root outputs/dataset-experiment/github-metadata \
   --search-snapshot outputs/dataset-experiment/github-search.json \
   --baseline-root outputs/dataset-experiment/baseline \
@@ -105,7 +105,7 @@ include 与 call 关系只按 AST 可直接观察的目标文本计数；namespa
   --manifest docs/research/cpp-dataset-manifest.json
 ```
 
-最后一条命令会重新读取 27 个本地 Git 仓库、26 份正式 `dataset.pkl`、26 份审计 JSON 和最终分析结果，校验 commit、项目名、四列 Schema、相对路径唯一性、文件数与函数数一致性。当前结果为 27 个候选全部检查、26 个正式项目、0 个错误。
+最后一条命令会读取 26 个正式本地 Git 仓库、26 份正式 `dataset.pkl`、26 份审计 JSON 和最终分析结果，并确认已淘汰项目的本地路径不存在。它校验 commit、项目名、四列 Schema、相对路径唯一性、文件数与函数数一致性。
 
 ## 已知局限
 

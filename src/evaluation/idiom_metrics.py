@@ -29,6 +29,7 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 import pandas as pd
 
 from ..common.logging import get_logger
+from ..common.progress import progress
 from ..common.node_kinds import BLOCK_KINDS, FUNCTION_KINDS, STATEMENT_KINDS
 from ..parser.candidates import QUALITY_PROFILE, SelectedCandidate, select_candidates
 
@@ -1005,7 +1006,13 @@ def evaluate_cpp(
         raise ValueError("mock_cluster_file_split 只允许带 mock_provenance 的模拟产物")
 
     project_results: List[Dict[str, Any]] = []
-    for project_name, project_idx in project_index.items():
+    project_items = project_index.items()
+    for project_name, project_idx in progress(
+        project_items,
+        total=len(project_index),
+        desc="评价项目",
+        unit="项目",
+    ):
         if evaluation_mode == "leave_one_project_out":
             result = evaluate_project(
                 project_name=project_name,

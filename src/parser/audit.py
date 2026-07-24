@@ -846,7 +846,7 @@ def main() -> None:
     argument_parser = argparse.ArgumentParser(
         description="审计 C++ Parser 的解析完整性、源码映射和候选片段质量"
     )
-    argument_parser.add_argument("--source-root", default="repos/cpp")
+    argument_parser.add_argument("--source-root", default="repos")
     argument_parser.add_argument("--dataset", required=True)
     argument_parser.add_argument("--output", required=True)
     argument_parser.add_argument("--elapsed-seconds", type=float)

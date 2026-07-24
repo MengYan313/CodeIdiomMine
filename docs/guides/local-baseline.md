@@ -96,7 +96,7 @@ UniXcoder 下载内容在 `/Users/sophon/.cache/huggingface` 下占约 738 MiB�
 - `ASTParser()` 和 `FileScanner()` 不再接收语言参数；解析器始终加载 `tree-sitter-cpp`，扫描器保留原有 C++ 扩展名和测试文件过滤行为。
 - `parse_repository`、`get_pros_src_and_embedding` 和 `generate_embeddings` 不再接收语言参数。
 - 解析、嵌入和评估 CLI 不再暴露 `--language`；评估入口为 `evaluate_cpp`，并为保持 Schema 连续性继续在 `eval.json` 中写入 `"language": "cpp"`。
-- `repos/cpp`、`outputs/cpp` 和 `results/cpp` 继续作为固定路径合同，而不是动态语言命名空间。
+- `repos`、`outputs/cpp` 和 `results/cpp` 继续作为固定路径合同，而不是动态语言命名空间。
 - Agent 系统提示词和确定性评分/合并规则未改变。
 
 这是对已验证实现的范围简化，不是对研究稿所提 Clang/HDBSCAN/四阶段系统的实现。现在重新引入其他语言需要获得明确批准并进行架构变更。
@@ -120,9 +120,9 @@ UniXcoder 下载内容在 `/Users/sophon/.cache/huggingface` 下占约 738 MiB�
 
 最终验证通过全部 15 项测试、`src` 与 `tests` 的 `compileall`、七个公共包的组合导入，以及每个更名后的 CLI 帮助入口。解析、嵌入和评估仍不暴露语言选择器。现有 `runpy` 警告仍仅与包的预先导入有关。使用现有 PKL 文件重新生成了完整本地可读投影，其 manifest 现在一致记录 `.venv`、`outputs/cpp`、`results/cpp` 和 `outputs/cpp/readables`。
 
-## 当前语料与流水线
+## 三项目历史语料与流水线
 
-`repos/cpp` 约 67 MiB，包含三个源码快照，不是嵌套 Git 仓库：
+以下内容记录 2026-07-16 的三项目基线。当时输入位于已删除的旧分组目录 `repos/cpp/`，包含三个非 Git 源码快照；2026-07-24 结构重构后，正式固定版本仓库已平铺到 `repos/`，当前数据集组成以 `repos/README.md` 和数据集清单为准。
 
 | 项目 | 当前 `FileScanner()` 选中的文件数 |
 |---|---:|
@@ -136,7 +136,7 @@ UniXcoder 下载内容在 `/Users/sophon/.cache/huggingface` 下占约 738 MiB�
 已验证的数据流：
 
 ```text
-repos/cpp/<project>/...
+repos/<project>/...
   -> dataset.pkl
   -> embeddings.pkl
   -> clusters.pkl
@@ -145,7 +145,7 @@ repos/cpp/<project>/...
   -> eval.json
 ```
 
-精确 Schema 和命令形式记录在 `AGENTS.md` 与当前源码中。
+精确 Schema 记录在仓库架构中；当前启动命令见各功能模块 README。
 
 ## 基线检查与结果
 
@@ -198,20 +198,13 @@ repos/cpp/<project>/...
 - 真实默认 DBSCAN（`eps=0.5`、`min_samples=2`）生成 1 个包含两个成员且无噪声的簇。
 - 长期保留产物：`outputs/baselines/cpp/embeddings.pkl`（约 10 KiB）和 `outputs/baselines/cpp/clusters.pkl`（约 3.9 KiB）。
 
-初始化时尚未尝试完整 `repos/cpp` 嵌入。后文的全语料运行取代了这一延期状态，同时保留最小产物作为冒烟测试 fixture。
+初始化时尚未尝试完整三项目语料嵌入。后文的历史全语料运行取代了这一延期状态，同时保留最小产物作为冒烟测试 fixture。
 
 ### 三项目完整解析、嵌入与聚类运行
 
 2026-07-16，使用真实解析器、已缓存 UniXcoder 模型和 DBSCAN 流水线处理现有三个项目的语料。运行有意在 Agent 判断前停止，因此没有 LLM 请求、API 成本或向 LLM 端点披露片段。
 
-输入范围对 `repos/cpp` 应用既有 `FileScanner` 合同：Envoy 2,924 个文件、qBittorrent 465 个文件、React Native 1,415 个文件，共 4,804 个。保留既有测试、缓存和版本控制路径过滤规则。
-
-解析命令：
-
-```bash
-.venv/bin/python -m src.parser.repo2data \
-  --input repos/cpp --output outputs/cpp/dataset.pkl
-```
+输入范围对当时的三个源码快照应用既有 `FileScanner` 合同：Envoy 2,924 个文件、qBittorrent 465 个文件、React Native 1,415 个文件，共 4,804 个。该运行是历史证据，不是当前 26 项正式数据集的启动说明。
 
 解析结果及运行后的 AST 审计：
 

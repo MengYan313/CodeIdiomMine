@@ -2,7 +2,7 @@
 
 ## 实验范围
 
-实验日期为 2026-07-23，输入是本地 `repos/cpp` 的三个仓库快照。`FileScanner` 共选择 4,804 个文件：
+实验日期为 2026-07-23，输入是当前 `repos/` 中 Envoy、qBittorrent 与 React Native 三个固定仓库快照。`FileScanner` 共选择 4,804 个文件：
 
 | 项目 | 扫描文件数 |
 |---|---:|
@@ -29,7 +29,8 @@ Parser 运行：
 
 ```bash
 .venv/bin/python -m src.parser.repo2data \
-  --input repos/cpp \
+  --input repos \
+  --project envoy --project qbittorrent --project react-native \
   --output outputs/parser-quality/final/dataset.pkl \
   --fragment-output outputs/parser-quality/final/fragments.pkl \
   --embedding-model unixcoder \
@@ -40,7 +41,7 @@ Parser 运行：
 
 ```bash
 .venv/bin/python -m src.parser.audit \
-  --source-root repos/cpp \
+  --source-root repos \
   --dataset outputs/parser-quality/final/dataset.pkl \
   --repeat-dataset outputs/parser-quality/final/dataset-repeat.pkl \
   --candidate-profile quality-v2 \

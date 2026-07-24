@@ -755,7 +755,7 @@ def _clone_commands(
     commit: str,
     sparse_paths: list[str],
 ) -> list[str]:
-    destination = f"repos/dataset-candidates/{slug}"
+    destination = f"repos/{slug}"
     commands = [
         f"git init {destination}",
         (
@@ -1357,6 +1357,13 @@ def validate_manifest(manifest_path: Path) -> dict[str, Any]:
     for project in manifest["projects"]:
         slug = project["slug"]
         repository = Path(project["revision"]["local_path"])
+        if project["selection"]["status"] not in FORMAL_STATUSES:
+            if repository.exists():
+                errors.append(f"{slug}: 已淘汰仓库仍存在于本地")
+            continue
+        if not repository.is_dir():
+            errors.append(f"{slug}: 缺少正式数据集仓库")
+            continue
         if _git_output(repository, "rev-parse", "HEAD") != project[
             "revision"
         ]["commit"]:
@@ -1369,8 +1376,6 @@ def validate_manifest(manifest_path: Path) -> dict[str, Any]:
             errors.append(f"{slug}: 存在越界路径")
         if int(paths["symlink_file_count"]):
             errors.append(f"{slug}: 存在符号链接输入")
-        if project["selection"]["status"] not in FORMAL_STATUSES:
-            continue
         dataset_path = Path(project["parse"]["canonical_dataset_path"])
         audit_path = Path(project["parse"]["canonical_audit_path"])
         if not dataset_path.exists():
@@ -1422,7 +1427,8 @@ def validate_manifest(manifest_path: Path) -> dict[str, Any]:
     result = {
         "manifest": manifest_path.as_posix(),
         "formal_project_count": len(formal_projects),
-        "checked_project_count": len(manifest["projects"]),
+        "checked_project_count": len(formal_projects),
+        "excluded_project_count": len(manifest["projects"]) - len(formal_projects),
         "error_count": len(errors),
         "errors": errors,
         "valid": not errors,

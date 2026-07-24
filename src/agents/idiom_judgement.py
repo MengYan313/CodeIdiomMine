@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional
 from ._base import load_project_env
 from .judge_pipeline import CodeIdiomPipeline
 from ..common.logging import get_logger
+from ..common.progress import progress
 
 load_project_env()
 
@@ -158,7 +159,9 @@ async def judge_idioms(
     stats = {}
 
     try:
-        for i, item in enumerate(cluster_results):
+        for i, item in enumerate(
+            progress(cluster_results, desc="判断项目", unit="项目")
+        ):
             pros_name = item["pros_name"]
             clusters = item["clusters"]
 
@@ -169,7 +172,14 @@ async def judge_idioms(
             logger.info(f"\n处理项目 [{i+1}/{len(cluster_results)}]: {pros_name}，共 {len(records)} 个 center_point")
 
             idioms = []
-            for j, rec in enumerate(records):
+            for j, rec in enumerate(
+                progress(
+                    records,
+                    desc=f"判断 {pros_name}",
+                    unit="候选",
+                    leave=False,
+                )
+            ):
                 center_point = rec["center_point"]
                 preview = center_point[:80] + "..." if len(center_point) > 80 else center_point
                 logger.info(f"  判定 [{j+1}/{len(records)}]: {preview}")
@@ -296,10 +306,6 @@ def main():
         quiet=args.quiet,
     )
 
-
-# 模块运行命令（从项目根目录运行）：
-# 运行示例：python -m src.agents.idiom_judgement --input outputs/cpp/clusters.pkl --output-dir results/cpp
-# python -m src.agents.idiom_judgement --input outputs/cpp/clusters.pkl --limit 5  # 测试：每项目仅判定 5 个
 
 if __name__ == "__main__":
     main()

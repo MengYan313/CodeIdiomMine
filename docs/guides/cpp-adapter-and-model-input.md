@@ -237,50 +237,6 @@ embedding 不再接受四列 AST 数据集作为真实模型输入。它要求
 重新计数只作为防御性校验；任何超限立即报错，tokenizer 使用
 `truncation=False`，不在该阶段补切、摘要或静默截断。
 
-## 复现命令
+## 运行入口
 
-可以在一次 Parser 命令中生成 AST、审计侧车和 model-ready 片段：
-
-```bash
-.venv/bin/python -m src.parser.repo2data \
-  --input repos/cpp \
-  --output outputs/cpp/dataset.pkl \
-  --fragment-output outputs/cpp/fragments.pkl \
-  --embedding-model unixcoder \
-  --local-files-only
-```
-
-也可以从已经冻结的 AST 数据集单独、确定性地重建片段：
-
-```bash
-.venv/bin/python -m src.parser.fragment_builder \
-  --input outputs/cpp/dataset.pkl \
-  --output outputs/cpp/fragments.pkl \
-  --model unixcoder \
-  --candidate-profile quality-v2 \
-  --local-files-only
-```
-
-生成 token 分布与降级报告：
-
-```bash
-.venv/bin/python -m src.parser.token_length_audit \
-  --dataset outputs/cpp/dataset.pkl \
-  --output outputs/cpp/token-length-audit.json \
-  --model unixcoder \
-  --candidate-profile quality-v2 \
-  --local-files-only
-```
-
-embedding 只读取 Parser 片段产物：
-
-```bash
-.venv/bin/python -m src.mining.code_embedding \
-  --input outputs/cpp/fragments.pkl \
-  --output outputs/cpp/embeddings.pkl \
-  --model unixcoder \
-  --candidate-profile quality-v2
-```
-
-`--local-files-only` 可以证明 Parser 阶段不会下载模型。片段构建只加载 tokenizer，
-不加载 embedding 权重、不运行项目代码，也不调用 LLM。
+Parser 与 embedding 的启动命令统一维护在 [Parser README](../../src/parser/README.md) 和[挖掘模块 README](../../src/mining/README.md)，本文不重复命令。`--local-files-only` 用于证明 Parser 阶段不下载模型；片段构建只加载 tokenizer，不加载 embedding 权重、不运行项目代码，也不调用 LLM。

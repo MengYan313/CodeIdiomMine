@@ -29,6 +29,7 @@ from .planning_synthesis_agent import (
     PlanningSynthesisRequest,
 )
 from ..common.logging import get_logger
+from ..common.progress import progress
 
 logger = get_logger(__name__)
 
@@ -272,7 +273,9 @@ async def run_synthesis(
     stats: Dict[str, int] = {}
 
     try:
-        for repo, file_path in idiom_files:
+        for repo, file_path in progress(
+            idiom_files, desc="合成项目", unit="项目"
+        ):
             logger.info("\n处理项目: %s (%s)", repo, file_path)
             idioms = load_idioms(file_path)
             if not idioms:
@@ -290,7 +293,13 @@ async def run_synthesis(
             )
 
             synthesized: List[Dict[str, Any]] = []
-            for loc_label, group in groups.items():
+            for loc_label, group in progress(
+                groups.items(),
+                total=len(groups),
+                desc=f"合成 {repo}",
+                unit="分组",
+                leave=False,
+            ):
                 if len(group) < 2:
                     continue
                 try:

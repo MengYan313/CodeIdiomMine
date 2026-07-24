@@ -76,7 +76,7 @@ class FileScanner:
         获取基础路径下的所有项目目录
         
         Args:
-            base_path: 基础路径，例如 CodeIdiomMine/repos/cpp
+            base_path: 基础路径，例如 CodeIdiomMine/repos
             project_names: 可选的精确项目目录名列表；省略时扫描全部项目
             
         Returns:
@@ -124,7 +124,7 @@ class FileScanner:
         获取所有项目的源代码文件
         
         Args:
-            base_path: 基础路径，例如 CodeIdiomMine/repos/cpp
+            base_path: 基础路径，例如 CodeIdiomMine/repos
             
         Returns:
             二维列表，第一维是项目，第二维是该项目的文件列表

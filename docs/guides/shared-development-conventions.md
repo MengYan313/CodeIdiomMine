@@ -19,6 +19,7 @@
 
 - `.env.example`
 - `src/common/logging.py`
+- `src/common/progress.py`
 - `src/common/model_config.py`
 - `src/logger.py`（兼容导入）
 - `src/llm/{__init__,agent,client,config,json_output,message,prompting,utils}.py`
@@ -36,6 +37,7 @@
 - 项目自有文档的标题、正文、表格说明、图注和维护记录必须使用中文。代码、命令、文件路径、模型/API 名称、标准缩写、数学公式、JSON 字段名和必要的原文引文可以保留英文；不得因此把整段项目说明写成英文。
 - 外部论文、许可证、上游 API 文档快照以及 `rags/` 下作为运行输入的第三方检索语料可以保留来源语言。这些材料必须与项目自有文档分区存放，且不得作为规避中文文档规则的理由。
 - 新增、移动或重命名文档时，必须同步更新 `docs/README.md`、根 `README.md`、`AGENTS.md`、代码内帮助文本和全部相对链接，并检查旧路径不再被引用。
+- `src/` 下每个功能包及 `repos/` 必须提供精炼 `README.md`，说明核心概念、阶段关系和启动命令；详细设计文档只解释原理与合同，并在末尾或对应章节链接 README，不重复启动命令。
 
 ## 3. 日志
 
@@ -51,6 +53,7 @@ logger = get_logger(__name__)
 - 同一命令内的各模块写入同一个文件；文件使用追加模式，不因导入或启动下一进程截断旧证据。
 - `python -m` 入口会自动成为 run name；特殊场景可传 `run_name=`，也可用 `APP_LOG_NAME` 覆盖。
 - 禁止记录密钥、完整端点或未经批准的私有源码。旧的 `src.logger` 仅为兼容入口，新代码不得继续使用。
+- 关键实验阶段必须通过 `src.common.progress.progress` 在交互式控制台展示进度；非 TTY 环境自动静默。进度条只用于即时反馈，可复现实验证据仍以日志和结构化产物为准。
 
 ## 4. LLM 配置与调用
 

@@ -54,7 +54,7 @@ parser、embedding 和 evaluation 的帮助输出不应出现 `--language`；`AS
 
 ## 4. 最小解析验证
 
-优先构造只含少量真实源文件的临时输入，不要先解析完整 `repos/cpp`：
+优先构造只含少量真实源文件的临时输入，不要先解析完整 `repos`：
 
 ```bash
 .venv/bin/python -m src.parser.repo2data \

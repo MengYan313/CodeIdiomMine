@@ -16,6 +16,7 @@ from skopt import gp_minimize
 from skopt.space import Real, Integer
 
 from ..common.logging import get_logger
+from ..common.progress import progress
 
 # 创建日志记录器
 logger = get_logger(__name__)
@@ -268,7 +269,9 @@ class ClusteringProcessor:
         
         cluster_results = []
         
-        for i, pro_name in enumerate(pros_name):
+        for i, pro_name in enumerate(
+            progress(pros_name, desc="聚类项目", unit="项目")
+        ):
             logger.info(f"\n{'='*60}")
             logger.info(f"处理项目 [{i+1}/{len(pros_name)}]: {pro_name}")
             logger.info(f"{'='*60}")
@@ -401,10 +404,6 @@ def main():
         optimize_params=args.optimize
     )
 
-
-# 模块运行命令（从项目根目录运行）：
-# 运行示例：python -m src.mining.clustering --input outputs/cpp/embeddings.pkl --output outputs/cpp/clusters.pkl
-# 后台运行示例：nohup python -m src.mining.clustering --input outputs/cpp/embeddings.pkl --output outputs/cpp/clusters.pkl > logs/clustering.log 2>&1 &
 
 if __name__ == "__main__":
     main()

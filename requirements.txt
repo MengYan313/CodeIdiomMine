@@ -4,6 +4,7 @@
 pandas>=1.3.0
 numpy>=1.21.0
 python-dotenv>=1.1.1
+tqdm>=4.66.0
 
 # Agent / LLM 基础设施（OpenAI extra 提供 tiktoken 等运行时依赖）
 autogen-core==0.7.5

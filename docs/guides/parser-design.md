@@ -146,61 +146,9 @@ embedding 只读取该产物并做失败即停的防御性复核，使用 `trunc
 不承担候选降级。详细参数依据、Schema 和统计见
 [C++ Adapter 与模型输入治理](cpp-adapter-and-model-input.md)。
 
-## 运行命令
+## 运行入口
 
-生成 v2 数据集和逐文件侧车：
-
-```bash
-.venv/bin/python -m src.parser.repo2data \
-  --input repos/cpp \
-  --output outputs/cpp/dataset.pkl \
-  --audit-output outputs/cpp/dataset.audit.json \
-  --fragment-output outputs/cpp/fragments.pkl \
-  --embedding-model unixcoder \
-  --local-files-only
-```
-
-执行全量统计：
-
-```bash
-.venv/bin/python -m src.parser.audit \
-  --source-root repos/cpp \
-  --dataset outputs/cpp/dataset.pkl \
-  --repeat-dataset outputs/cpp/dataset-repeat.pkl \
-  --candidate-profile quality-v2 \
-  --output outputs/cpp/parser-audit.json
-```
-
-单独重建 Parser model-ready 片段与 token 审计：
-
-```bash
-.venv/bin/python -m src.parser.fragment_builder \
-  --input outputs/cpp/dataset.pkl \
-  --output outputs/cpp/fragments.pkl \
-  --model unixcoder \
-  --candidate-profile quality-v2 \
-  --local-files-only
-
-.venv/bin/python -m src.parser.token_length_audit \
-  --dataset outputs/cpp/dataset.pkl \
-  --output outputs/cpp/token-length-audit.json \
-  --model unixcoder \
-  --candidate-profile quality-v2 \
-  --local-files-only
-```
-
-嵌入只消费 Parser 已完成长度治理的片段：
-
-```bash
-.venv/bin/python -m src.mining.code_embedding \
-  --input outputs/cpp/fragments.pkl \
-  --output outputs/cpp/embeddings.pkl \
-  --model unixcoder \
-  --candidate-profile quality-v2
-```
-
-Parser AST 审计是本地只读分析。片段构建使用 `--local-files-only` 时只读取缓存的
-tokenizer，不加载模型权重、不下载、不运行项目代码，也不调用 LLM。
+启动命令统一维护在 [Parser README](../../src/parser/README.md) 与[挖掘模块 README](../../src/mining/README.md)。Parser AST 审计是本地只读分析；片段构建使用 `--local-files-only` 时只读取缓存 tokenizer，不加载模型权重、不下载、不运行项目代码，也不调用 LLM。
 
 ## 指标定义
 
