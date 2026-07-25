@@ -9,12 +9,19 @@ __all__ = [
     'CodeEmbedder',
     'generate_embeddings',
     'ClusteringProcessor',
+    'DBSCANAutoTuner',
+    'HDBSCANClusteringProcessor',
 ]
 
 _EXPORTS = {
     "CodeEmbedder": (".code_embedding", "CodeEmbedder"),
     "generate_embeddings": (".code_embedding", "generate_embeddings"),
     "ClusteringProcessor": (".clustering", "ClusteringProcessor"),
+    "DBSCANAutoTuner": (".dbscan_tuning", "DBSCANAutoTuner"),
+    "HDBSCANClusteringProcessor": (
+        ".hdbscan_clustering",
+        "HDBSCANClusteringProcessor",
+    ),
 }
 
 

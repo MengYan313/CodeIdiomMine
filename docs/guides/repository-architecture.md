@@ -1,15 +1,17 @@
 # 仓库架构
 
-CodeIdiomMine 从 C++ 仓库中提取候选 AST 片段，经代码嵌入和 DBSCAN 聚类后，使用 AutoGen Agent 判断候选是否为代码习语，并尝试合成可复用模板。
+CodeIdiomMine 从 C++ 仓库中提取候选 AST 片段，经代码嵌入和 DBSCAN 聚类后，
+使用 AutoGen Agent 判断候选是否为代码习语，并尝试合成可复用模板。HDBSCAN
+仅保留为阶段2对照实现。
 
 本文描述当前实现。论文研究路线位于 `docs/research/`，不作为现有代码必须满足的规格。
 
 ## 最高优先级架构不变量：仓库隔离挖掘
 
-每个 C++ 仓库是完整且独立的挖掘单元。Parser、片段构建、embedding、DBSCAN、
+每个 C++ 仓库是完整且独立的挖掘单元。Parser、片段构建、embedding、聚类、
 判断、合成和评价必须按仓库分别执行和保存；任何两个仓库的候选、向量或聚类
 输入都不得合并。单仓库完整合格源码是发现阶段的语料边界，不在 embedding 或
-DBSCAN 前拆为训练、开发、测试区域。
+聚类前拆为训练、开发、测试区域。
 
 最终评价可以在全仓发现结束后，根据来源文件确定性地形成参考分区和测量分区。
 该分区只用于计算仓库内部覆盖性、重复性和分区复现性，不触发重新解析、嵌入或
@@ -48,7 +50,7 @@ Parser 基础结果的门禁。任何后端失败都应以能力掩码、诊断�
 |---|---|
 | `src/common/` | 统一日志、LLM 配置兼容导出与 C++ 函数、块、语句节点类型集合 |
 | `src/parser/` | 通用 Tree-sitter 操作、C++ Adapter、异常/宏恢复、原文映射、Def-Use、目标 tokenizer 长度治理及 model-ready 片段 |
-| `src/mining/` | 对 Parser 已准备片段执行预训练模型嵌入、DBSCAN 聚类和可选贝叶斯调参 |
+| `src/mining/` | 对 Parser 已准备片段执行预训练模型嵌入和正式 DBSCAN 聚类，提供仓库无关、仅改进领域目标函数的标准 GP+EI warm-start 调参；HDBSCAN 保留为实验对照 |
 | `src/agents/` | 通用 AutoGen 基类，以及习语判断、规划、代码组装与合成后再判断 |
 | `src/evaluation/` | 固定评价指标、三条 baseline、统一产物/指标合同、按仓库与全局聚合及明确标注的离线模拟验证 |
 | `src/llm/` | 两项目统一的模型分档、`.env`、AutoGen 客户端、JSON schema/单次修复与轻量对话封装 |
@@ -64,7 +66,8 @@ repos/<project>/...
   -> outputs/cpp/<project>/fragments.pkl             # Parser 长度降级后的模型输入
        \-> outputs/cpp/<project>/token-length-audit.json
   -> outputs/cpp/<project>/embeddings.pkl
-  -> outputs/cpp/<project>/clusters.pkl
+  -> outputs/cpp/<project>/clusters.pkl             # DBSCAN 正式聚类出口
+       \-> outputs/cpp/<project>/dbscan-tuning.json # 无监督参数选择证据
        \-> outputs/cpp/<project>/readables/...
   -> results/cpp/<project>/{project}_idiom.pkl
   -> results/cpp/<project>/{project}_idiom_syn.pkl
@@ -75,7 +78,11 @@ repos/<project>/...
 - `dataset.audit.json`：Parser 侧车 Schema v2，覆盖所有扫描文件，包括无函数和失败文件；记录 `ERROR`、missing、未覆盖区间、宏影子恢复和函数范围。它是审计证据，不是下一阶段输入。
 - `fragments.pkl`：Parser 片段 Schema v1；保存目标 tokenizer、token 预算、`quality-v2` 原文片段、既有 `fragment_info` 映射结构、超限拒绝清单和降级统计。embedding 的规范输入是该产物。
 - `embeddings.pkl`：DataFrame 列为 `pros_name`、`pros_src`、`pros_emb`、`pros_info`；嵌入以 CPU `torch.Tensor` 保存。
-- `clusters.pkl`：`list[{pros_name, clusters}]`；簇表包含 `label`、`center_point`、`else_point`、`cluster_size`、`center_point_info`、`infos`、`loc_label`。
+- `clusters.pkl`：`list[{pros_name, clusters}]`；簇表包含 `label`、`center_point`、`else_point`、`cluster_size`、`center_point_info`、`infos`、`loc_label`。正式产物使用 DBSCAN；HDBSCAN 对照产物可以附加 `clustering_metadata`，但不改变上述下游必需字段。
+- `dbscan-tuning.json`：保存目标函数改进的贝叶斯搜索空间、warm-start 观测、
+  无监督可行性条件、三指标目标权重和最终 incumbent；标准 GP 代理模型与 EI
+  采集函数不作改动。选择器不读取仓库身份、人工标签或最终评价指标；该 JSON
+  是选择证据，不替代阶段间 pickle。
 - `{repo}_idiom.pkl`：包含 `center_point`、与代表代码一致的 `info`、完整簇证据 `source_infos`、`cnt`、兼容字段 `avg_ast_num`、完整子树统计 `avg_subtree_size` 和 `loc_label`。
 - `{repo}_idiom_syn.pkl`：继续保留合并后全部 `source_infos`，并增加 `merge_rounds`、`synthesis_trace`。
 - `eval.json`：正式默认在每个仓库完成全仓发现后，对来源文件做确定性的参考/测量分区，并在测量分区上计算 `IC_macro`、`IC_micro`、最终 `IC=(IC_macro+IC_micro)/2`、集合复现率 `ISP` 及使用最终 IC 的 `F1`；另报告习语种类数、平均聚类簇大小、平均跨文件支持数和 `AvgAST`，并保留必要分子分母。兼容字段 `training_*`、`test_*` 只表示参考/测量分区。留一项目模式只作历史兼容，聚类模拟模式只作公式验证。

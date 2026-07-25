@@ -26,9 +26,15 @@
 
 ## 项目使命与范围
 
-CodeIdiomMine 用于从 C++ 仓库中挖掘重复出现的代码习语。当前实现使用 Tree-sitter C++、预训练代码嵌入、DBSCAN，以及基于 AutoGen 的判断与合成子系统。
+CodeIdiomMine 用于从 C++ 仓库中挖掘重复出现的代码习语。当前正式流程使用
+Tree-sitter C++、预训练代码嵌入、DBSCAN，以及基于 AutoGen 的判断与合成
+子系统；HDBSCAN 作为阶段2实验对照保留，不进入正式流水线。
 
-当前工程基线是仓库中的既有实现，而不是论文草案中的拟议实现。运行时和公共 CLI 有意仅支持 C++：未经用户明确授权，不得重新引入语言选择器、非 C++ 语法依赖或语言分派逻辑。除非用户明确授权范围清晰的修改，否则应保留 Tree-sitter C++ 解析器、DBSCAN 聚类、Agent 布局、数据 Schema、提示词、阈值和历史模型设置。
+当前工程基线是仓库中的既有实现，而不是论文草案中的拟议实现。运行时和公共 CLI
+有意仅支持 C++：未经用户明确授权，不得重新引入语言选择器、非 C++ 语法依赖或
+语言分派逻辑。除非用户明确授权范围清晰的修改，否则应保留 Tree-sitter C++
+解析器、DBSCAN 正式聚类、HDBSCAN 对照实现、Agent 布局、数据 Schema、
+提示词、阈值和历史模型设置。
 
 ### 最高优先级领域约束：仓库隔离的专属习语挖掘
 
@@ -40,19 +46,23 @@ CodeIdiomMine 不研究跨仓库迁移或未知仓库泛化。目标是针对每
    `源码 → Parser → fragments → embedding → DBSCAN → 判断 → 合成 → 评价`。
 2. 不同仓库的候选、embedding 和聚类输入不得混合；多仓库汇总只能在每个仓库
    独立完成指标计算之后发生，例如报告仓库宏平均。
-3. embedding、DBSCAN、习语判断和合成之前，不把单个仓库拆成训练集、开发集
-   和测试集。DBSCAN 可以且应观察该仓库的全部合格候选。
+3. embedding、聚类、习语判断和合成之前，不把单个仓库拆成训练集、开发集
+   和测试集。DBSCAN 可以且应观察该仓库的全部合格候选；HDBSCAN 对照实验
+   也必须使用相同的全仓候选。
 4. 不执行留一仓库挖掘，不把跨仓库复现、未知仓库泛化或从其他仓库迁移习语
    作为正式研究目标、正式评价或流水线门槛。
 5. 最终指标阶段可以对已经完成全仓挖掘的来源位置做确定性文件分区。该分区只
    表示“参考分区/测量分区”，用于测量仓库内部覆盖性、重复性和分区复现性；
-   不重新运行 Parser、embedding 或 DBSCAN，也不证明独立测试集泛化。
+   不重新运行 Parser、embedding 或聚类，也不证明独立测试集泛化。
 6. 代码或 Schema 中为兼容保留的 `train`、`training`、`test` 字段只表示最终
    评价的参考/测量分区。文档不得把这些名称重新解释为模型训练和未知测试。
-7. DBSCAN 参数只能采用预先规定的全仓固定配置，或按仓库使用固定的无监督
-   自动规则；不得根据最终 IC、ISP、F1 或人工标签反复选择。
+7. 正式算法在聚类前固定为 DBSCAN，不得按仓库名或聚类后结果路由算法。
+   DBSCAN 参数采用预先冻结的、仅改进领域目标函数的标准贝叶斯规则：代理模型
+   固定为高斯过程（GP），采集函数固定为期望改进（EI），warm-start 只用于
+   初始化已有观测；每个仓库使用相同搜索空间、硬约束和三指标目标，不得根据
+   最终 IC、ISP、F1 或人工标签反复选择。
 
-任何把 split manifest、DBSCAN 前数据划分或留一仓库实验恢复为正式流程硬门槛
+任何把 split manifest、聚类前数据划分或留一仓库实验恢复为正式流程硬门槛
 的修改，均视为违反项目目标。历史兼容入口可以保留，但必须显式标注为非正式。
 
 ### 零构建解析原则
@@ -115,7 +125,10 @@ Parser 的长期架构不变量是：**免目标项目编译、免链接、免�
 4. 导入受影响的包，并运行受影响模块的 `--help` 入口。
 5. 先使用最小仓库输入，再完整处理 `repos`。
 6. 尽可能复用已缓存的 UniXcoder 模型。在当前解析的依赖栈中，全新机器需要向 Hugging Face 缓存下载约 738 MB。
-7. 先在最小嵌入数据上运行 DBSCAN，再启用 `--optimize`（50 次贝叶斯优化调用）。
+7. 先在最小嵌入数据上运行 DBSCAN 自动调参并验证统一 Schema、三指标权重与
+   硬约束；需要复核阶段2对照时再运行 HDBSCAN。DBSCAN 历史 `--optimize`
+   仅优化轮廓系数；正式方案沿用标准 GP 与 EI，只将目标替换为冻结的三指标
+   领域目标。
 8. Agent 冒烟测试可以使用确定性的假模型客户端验证路由和 Schema。真实判断与合成需要 `OPENAI_API_KEY`，并会发起付费网络调用；运行前必须说明模型、调用次数、可能成本和隐私影响。
 
 仓库在 `tests/` 下提供离线 `unittest` 测试套件。其子目录与 `src/` 对应；默认测试必须可确定复现，且不得下载模型或发起付费 API 调用。
@@ -134,7 +147,10 @@ Parser 的长期架构不变量是：**免目标项目编译、免链接、免�
 - Parser 映射合同为 v2：所有 AST 节点保留原始 `start_byte`、`end_byte` 和未经清洗的 `code_snippet`；函数根保存稳定文件身份、内容哈希、解析来源和可选 Def-Use 语义切片。`repo2data` 同时写出覆盖全部扫描文件的 `dataset.audit.json`，但不改变四列 pickle Schema。
 - Parser 片段构建默认使用 `quality-v2` 候选 profile，仍只输出函数、区域和语句三种粒度；局部 Def-Use 切片以区域候选和 `candidate_origin=semantic_def_use` 表示。`legacy` profile 只用于历史数据集的候选选择兼容。
 - 嵌入输出 `embeddings.pkl`：DataFrame 列为 `pros_name`、`pros_src`、`pros_emb`、`pros_info`；嵌入是位于 CPU 的 `torch.Tensor` 对象。
-- 聚类输出 `clusters.pkl`：由 `{pros_name, clusters}` 构成的列表；聚类 DataFrame 列为 `label`、`center_point`、`else_point`、`cluster_size`、`center_point_info`、`infos`、`loc_label`。
+- 聚类输出 `clusters.pkl`：由 `{pros_name, clusters}` 构成的列表；聚类
+  DataFrame 列为 `label`、`center_point`、`else_point`、`cluster_size`、
+  `center_point_info`、`infos`、`loc_label`。正式产物使用 DBSCAN；
+  HDBSCAN 对照产物可以附加 `clustering_metadata`，但不得改变下游必需字段。
 - 判断输出 `{repo}_idiom.pkl`：记录包含 `center_point`、`info`、`cnt`、`avg_ast_num`、`loc_label`。
 - 合成输出 `{repo}_idiom_syn.pkl`：增加 `source_infos`、`merge_rounds` 和 `synthesis_trace`。
 - 评估输出 `eval.json`：包含各项目及汇总的 `IC`、`ISP`、`F1`、`avg_idiom_size`。

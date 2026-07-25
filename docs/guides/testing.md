@@ -20,7 +20,10 @@
 .venv/bin/python -m unittest discover -s tests -t . -v
 ```
 
-测试覆盖 C++ Adapter、预处理续行遮蔽、扫描与 AST 提取、Parser token 预算与超长函数降级、embedding 合同、DBSCAN schema、Agent 确定性门限、评价辅助函数、LLM 消息构建、JSON schema/单次修复和可读产物导出。默认测试使用假 tokenizer，不得下载模型或调用外部 LLM。
+测试覆盖 C++ Adapter、预处理续行遮蔽、扫描与 AST 提取、Parser token 预算与
+超长函数降级、embedding 合同、DBSCAN 自动调参、DBSCAN/HDBSCAN Schema、Agent
+确定性门限、评价辅助函数、LLM 消息构建、JSON Schema/单次修复和可读产物导出。
+默认测试使用假 tokenizer，不得下载模型或调用外部 LLM。
 
 数据集实验还应运行清单交叉校验。该命令只读取本地固定仓库和产物，不执行目标仓库代码：
 
@@ -42,6 +45,8 @@
 .venv/bin/python -m src.parser.token_length_audit --help
 .venv/bin/python -m src.mining.code_embedding --help
 .venv/bin/python -m src.mining.clustering --help
+.venv/bin/python -m src.mining.dbscan_tuning --help
+.venv/bin/python -m src.mining.hdbscan_clustering --help
 .venv/bin/python -m src.agents.idiom_judgement --help
 .venv/bin/python -m src.agents.idiom_synthesis --help
 .venv/bin/python -m src.evaluation.idiom_metrics --help
@@ -120,19 +125,32 @@ HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
   --model unixcoder --device cpu --min-project-size 1 --batch-size 8 \
   --candidate-profile quality-v2
 
-.venv/bin/python -m src.mining.clustering \
+.venv/bin/python -m src.mining.dbscan_tuning \
   --input outputs/smoke/cpp/embeddings.pkl \
-  --output outputs/smoke/cpp/clusters.pkl
+  --output outputs/smoke/cpp/clusters.pkl \
+  --report outputs/smoke/cpp/dbscan-tuning.json
+
+.venv/bin/python -m src.mining.hdbscan_clustering \
+  --input outputs/smoke/cpp/embeddings.pkl \
+  --output outputs/smoke/cpp/clusters-hdbscan.pkl \
+  --min-cluster-size 2 --min-samples 1 \
+  --cluster-selection-method leaf
 ```
 
-先验证默认 DBSCAN。`--optimize` 会对每个处理项目进行 50 次贝叶斯优化调用，不属于低成本冒烟检查。
+先验证 DBSCAN 自动调参对未知项目名仍使用相同搜索空间、硬约束和三指标目标，
+并检查权重和为 1、所选簇的七列 Schema 与 `dbscan-tuning.json`。正式算法在
+聚类前固定为 DBSCAN，不按仓库名或聚类结果路由。HDBSCAN 对照默认对 L2 归一化向量执行
+确定性 PCA-32，再在欧氏空间使用 `leaf` 选簇；代表代码仍按原始向量的余弦
+中心选择。DBSCAN 历史 `--optimize` 会执行 50 次贝叶斯优化调用，不属于
+低成本冒烟检查。不得根据最终 IC、ISP、F1 或人工标签反向修改聚类参数。
 
 嵌入默认按 8 段批量推理，并按源码长度临时分组以减少 padding；结果会写回原始下标，仍保持每段 `(1, hidden_size)` CPU tensor、候选顺序和 pickle schema。内存受限时可减小 `--batch-size`，对照单段路径时可设为 `1`。tokenizer 使用 `truncation=False`；超限、模型名不一致或预算不一致必须失败，不能在此阶段重新切分。
 
 quality-v2 的区域、语句和 Def-Use 选择发生在 Parser 片段构建阶段；历史数据集
 对照在 `src.parser.fragment_builder` 使用 `--candidate-profile legacy`。
 embedding 的同名参数只校验产物 profile，不重新选择候选。运行完整嵌入前必须先
-检查 Parser token 审计，因为当前真实语料共有 96,039 个 model-ready 候选。
+检查 Parser token 审计。当前冻结的 26 仓正式语料共有 233,912 个 model-ready
+候选；历史三个仓库快照的 96,039 条只用于旧基线复核，不得与正式产物混用。
 
 ## 6. 可读产物导出
 
@@ -176,7 +194,7 @@ Agent 结果存在后可运行 `--result-dir results/cpp --stages judgment synth
 ```
 
 正式默认模式是仓库内参考/测量文件分区。当前仓库已经使用全部合格源码完成
-Parser、embedding、DBSCAN、判断和合成；评价器随后按稳定哈希划分来源文件，
+Parser、embedding、逐仓聚类、判断和合成；评价器随后按稳定哈希划分来源文件，
 只用参考分区中的已发现实例构造匹配变体，在测量分区计算 IC 与 ISP。该分区不
 重新运行任何发现阶段。当前未参数化的候选通过保留关键字/运算符、抽象标识符和
 字面量的结构化词法签名匹配，并要求候选 AST 节点类型一致。v2 的
@@ -211,7 +229,7 @@ Parser、embedding、DBSCAN、判断和合成；评价器随后按稳定哈希�
 当作已知匹配证据，专用于检查指标分子分母、extent 并集和多项目汇总；输出带
 `is_mock_evaluation` 和 `mock_warning`。该结果不能作为模型质量或论文结果，
 原因是冻结簇未经真实判断、合成或人工质量核验，并被直接当作 evidence oracle；
-DBSCAN 使用完整仓库本身符合正式发现目标，不是泄漏。
+聚类使用完整仓库本身符合正式发现目标，不是泄漏。
 
 ## 9. Baseline 与主方法的统一验证
 

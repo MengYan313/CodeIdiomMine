@@ -1,6 +1,6 @@
 # CodeIdiomMine 本地开发基线
 
-最后验证：2026-07-24（Asia/Shanghai）
+最后验证：2026-07-25（Asia/Shanghai）
 
 本文是现有实现的长期项目事实记录，保存已经观察到的事实和可复现的冒烟测试；它不表示当前代码已经实现论文研究稿中的方案。
 
@@ -68,6 +68,7 @@ Homebrew 安装后的自动清理移除了过时的 `/opt/homebrew/Cellar/tomcat
 - Tree-sitter 0.26.0；必需的 C++ grammar 为 0.23.4。初始化后的虚拟环境仍包含早先安装的 Python 0.25.0、Java 0.23.5 和 JavaScript 0.25.0 grammar 包，但仅支持 C++ 的代码和 `requirements.txt` 已不再使用或要求它们。
 - PyTorch 2.13.0, Transformers 5.13.1
 - scikit-learn 1.9.0, scikit-optimize 0.10.2, SciPy 1.18.0
+- hdbscan 0.8.44
 - autogen-core 0.7.5, autogen-ext 0.7.5, OpenAI SDK 2.45.0
 - python-dotenv 1.2.2
 
@@ -99,7 +100,9 @@ UniXcoder 下载内容在 `/Users/sophon/.cache/huggingface` 下占约 738 MiB�
 - `repos`、`outputs/cpp` 和 `results/cpp` 继续作为固定路径合同，而不是动态语言命名空间。
 - Agent 系统提示词和确定性评分/合并规则未改变。
 
-这是对已验证实现的范围简化，不是对研究稿所提 Clang/HDBSCAN/四阶段系统的实现。现在重新引入其他语言需要获得明确批准并进行架构变更。
+这是对当时已验证实现的范围简化；当时尚未实现研究稿所提
+Clang/HDBSCAN/四阶段系统。现在重新引入其他语言仍需要获得明确批准并进行
+架构变更。
 
 ## 目录语义与测试规范化
 
@@ -449,7 +452,9 @@ Haggis-CPP 有界冒烟测试读取真实当前 AST 数据集，但将每个项�
 - 当前代码仅支持 C++，与研究语言边界一致，并以 Tree-sitter/C++ Adapter 实现零构建基础路径；2026-07-24 冻结后的拟议实证研究只把 Clang 作为安全编译信息可得子集上的可选增强。
 - 当前提取在大小/子节点阈值约束下选择函数、块和语句 AST 节点。它没有实现拟议的固定三层加 L-CSDC 双轨、能力 mask、compile database 处理或依赖元数据。
 - 当前嵌入仅为预训练模型输出的 mean pooling，没有 AST 结构向量或可选依赖摘要。
-- 当前聚类使用带可选贝叶斯调参的 DBSCAN，而不是按来源/粒度分层的拟议 HDBSCAN。
+- 当前正式聚类统一使用 DBSCAN，并对每个新仓库执行同一套无监督自动调参规则；
+  HDBSCAN 作为阶段2对照实现保留。两者都没有按来源/粒度分层，DBSCAN 的历史
+  `--optimize` 入口仍保留。
 - 当前代码没有第三阶段簇对齐、AST 反统一、类型化占位符或保持绑定关系的抽象。
 - 当前判断使用语义、语法/逻辑和判断 Agent，并设置确定性双分数门控。它没有独立代码异味 Agent、三方人工复核、确定性解析器证据或 Clang 验证。
 - 当前合成按 `loc_label` 分组，请求 LLM 规划/组装，并最多重新判断三轮。它没有强制拟议的 AST 感知静态关系触发、绑定规则或纯语法验证。
@@ -699,22 +704,222 @@ fragments、embedding 或 DBSCAN。全局 `stage2_ready=true`，阶段1正式出
 58 项确定性离线测试、26 仓正式 manifest 校验、正式产物 `SHA256SUMS` 和
 `git diff --check`。
 
+## 2026-07-25 阶段2 UniXcoder Embedding 正式实验
+
+阶段2 Embedding 正式产物继续保存在已忽略的
+`outputs/experiments/repo-isolated-v1/`，每仓独立读取
+`repos/<repo>/stage1/fragments.pkl`，并写入
+`repos/<repo>/stage2/embeddings.pkl`。正式配置固定为
+`microsoft/unixcoder-base` 缓存 revision
+`5604afdc964f6c53782a6813140ade5216b99006`、CPU、batch size 8、
+`quality-v2`、512 个总输入 token 和 `min_project_size=1`。运行期间设置
+`HF_HUB_OFFLINE=1`、`TRANSFORMERS_OFFLINE=1` 与
+`HF_DATASETS_OFFLINE=1`，没有下载模型、调用 LLM、产生 API 费用或向外部端点
+披露源码。
+
+26 个仓库全部完成正式生成和一次相同配置的完整重复生成。每次生成后均独立验证
+项目身份、四列 embedding Schema、阶段1输入 SHA、候选数量与顺序、源码和元数据
+逐项一致、每个 tensor 位于 CPU、dtype 为 `float32`、形状为 `(1, 768)` 且全部
+为有限值。重复 pickle 在验证后立即删除，只保留正式文件、日志、资源指标和语义
+摘要。
+
+阶段2 Embedding 汇总如下：
+
+- 26 份正式 `embeddings.pkl` 共包含 233,912 条向量，与阶段1 model-ready
+  候选总数精确一致；不同仓库仍完全隔离；
+- 正式产物总大小为 5,933,801,281 字节，约 5.53 GiB；
+- 正式生成累计任务时间为 3,900.02 秒，重复生成累计任务时间为 4,007.98 秒；
+- 正式生成最大峰值内存为 4,860,346,368 字节，约 4.53 GiB，来自 `envoy`；
+- `envoy` 的 96,105 条向量耗时 1,642.60 秒，正式文件大小为
+  2,440,207,584 字节，是本轮最慢且最大的单仓任务；
+- 26/26 个仓库的源码、元数据和 float32 向量原始字节组合摘要在正式与重复运行
+  间完全一致。PyTorch pickle 容器的文件级 SHA 不作为重复确定性门槛；正式文件
+  自身的 SHA 已单独冻结并通过全量复核；
+- 汇总向量摘要为
+  `3c3155a65f84eb0985a77da7fd9250e54284519d469c74ecdeef642b44cba4f9`，
+  覆盖项目名、源码、元数据和向量的汇总语义摘要为
+  `1124e420f453de1f6c448332ab05e6c2e8b589968240bb35dd452f39e363660c`。
+
+`stage2-embedding-experiment-manifest.json`、
+`stage2-embedding-summary.json`、`stage2-embedding-acceptance-report.md`、
+`STAGE2-EMBEDDINGS-SHA256SUMS`、逐仓
+`stage2-embedding-manifest.json`、验证报告和资源日志保存配置、命令、SHA、
+计数、耗时、峰值内存及重复证据。26 份正式文件的 SHA 清单已再次完整通过。
+全局 `stage2_embedding_ready_for_clustering=true`；本轮没有运行 DBSCAN。
+收尾验证通过 `pip check`、`src`、`tests` 与三个阶段2实验脚本的 `compileall`、
+全部 58 项确定性离线测试、26 仓 manifest/验证报告交叉校验、重复临时文件清理
+检查及 `git diff --check`。
+
+## 2026-07-25 阶段2 DBSCAN 默认基线与逐仓快速优化
+
+使用 26 份正式 `stage2/embeddings.pkl` 逐仓运行原
+`src.mining.clustering` 入口。首先固定执行 `eps=0.5`、
+`min_samples=2` 默认基线；随后执行参数优化。粗扫覆盖
+`eps=0.15/0.20/0.25/0.30/0.35/0.40` 与
+`min_samples=2/3/4`，仅对落在下边界的仓库补扫更小 `eps`。参数选择先要求
+覆盖率为 50%～80%、最大簇占全部候选不超过 15%，再使用有效簇数、跨文件簇数、
+Top100 跨文件簇数、覆盖率、最大簇占比和余弦内聚度形成固定的仓库内无监督分数。
+没有根据 IC、ISP、F1 或人工标签反复调参。
+
+默认参数在 233,912 个候选上只形成 337 个大小至少为 2 的有效簇，覆盖率
+99.69%，全局平均簇大小 691.98；26 仓最大簇占比均为 95.3%～99.9%，确认发生
+严重密度连锁合并。逐仓参数最终形成 31,965 个有效簇，覆盖 156,436 个候选，
+微平均覆盖率 66.88%，全局平均/中位簇大小为 4.89/2，跨文件簇为 12,719 个，
+26 仓最大簇占比均不超过 10.86%。簇级平均直接子节点数为 3.21，簇级平均完整
+子树节点数为 64.52。
+
+正式逐仓参数分布为：`0.01/3` 1 仓、`0.05/4` 1 仓、`0.15/2` 6 仓、
+`0.15/3` 1 仓、`0.175/2` 1 仓、`0.20/2` 8 仓、`0.20/3` 2 仓和
+`0.25/2` 6 仓。若必须使用单一公共参数，当前扫描证据建议
+`eps=0.20`、`min_samples=2`；正式 DBSCAN 结果仍采用逐仓选择。
+
+默认与最终 52 次完整聚类全部成功。最终 26 份 `clusters.pkl` 均通过项目身份、
+七列 Schema、最小簇大小、成员计数、代表代码、位置标签、命令参数和扫描指标
+一致性验证。默认/最终汇总、参数表、Top100 代表代码和中文分析报告位于
+`outputs/experiments/repo-isolated-v1/dbscan-*.{json,csv,md}`，逐仓完整产物、
+命令、日志及资源指标位于
+`repos/<repo>/stage2/{dbscan-default,dbscan-scan,dbscan-final}/`。Top100 人工
+抽查同时观察到并发循环、参数转发、状态机分派等可用模式，以及高频
+`return`/`break` 简单语句；后者不能仅靠继续减小 `eps` 消除，仍需后续质量
+筛选。该结果只完成 DBSCAN 分支，尚不能替代与 HDBSCAN 的同口径对照。
+
+## 2026-07-25 阶段2 HDBSCAN 对照与单一 DBSCAN 最终方案
+
+在同一批 26 份逐仓 `embeddings.pkl` 上新增 `hdbscan 0.8.44` 实现，并保持既有
+七列簇 DataFrame 合同。正式 HDBSCAN 先对原始 768 维向量做 L2 归一化，再使用
+`random_state=0` 的 randomized PCA 降至 32 维；聚类空间使用欧氏距离、
+`boruvka_kdtree`、`leaf`、`cluster_selection_epsilon=0`、
+`approx_min_span_tree=true` 和单个 core-distance worker。代表代码不在降维空间
+选择，而是回到原始 768 维向量，用余弦距离选择最接近簇质心的实际成员。26 仓
+PCA-32 平均解释方差为 54.18%。
+
+先在 `concurrentqueue`、`cpp-httplib`、`catch2`、`simdjson` 和 `taskflow`
+上比较 `eom/leaf` 与代表参数，再冻结不含人工标签的小网格：
+`min_cluster_size={2,3,5,10,20,50}`、
+`min_samples={1,2}`、`cluster_selection_method=leaf`。这里使用第三方
+`hdbscan` 包，其 `min_samples` 包含点本身。参数选择复用 DBSCAN 的严格门槛：
+覆盖率 50%～80%、最大簇占全部候选不超过 15%，随后按有效簇、跨文件簇、
+Top100 跨文件簇、覆盖目标、反坍缩和原始空间余弦凝聚度评分。26 个仓库全部在
+严格门槛内完成选择，没有使用扩展或兜底门槛，也没有使用 IC、ISP、F1 或
+人工标签。
+
+正式逐仓 HDBSCAN 参数分布：
+
+- `min_cluster_size=2, min_samples=1`：7 仓；
+- `min_cluster_size=2, min_samples=2`：9 仓；
+- `min_cluster_size=3, min_samples=1`：3 仓；
+- `min_cluster_size=3, min_samples=2`：3 仓；
+- `min_cluster_size=5, min_samples=2`：2 仓；
+- `min_cluster_size=10, min_samples=2`：`entt`；
+- `min_cluster_size=20, min_samples=2`：`simdjson`。
+
+HDBSCAN 最终得到 47,702 个有效簇、172,056 个聚类成员和 61,856 个噪声点；
+微平均覆盖率为 73.56%，全局平均/中位簇大小为 3.61/2，跨文件簇为 23,646 个。
+簇宏平均直接子节点数为 3.19，簇宏平均完整子树节点数为 61.85。26 次正式运行
+累计 329.36 秒，最大峰值 RSS 为 6,561,906,688 字节，约 6.11 GiB。正式
+`clusters.pkl` 的项目身份、七列 Schema、最小簇大小、成员计数、参数和扫描
+标签全部一致。
+
+算法比较同时使用每仓 Top100 与 `Top100 ∩ Top20%`。无标签“强习语代理”要求：
+代表代码完整子树至少 10 个节点、去空白长度至少 20、簇内至少两个不同源码文本，
+并至少跨两个文件；排名使用 `1/log2(rank+1)` 折扣。DBSCAN/HDBSCAN 的
+Top100 强习语代理分别为 1,030/1,086 个，排名折扣强习语率为
+39.92%/39.15%，非平凡代表为 2,216/1,961 个，纯重复代表为 328/519 个，
+代表 AST 子树均值为 68.27/52.05。`Top100 ∩ Top20%` 的强习语代理分别为
+948/923 个，排名折扣强习语率为 42.65%/39.33%。
+
+HDBSCAN 的有效簇更多、覆盖率更高，但全局平均簇大小仅为 3.61，新增供给主要
+集中在长尾小簇；DBSCAN 已有 31,965 个有效簇，候选供给充足，同时头部代表更
+非平凡、纯重复更少、AST 结构更完整。HDBSCAN 还需 PCA-32，而该空间平均只保留
+54.18% 方差；其 329.36 秒正式耗时是 DBSCAN 117.03 秒的 2.81 倍。综合头部质量、
+候选数量和运行代价，正式流程统一选择 DBSCAN，HDBSCAN 仅保留为实验对照。
+
+曾依据各仓聚类后质量差异形成过算法名单，但该方法无法在未知仓库聚类前确定
+算法，不具备可扩展性，因此在最终冻结前撤销。正式方案不保存
+`clustering-routing.json`，也不按仓库名路由。26 个统一出口全部重新物化为
+DBSCAN：共 31,965 个有效簇、156,436 个聚类成员，微平均覆盖率 66.88%，平均/
+中位簇大小为 4.89/2，跨文件簇 12,719 个，簇宏平均直接子节点数 3.21，簇宏
+平均完整子树节点数 64.52。逐仓统一出口为
+`repos/<repo>/stage2/clustering-final/clusters.pkl`，26 个文件的 SHA-256、
+项目身份和算法标记均已通过。
+
+为新仓库新增 `src.mining.dbscan_tuning`，并把参数策略冻结为仅改进领域目标
+函数的标准贝叶斯优化。论文方法的代理模型固定为高斯过程（GP），采集函数固定
+为期望改进（EI）；二者不作改动，warm-start 只复用已有观测。搜索空间为
+`eps∈[0.0025,0.50]` 的对数实数区间和 `min_samples∈[2,4]` 的整数区间。
+选择器先要求覆盖率 50%～80% 且最大簇占比不超过 15%，无解时按冻结层级放宽。
+目标函数只保留三个核心指标：跨文件复现供给 `R`、Top100 头部复现 `H` 和
+密度平衡 `B`；其中 `B` 是覆盖率接近65%与抗最大簇塌缩得分的等权平均，最终
+最大化 `J=0.45R+0.15H+0.40B`，GP 最小化 `1-J`。可行性判断在目标评价阶段
+完成，不改变 GP 或 EI。
+
+当前完整聚类不重跑。已有每仓 18/33/45 组参数观测作为 warm-start，以简化目标
+回放后 26 个仓库的最佳已观测可行参数与既有冻结参数全部一致，额外参数评估为
+0。该 warm-start incumbent 被正式记为改进贝叶斯优化在当前观测集和预算下的
+参数输出，因此无需重新运行 DBSCAN。若后续增加预算，EI 再继续提出参数并更新
+GP；当前结论是贝叶斯优化得到的最佳已观测可行值，不声称是连续空间全局最优。
+该规则只读取当前仓库的 embedding、簇和来源文件，对任意项目名执行相同逻辑，
+不使用人工标签或最终评价指标。回放证据位于
+`dbscan-improved-bayesian-replay.json`；`concurrentqueue` 与 `simdjson` 的
+真实 embedding 冒烟分别复现已有 `0.15/2` 和 `0.01/3` 选择。
+
+`clustering-final-selection.json` 保存单一算法决策与参数，
+`clustering-final-manifest.json` 保存统一出口身份与校验和，
+`clustering-algorithm-comparison.{json,csv}` 和
+`clustering-analysis-report.md` 保存完整对照证据，
+`clustering-representative-quality.json` 保存两种算法全部 Top100 代表代码的
+逐条结构代理判定。源码新增 `src.mining.dbscan_tuning`、
+`src.mining.hdbscan_clustering` 和共享簇结果构造器；没有算法路由模块。
+HDBSCAN 依赖通过约 2.6 MB 的 macOS CPython 3.12 wheel 安装，没有下载新
+embedding 模型，没有调用 LLM，也没有向外部端点发送仓库源码。
+
+收尾验证通过 `pip check`、`src/tests/实验脚本` 的 `compileall`、全部 60 项
+确定性离线测试、七个公共包组合导入、DBSCAN 自动调参与 HDBSCAN CLI 帮助
+入口、26 仓正式数据集 manifest 交叉校验、26 份 DBSCAN 统一产物 SHA-256
+复核和 `git diff --check`。
+
+阶段2最终验收状态为 `accepted_with_repository_quality_warnings`，可以结束。
+Embedding 的 233,912 条候选与向量完全对齐，全部满足 CPU `float32`、
+`1×768`、有限且非零，26/26 仓重复生成语义一致。DBSCAN 的逐仓覆盖率为
+60.16%～74.57%，最大簇占比不超过 10.85%，每仓至少有 6 个跨文件簇；Top100
+非平凡代表率为 86.33%、纯重复率为 12.78%、强习语结构代理率为 40.12%，
+代表 AST 子树均值为 68.27。`cli11`、`concurrentqueue`、`cpp-httplib`、
+`entt`、`magic_enum`、`simdjson` 和 `uwebsockets` 保留头部质量警告，交由
+下游优先过滤，不触发反向调参。验收口径见
+`docs/guides/stage2-acceptance.md`，机器可读结论和报告见
+`stage2-acceptance.json` 与 `stage2-acceptance-report.md`。验收参考线不属于
+贝叶斯优化目标，也不用于重新选择算法或参数。
+
+### 2026-07-26 Sol 5.8 阶段2正式验收发布
+
+项目版本升级到 `Sol 5.8`。本次发布完成 26 个仓库的正式 UniXcoder Embedding、
+DBSCAN 默认基线与逐仓无监督调参、HDBSCAN 同口径对照、单一 DBSCAN 最终方案
+及阶段2验收。DBSCAN 参数方法固化为使用既有观测 warm-start、由领域目标函数
+改进的标准 GP-EI 贝叶斯优化；正式产物继续按仓库隔离，未根据最终 IC、ISP、
+F1 或人工标签反向选择算法和参数。
+
+发布同时补充 DBSCAN/HDBSCAN 共享簇结果构造、HDBSCAN 实现、DBSCAN 自动调参
+与离线测试，项目入口版本、baseline 规范和评价指标规范统一标记为 `Sol 5.8`。
+阶段2验收结论为“通过，但保留逐仓质量警告”，其结构代理只证明聚类结果适合作为
+后续 LLM 的高质量候选集合，不直接把全部簇认定为最终代码习语。
+
 ## 当前阻碍与延期工作
 
 1. 中转端点、凭据加载、Luna 直接封装、判断和合成路径已通过九请求合成冒烟测试。完整语料的付费 Agent 评估仍有意延期，因为成本、源码披露范围和研究有效性需要单独的明确运行计划。
-2. 新冻结的 26 项目已完成正式阶段1和全量 tokenizer 长度治理；UniXcoder
-   embedding 与逐仓 DBSCAN 尚未运行。历史三个快照上的 96,039 个片段仍只作旧
-   语料证据，不得与新正式产物混用。
+2. 新冻结的 26 项目已完成正式阶段1、全量 tokenizer 长度治理、逐仓
+   UniXcoder embedding、DBSCAN 默认基线、HDBSCAN 对照和单一 DBSCAN 最终
+   聚类。历史
+   三个快照上的 96,039 个片段仍只作旧语料证据，不得与新正式产物混用。
 3. Baseline 实现和有界验证已获授权并完成，固定源码 commit 与总语料 manifest
-   也已形成。阶段2正式运行仍需要冻结 DBSCAN 参数规则、重复检查、完整 CIMAS
-   token 测量，以及明确的源码披露/成本决策；不需要 DBSCAN 前 split manifest。
+   也已形成。完整 CIMAS token 测量及源码披露/成本决策属于后续付费 Agent
+   运行门槛；后续判断与合成应直接消费逐仓 `clustering-final/clusters.pkl`，
+   不再根据最终 IC、ISP 或 F1 反向调整本轮算法与参数。
 4. `requirements-local.lock` 提高了可复现性；正式 `requirements.txt` 对科学计算包仍使用宽泛版本范围，但现已包含 Agent 技术栈。过时的非 C++ grammar 依赖已移除。
 5. 包预先导入导致的 CLI `runpy` 警告仍不影响运行。跨项目基础设施对齐期间，追加式运行日志器已消除早先的预先导入日志截断问题。
 
 ## 建议的下一项决策
 
-下一项实验级决策是使用 `concurrentqueue` 的正式 `fragments.pkl` 执行离线
-UniXcoder embedding 与固定 DBSCAN 参数 smoke，验证向量确定性、聚类产物、
-噪声率和资源需求。smoke 通过并冻结无监督参数规则后，再启动 26 仓库逐仓
-阶段2。完整付费 LLM 仍需先测量调用范围、源码披露和成本；不得把有界冒烟数值
-重新解释为论文结果。
+下一项实验级决策是先从统一 DBSCAN 结果中按冻结规则确定 LLM 判断范围，估算调用
+次数、token、费用和源码披露量，再决定是否运行完整判断与合成。可以先使用少量
+公开仓库代表簇验证接受率和 Schema，但冒烟结果不得作为正式习语质量结论，也不
+得用于反向重调阶段2聚类参数。

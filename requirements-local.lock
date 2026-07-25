@@ -1,4 +1,4 @@
-# Exact local environment snapshot generated on 2026-07-15.
+# Exact local environment snapshot updated on 2026-07-25.
 # Python 3.12.10, macOS arm64, venv at ./.venv.
 # This records the verified baseline; requirements.txt remains the project policy file.
 aiofiles==25.1.0
@@ -14,6 +14,7 @@ distro==1.9.0
 filelock==3.29.7
 fsspec==2026.6.0
 h11==0.16.0
+hdbscan==0.8.44
 hf-xet==1.5.1
 httpcore==1.0.9
 httpx==0.28.1

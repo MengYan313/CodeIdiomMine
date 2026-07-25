@@ -13,6 +13,7 @@
 - [Parser 代表性产物审计](guides/parser-artifact-audit.md)：宏、模板、Concept、Lambda、不完整代码和语义片段样例。
 - [Parser 风险与限制](guides/parser-risks.md)：失败分类、兼容策略、误切分风险和未解决事项。
 - [C++ 数据集 Parser 优化与回归](guides/cpp-dataset-parser-regression.md)：27 个候选的修改前基线、通用扫描与路径修正、优化后全量结果和确定性证据。
+- [阶段2 Embedding 与聚类验收](guides/stage2-acceptance.md)：Embedding 合同、聚类有效性、头部候选质量、逐仓警告与结束判定。
 - [评价指标规范](guides/evaluation-metrics.md)：最终指标分类、公式、聚合方式、解释边界与变更控制。
 - [baseline 复现](guides/baselines.md)：三条 baseline、CIMAS-CPP、统一产物合同、运行命令与验证状态。
 - [本地验证指南](guides/testing.md)：从自动化测试到完整流水线的验证顺序。

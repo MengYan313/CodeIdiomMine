@@ -6,6 +6,12 @@ import pandas as pd
 import torch
 
 from src.mining.clustering import ClusteringProcessor
+from src.mining.dbscan_tuning import (
+    DBSCANAutoTuner,
+    IMPROVED_BAYESIAN_OBJECTIVE,
+    SCORE_WEIGHTS,
+)
+from src.mining.hdbscan_clustering import HDBSCANClusteringProcessor
 from src.mining.code_embedding import (
     get_fragment_src_and_embedding,
     get_pros_src_and_embedding,
@@ -114,6 +120,124 @@ class MiningHelperTests(unittest.TestCase):
                 "loc_label",
             ],
         )
+
+    def test_hdbscan_preserves_cluster_schema_and_metadata(self):
+        embeddings = [
+            torch.tensor([[1.00, 0.00]]),
+            torch.tensor([[0.99, 0.01]]),
+            torch.tensor([[0.98, 0.02]]),
+            torch.tensor([[0.00, 1.00]]),
+            torch.tensor([[0.01, 0.99]]),
+            torch.tensor([[0.02, 0.98]]),
+        ]
+        sources = [
+            "return left_0;",
+            "return left_1;",
+            "return left_2;",
+            "return right_0;",
+            "return right_1;",
+            "return right_2;",
+        ]
+        infos = [
+            ["sample", "sample.cpp", f"{index}-0-{index}-10", {}]
+            for index in range(1, 7)
+        ]
+
+        labels, clusters, metadata = (
+            HDBSCANClusteringProcessor.perform_hdbscan_clustering(
+                "sample",
+                sources,
+                embeddings,
+                infos,
+                min_cluster_size=2,
+                min_samples=1,
+                cluster_selection_method="leaf",
+                pca_components=0,
+                normalize=True,
+            )
+        )
+
+        self.assertEqual(sorted(set(labels.tolist())), [0, 1])
+        self.assertEqual(len(clusters), 2)
+        self.assertEqual(
+            clusters.columns.tolist(),
+            [
+                "label",
+                "center_point",
+                "else_point",
+                "cluster_size",
+                "center_point_info",
+                "infos",
+                "loc_label",
+            ],
+        )
+        self.assertTrue(all(clusters["cluster_size"] == 3))
+        self.assertEqual(metadata["input_dimensions"], 2)
+        self.assertEqual(metadata["output_dimensions"], 2)
+        self.assertEqual(metadata["pca_components_effective"], 0)
+        self.assertEqual(metadata["cluster_selection_method"], "leaf")
+
+    def test_dbscan_auto_tuner_uses_same_rule_for_an_unseen_project(self):
+        import math
+
+        angles = [
+            0.0,
+            0.01,
+            -0.01,
+            math.pi / 2,
+            math.pi / 2 + 0.01,
+            math.pi / 2 - 0.01,
+            math.pi,
+            -math.pi / 2,
+            3 * math.pi / 4,
+            -3 * math.pi / 4,
+        ]
+        embeddings = [
+            torch.tensor(
+                [[math.cos(angle), math.sin(angle)]],
+                dtype=torch.float32,
+            )
+            for angle in angles
+        ]
+        sources = [f"pattern_{index}();" for index in range(len(angles))]
+        infos = [
+            [
+                "unseen-project",
+                f"file-{index % 3}.cpp",
+                f"{index}-0-{index}-10",
+                {},
+            ]
+            for index in range(len(angles))
+        ]
+
+        clusters, report = DBSCANAutoTuner.tune(
+            project="unseen-project",
+            sources=sources,
+            embeddings=embeddings,
+            infos=infos,
+            eps_values=(0.001, 0.02, 0.30),
+            min_samples_values=(2,),
+        )
+
+        self.assertEqual(report["selection_gate"], "strict")
+        self.assertEqual(report["selected"]["eps"], 0.001)
+        self.assertEqual(report["selected"]["min_samples"], 2)
+        self.assertEqual(len(report["results"]), 3)
+        self.assertEqual(len(clusters), 2)
+        self.assertTrue(all(clusters["cluster_size"] == 3))
+        self.assertEqual(
+            report["bayesian_objective"]["name"],
+            IMPROVED_BAYESIAN_OBJECTIVE,
+        )
+        self.assertEqual(
+            set(report["selected"]["score_components"]),
+            {
+                "cross_file_recurrence",
+                "top100_head_recurrence",
+                "density_balance",
+            },
+        )
+        self.assertAlmostEqual(sum(SCORE_WEIGHTS.values()), 1.0)
 
     def test_embedding_profiles_preserve_mapping_and_semantic_candidates(self):
         with tempfile.TemporaryDirectory() as temporary_directory:

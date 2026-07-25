@@ -1,16 +1,18 @@
 # CodeIdiomMine
 
-当前版本：**CIM 5.5**。
+当前版本：**Sol 5.8**。
 
-CodeIdiomMine 从 C++ 仓库提取 AST 候选片段，经代码嵌入和 DBSCAN 聚类后，使用 AutoGen Agent 判断代码习语并合成可复用模板。
+CodeIdiomMine 从 C++ 仓库提取 AST 候选片段，经代码嵌入和 DBSCAN 聚类后，
+使用 AutoGen Agent 判断代码习语并合成可复用模板。HDBSCAN 作为阶段2实验
+对照保留，不进入正式流水线。
 
 Parser 遵循零构建解析：被分析项目无需编译、链接或执行，只要源码可读取即可生成 AST、诊断和候选片段。CodeIdiomMine 自身仍需安装 Python 依赖。
 
 ## 核心研究边界
 
 仓库是完整、独立的挖掘单元。每个给定 C++ 仓库都使用全部合格源码独立执行
-`Parser → fragments → embedding → DBSCAN → 判断 → 合成 → 评价`；不同仓库
-的候选、向量和聚类输入不得混合。单仓库在 DBSCAN 前不拆分训练集、开发集或
+`Parser → fragments → embedding → 聚类 → 判断 → 合成 → 评价`；不同仓库
+的候选、向量和聚类输入不得混合。单仓库在聚类前不拆分训练集、开发集或
 测试集。最终评价才按来源文件形成确定性的参考分区和测量分区，只测量仓库内部
 覆盖、重复和分区复现，不重新挖掘，也不表示跨仓库或未知数据泛化。
 
@@ -60,10 +62,10 @@ CodeIdiomMine/
   --model unixcoder --device cpu --batch-size 8 \
   --candidate-profile quality-v2
 
-.venv/bin/python -m src.mining.clustering \
+.venv/bin/python -m src.mining.dbscan_tuning \
   --input outputs/cpp/cli11/embeddings.pkl \
   --output outputs/cpp/cli11/clusters.pkl \
-  --eps 0.5 --min-samples 2
+  --report outputs/cpp/cli11/dbscan-tuning.json
 
 .venv/bin/python -m src.agents.idiom_judgement \
   --input outputs/cpp/cli11/clusters.pkl --output-dir results/cpp/cli11
@@ -71,6 +73,13 @@ CodeIdiomMine/
 .venv/bin/python -m src.agents.idiom_synthesis \
   --input-dir results/cpp/cli11 --output-dir results/cpp/cli11
 ```
+
+DBSCAN 自动调参和 HDBSCAN 对照入口见[嵌入与聚类](src/mining/README.md)。
+正式算法在聚类前统一固定为 DBSCAN；论文中的“改进贝叶斯优化”沿用标准
+高斯过程（GP）代理模型和期望改进（EI）采集函数，只把通用目标替换为三指标
+领域目标。每个新仓库使用相同的搜索空间与约束，不使用仓库名、人工标签或
+最终评价指标。现有26仓结果作为完整 warm-start 观测输入该优化过程，所选
+incumbent 是当前观测集和预算下的正式贝叶斯优化参数输出。
 
 关键阶段会在交互式控制台显示进度条，并把事件和错误追加到 `logs/<run-name>.log`。
 
