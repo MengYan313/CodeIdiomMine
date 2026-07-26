@@ -21,8 +21,12 @@
 ```
 
 测试覆盖 C++ Adapter、预处理续行遮蔽、扫描与 AST 提取、Parser token 预算与
-超长函数降级、embedding 合同、DBSCAN 自动调参、DBSCAN/HDBSCAN Schema、Agent
-确定性门限、评价辅助函数、LLM 消息构建、JSON Schema/单次修复和可读产物导出。
+超长函数降级、embedding 合同、DBSCAN 自动调参、DBSCAN/HDBSCAN Schema、
+单簇习语判断、完整簇语义抽象决策、抽象拒绝后原样保留、二态评分裁决、
+阶段2合同适配与阶段3正式合成输入、自动代表区域上下文、
+共享异味分类/独立门禁/事后审计、合成确定性门限、评价辅助函数、LLM
+消息构建、JSON Schema/单次修复、Agent 有界逻辑重试、并行失败隔离、下游跳过
+和可读产物导出。
 默认测试使用假 tokenizer，不得下载模型或调用外部 LLM。
 
 数据集实验还应运行清单交叉校验。该命令只读取本地固定仓库和产物，不执行目标仓库代码：
@@ -37,7 +41,7 @@
 ## 3. 导入和帮助入口
 
 ```bash
-.venv/bin/python -c "import src.common, src.parser, src.mining, src.agents, src.evaluation, src.llm, src.utils"
+.venv/bin/python -c "import src.common, src.parser, src.mining, src.idiom_judgment, src.idiom_synthesis, src.agents, src.evaluation, src.llm, src.utils"
 
 .venv/bin/python -m src.parser.repo2data --help
 .venv/bin/python -m src.parser.audit --help
@@ -47,8 +51,9 @@
 .venv/bin/python -m src.mining.clustering --help
 .venv/bin/python -m src.mining.dbscan_tuning --help
 .venv/bin/python -m src.mining.hdbscan_clustering --help
-.venv/bin/python -m src.agents.idiom_judgement --help
-.venv/bin/python -m src.agents.idiom_synthesis --help
+.venv/bin/python -m src.idiom_judgment.judge_clusters --help
+.venv/bin/python -m src.idiom_judgment.smell_audit --help
+.venv/bin/python -m src.idiom_synthesis.synthesize_idioms --help
 .venv/bin/python -m src.evaluation.idiom_metrics --help
 .venv/bin/python -m src.utils.pkl2csv --help
 ```
@@ -164,37 +169,102 @@ PKL 是阶段间的规范格式；不要用原样 CSV 替换嵌套 AST、tensor 
 
 输出包括 `manifest.json`、阶段 `*.summary.json`、解析/嵌入前 100 条预览，以及每项目聚类 Top100。验证 JSON 可解析、记录数符合限制、聚类按 `cluster_size` 降序、汇总计数与 PKL 一致，并确认没有遗留 `*.tmp` 文件。只导出某一阶段可使用 `--stages dataset`、`--stages embeddings` 或 `--stages clusters`。
 
-Agent 结果存在后可运行 `--result-dir results/cpp --stages judgment synthesis`。它会扫描 `*_idiom.pkl` 与 `*_idiom_syn.pkl`，生成全量计数、AST 大小、合并轮数和前 100 条代码/trace 预览；这一导出是本地读取，不会发起新的 LLM 请求。
+正式语义产物存在后可运行
+`--input-dir outputs/cpp --result-dir results/cpp --stages judgment synthesis`。
+它会分别递归扫描逐仓 `idiom-judgment.pkl` 与 `idiom-synthesis.pkl`，只把 `accepted`
+记录投影为习语预览，同时保留各状态计数、AST 大小、合成轮数和前100条轨迹。
+`judgment`、`synthesis` 仍可读取旧 `*_idiom.pkl` 与 `*_idiom_syn.pkl`。
+这些导出都只读取本地文件，不会发起新的 LLM 请求。
 
-## 7. Agent 判断与合成
+## 7. 习语判断与合成
 
-无付费验证可以注入确定性 fake model client，检查：
-
-- `RoutedAgent` 注册与消息路由；
-- 语义/语法并行与最终门限；
-- 判断和合成 pickle schema；
-- 合并失败后的回退行为。
-
-真实入口需要 `.env` 中的端点、密钥和模型分档；不传 `--model` 时只使用 `OPENAI_MODEL_LOW`：
+无付费验证先运行：
 
 ```bash
-.venv/bin/python -m src.agents.idiom_judgement \
-  --input outputs/cpp/clusters.pkl --output-dir results/cpp --limit 1
-
-.venv/bin/python -m src.agents.idiom_synthesis \
-  --input-dir results/cpp --output-dir results/cpp
+.venv/bin/python -m unittest \
+  tests.idiom_judgment.test_judgment \
+  tests.idiom_judgment.test_smell_audit \
+  tests.idiom_synthesis.test_synthesis \
+  tests.agents.test_prompt_contracts -v
 ```
 
-单个判断候选通常包含语义、语法和综合三次模型调用；一次成功合成还会增加规划、组装及合并后再判断五次调用。执行前必须确认模型、端点、调用范围、费用和源码披露风险。真实 smoke 应使用合成短代码和独立的 `results/llm-smoke/`，不得把 smoke 结果当作研究实验结果。
+它检查确定性单簇规则、完整簇与规则证据进入语义 Prompt、只抽象规则筛出的高频
+局部换名、LLM `keep` 后保持原代码、判断/合成二态评分、阶段2合同适配与阶段3
+正式输入、同区域分组、自动上下文与零调用失败、共享异味分类、独立过滤门禁、
+分层事后审计与逐类别指标、跨区域禁止分组、合成增量产物、新增调用拒绝、
+候选上限零调用拒绝、SQLite checkpoint 配置一致性续跑、
+阶段2非执行分支的严格阈值、`contract_only_not_executed` 空 artifact 和零
+LLM调用，以及所有 Agent 的中文提示词和完整 Schema。故障注入用例还验证：
+
+- 请求异常时最多重试1次，成功恢复后 `logical_attempts=2`；
+- 每次逻辑尝试只修复 JSON 1次，两次逻辑尝试耗尽时单 Agent 最多4次端点请求；
+- 阶段3一个并行 Agent 失败不会取消另一个分支，当前簇安全拒绝；
+- 阶段4规划失败后不调用组装和两个复审 Agent，当前组跳过而非中断整批；
+- 阶段3严格上下文门禁失败时两个 Agent 均不运行；成功时语义和异味 Agent 都收到
+  经哈希验证的代表函数/区域；
+- 阶段4同区域候选超过上限时保留整组证据而不静默截断，四个 Agent 均不运行；
+- artifact 的 `agent_trace` 与 `technical_failure_count` 能复现技术失败。
+
+还可对真实聚类
+执行不调用 LLM 的预检：
+
+```bash
+.venv/bin/python -m src.idiom_judgment.judge_clusters \
+  --input outputs/cpp/cli11/clusters.pkl \
+  --output outputs/cpp/cli11/idiom-judgment-rule-only.pkl \
+  --report outputs/cpp/cli11/idiom-judgment-rule-only.json \
+  --rule-only --limit 20
+```
+
+该产物状态为 `pending_llm`，不能作为已接受习语。真实入口需要 `.env` 中的端点、
+密钥和模型分档；不传 `--model` 时只使用 `OPENAI_MODEL_LOW`：
+
+```bash
+.venv/bin/python -m src.idiom_judgment.judge_clusters \
+  --input outputs/cpp/cli11/clusters.pkl \
+  --source-root repos/cli11 --require-context \
+  --checkpoint outputs/cpp/cli11/idiom-judgment.sqlite3 \
+  --output outputs/cpp/cli11/idiom-judgment.pkl \
+  --report outputs/cpp/cli11/idiom-judgment-report.json --limit 1
+
+.venv/bin/python -m src.idiom_synthesis.synthesize_idioms \
+  --input outputs/cpp/cli11/idiom-judgment.pkl \
+  --input-kind judgment --source-root repos/cli11 \
+  --checkpoint results/cpp/cli11/idiom-synthesis.sqlite3 \
+  --output results/cpp/cli11/idiom-synthesis.pkl \
+  --report results/cpp/cli11/idiom-synthesis-report.json --max-groups 1
+```
+
+单个规则合格簇通常包含语义/复用价值与共享异味审查两次并行逻辑调用；每个合成
+组最多包含规划、组装、质量复审和共享异味审查四次逻辑调用。上下文在调用前由
+编排层自动读取和校验，失败时零调用拒绝。每个 Agent 单次请求最多等待120秒，
+每次逻辑尝试在 JSON
+首次失败时可能增加1次修复请求；修复耗尽或请求异常后最多再执行1次逻辑尝试，
+故单 Agent 最多4次端点请求。阶段3理论端点上限为每簇8次，阶段4为每组16次；
+规划或组装失败时会跳过下游，实际失败路径上限随之降低。执行前必须按端点请求
+上限确认模型、簇/组范围、费用和源码披露风险。真实 smoke 应使用合成短代码和
+独立的 `results/llm-smoke/`，不得把 smoke 结果当作研究实验结果。
+
+长时运行应显式传入 `--checkpoint`。首次运行若 checkpoint 已存在会拒绝覆盖；
+中断后使用相同命令增加 `--resume`，只有输入 SHA-256、模型、上下文根和关键
+参数完全一致时才会跳过已完成记录。artifact 的 `run` 还必须检查提示词哈希、
+token 用量和 `calibration_status`；在人工 pilot 完成前，状态应保持
+`synthetic_smoke_only_pilot_required`。
+
+异味审计样本准备和人工标签评价命令统一维护在
+[`src/idiom_judgment/README.md`](../../src/idiom_judgment/README.md)。审计只读
+已有阶段3/4产物，不会发起 LLM 调用。
 
 ## 8. 评价入口
 
 ```bash
-.venv/bin/python -m src.evaluation.idiom_metrics
+.venv/bin/python -m src.evaluation.idiom_metrics \
+  --idiom-dir results/cpp --dataset outputs/cpp/dataset.pkl \
+  --stage synthesis --output results/cpp/eval.json
 ```
 
-正式默认模式是仓库内参考/测量文件分区。当前仓库已经使用全部合格源码完成
-Parser、embedding、逐仓聚类、判断和合成；评价器随后按稳定哈希划分来源文件，
+正式默认模式是仓库内参考/测量文件分区。待每个仓库使用全部合格源码完成
+Parser、embedding、逐仓聚类、习语判断和习语合成后，评价器按稳定哈希划分来源文件，
 只用参考分区中的已发现实例构造匹配变体，在测量分区计算 IC 与 ISP。该分区不
 重新运行任何发现阶段。当前未参数化的候选通过保留关键字/运算符、抽象标识符和
 字面量的结构化词法签名匹配，并要求候选 AST 节点类型一致。v2 的
@@ -205,6 +275,9 @@ Parser、embedding、逐仓聚类、判断和合成；评价器随后按稳定�
 
 兼容字段 `training_*`、`test_*` 在该模式中只表示参考/测量分区。显式模式
 `leave_one_project_out` 只用于复核历史产物，不属于正式研究流程。
+`--stage judgment` 可直接评价阶段3接受习语，`--stage synthesis` 评价阶段4
+合成结果；新 artifact 从 `accepted` 分区读取。同名阶段也会自动识别历史
+`*_idiom.pkl` 与 `*_idiom_syn.pkl` 列表产物。
 
 最终指标的分类理由、完整公式、全部成员计入规则、仓库宏平均与全局汇总方式、空分母处理及结论边界统一见[评价指标规范](evaluation-metrics.md)。本节只说明如何运行评价，不定义第二套口径。
 
@@ -263,4 +336,7 @@ Haggis smoke 使用 `--max-functions-per-project`、较少 `--iterations` 和独
 
 ## 11. 测试目录约定
 
-`tests/` 下的 `agents/`、`common/`、`evaluation/`、`llm/`、`mining/`、`parser/`、`utils/` 与 `src/` 一一对应。新增测试放入被测包的同名目录；临时测试产物使用 `tests/outputs/`、`tests/temp_outputs/` 或 `tests/.tmp/`，这些路径已由 `.gitignore` 排除。
+`tests/` 下的 `agents/`、`common/`、`evaluation/`、`idiom_synthesis/`、
+`idiom_judgment/`、`llm/`、`mining/`、`parser/`、`utils/` 与 `src/` 一一
+对应。新增测试放入被测包的同名目录；临时测试产物使用 `tests/outputs/`、
+`tests/temp_outputs/` 或 `tests/.tmp/`，这些路径已由 `.gitignore` 排除。

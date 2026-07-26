@@ -1,261 +1,246 @@
-# Agent 子系统架构
+# 习语判断与合成 Agent 架构
 
-`src/agents/` 实现**编程模式（代码习语）判定**与**同区域模板合成**两条流水线，与说明书实施例 **7.2（三 Agent 并行判定）**、**7.3（规划 + 组装）**、**7.4（合并后再判定与迭代）**对齐。实现基于 Microsoft **AutoGen** 的 `autogen_core` / `autogen_ext`，采用 `RoutedAgent` + `SingleThreadedAgentRuntime` 的消息驱动模型，而非对话式 `agentchat` 封装。
+当前正式 Agent 流程按功能职责拆为两个领域包：
 
----
+- `src/idiom_judgment/`：判断单个 DBSCAN 聚类簇能否成为代码习语；
+- `src/idiom_synthesis/`：尝试把同一区域内多个相关习语合成为质量更高的习语。
 
-## 一、整体架构概览
+`src/agents/` 只保留当前流程实际复用的 `BaseRoutedAgent`、结构化调用基类和
+注册函数。
+数字阶段名只描述论文顺序，不作为源码包名。
 
-系统按职责分为两层：
+## 一、总体数据流
 
-| 层级 | 职责 | 涉及的 Agent | 运行时 |
-|------|------|----------------|--------|
-| **判定子系统（7.2）** | 对**单段代码**做语义 / 语法并行评估，再综合；最终是否「有效编程模式」由**确定性分数规则**裁定 | `SemanticClarityAgent`、`SyntaxLogicAgent`、`IdiomJudgeAgent` | `CodeIdiomPipeline` 内部的 `SingleThreadedAgentRuntime` |
-| **合成子系统（7.3 + 7.4）** | 按 `loc_label` 分组，在组内做**规划 → 组装 → 再判定**循环，最多 **3** 轮合并 | `PlanningSynthesisAgent`、`CodeAssemblyAgent` | `idiom_synthesis.run_synthesis` 中的**独立** `SingleThreadedAgentRuntime` |
+```text
+阶段2 clusters.pkl
+   ├─→ idiom_judgment
+   │     规则/合同过滤
+   │       → 可抽象位置规则提案
+   │       → 自动读取并验证代表函数/区域上下文
+   │       → 完整簇 + 规则证据 + 提案 + 上下文
+   │       → 语义/抽象 Agent：abstract 或 keep ─┐
+   │       → 代码异味 Agent ───────┤
+   │       → 业务评分与质量门禁 ──┘
+   │       → 独立异味门禁
+   │       → accepted / rejected
+   ▼
+ idiom_synthesis 阶段3正式输入
+   → 完全相同代表 project/path/extent 分组
+   → 自动读取并验证代表区域上下文
+   → 合成规划 Agent
+   → 代码组装 Agent
+   → 质量复审 Agent + 共享异味审查 Agent（对合成结果独立重审）
+   → Tree-sitter / 上下文 / 新增调用确定性门禁
+   → 质量分门禁 + 独立异味门禁
+   → accepted / rejected 合成增量
 
-判定与合成使用**两个不同的运行时**，原因包括：
-
-- 注册的 Agent 名称空间互不冲突（例如合成侧不需要注册 `semantic_agent`）。
-- 生命周期清晰：`CodeIdiomPipeline` 随 `initialize` / `shutdown` 管理判定用运行时；合成脚本在 `run_synthesis` 内创建/销毁合成用运行时，并单独持有一个 `CodeIdiomPipeline` 实例专门用于**合并后的再判定**。
-
-```
-                    ┌─────────────────────────────────────────┐
-                    │           判定子系统 (7.2)                 │
-                    │  Runtime A: semantic / syntax / judge   │
-                    │  入口: CodeIdiomPipeline.evaluate()      │
-                    └─────────────────────────────────────────┘
-                                        ▲
-                                        │ 合并后代码再判定
-                    ┌───────────────────┴───────────────────────┐
-                    │           合成子系统 (7.3 + 7.4)           │
-                    │  Runtime B: planning_synthesis / assembly │
-                    │  编排: idiom_synthesis.synthesize_group() │
-                    └───────────────────────────────────────────┘
-```
-
----
-
-## 二、判定子系统（7.2）：三 Agent 流水线
-
-### 2.1 数据流
-
-1. 对同一 `code_snippet`，使用 `asyncio.gather` **并行**调用：
-   - `SemanticClarityAgent` → `SemanticClarityResult`（命名、意图、可理解性，score 0–100）
-   - `SyntaxLogicAgent` → `SyntaxLogicResult`（语法、控制流、逻辑与异常处理等，score 0–100）
-2. 将两路结果填入 `IdiomJudgeRequest`，调用 `IdiomJudgeAgent`，由 LLM 生成**理由、置信度、习语特征**等说明性内容。
-3. **最终布尔结论** `final_judgment["is_idiom"]` **不**单独采信 LLM 的 `is_idiom`，而是由 `patent_programming_pattern_valid(semantic_score, syntax_score)` 决定：
-   - 较高分 ≥ 70 且较低分 ≥ 50 → 视为有效编程模式；
-   - 否则无效。  
-   若 LLM 与规则不一致，仍会保留 `final_judgment["llm_is_idiom"]` 便于对照；置信度在不一致时按两维 score 均值调整。
-
-### 2.2 流程示意图
-
-```
-code_snippet
-     │
-     ├──────────────────────┬──────────────────────┐
-     ▼                      ▼                      │
-SemanticClarityAgent   SyntaxLogicAgent            │
-     │                      │                      │
-     └──────────┬───────────┘                      │
-                ▼                                  │
-         IdiomJudgeAgent（汇总说明）                │
-                │                                  │
-                ▼                                  │
-    patent_programming_pattern_valid ←─────────────┘
-                │
-                ▼
-        结构化 dict（含 semantic / syntax / final_judgment）
+阶段2 clusters.pkl
+   → 适配为内部 IdiomCandidate
+   → 验证分组、Schema 与严格阈值逻辑
+   → 不启动正式阶段4 Agent，不产生实际合成结果
 ```
 
-### 2.3 入口与批量任务
+阶段2直通只保留为合同与后备设计验证：代码可以将其归一化为阶段4内部候选，且
+确定性约束不会因 Schema 不兼容而报错；正式 CLI 和实验只消费阶段3的
+`accepted` 产物，不实际执行阶段2到阶段4的 LLM 合成。程序化传入阶段2产物只
+生成 `execution_status=contract_only_not_executed` 的空 artifact，不创建 Agent、
+不读取 API key，也不发起 LLM 调用。
 
-- **库内调用**：`CodeIdiomPipeline(model=..., quiet=False)`，`await pipeline.evaluate(code)`，`await pipeline.shutdown()`。  
-  `quiet=True` 时关闭步骤打印，供合成流水线反复调用再判定时减少日志。
-- **命令行批量**：入口与参数见 [Agent README](../../src/agents/README.md)；批量任务读取聚类产物，对每个 `center_point` 调用上述流水线，写出 `{repo}_idiom.pkl`。
+## 二、单簇习语判断
 
----
+### 2.1 确定性规则
 
-## 三、合成子系统（7.3 + 7.4）：规划、组装与再判定
+`src.idiom_judgment.rules.evaluate_cluster_rules()` 首先验证：
 
-### 3.1 数据与分组
+- 聚类支持数至少为2；
+- 代表代码和成员代码非空；
+- `cluster_size` 与完整 `infos` 数量一致；
+- 所有来源属于同一仓库；
+- 不是只包含 `break;`、`continue;`、裸 `return;` 等确定性低价值控制语句。
 
-- 输入：`results/.../{repo}_idiom.pkl`（已通过 7.2 的习语列表）。
-- 按 `loc_label`（项目–文件–extent 等区域标签）分组；**仅当组内条数 ≥ 2** 时尝试合成。
+完全相同源码、单文件复现、缺少源码变体和 Parser 诊断只形成警告，不会被单条
+启发式规则自动拒绝。规则评分是可解释证据，不替代后续语义判定。
 
-### 3.2 单组内迭代（最多 3 轮）
+### 2.2 保守抽象
 
-常量 `MAX_SYNTHESIS_ITERATIONS`（默认 **3**，可从 `src.agents` 导出）控制**合并轮数**上限。
+`src.idiom_judgment.abstraction` 不执行“所有差异元素全部占位”。默认提案必须同时
+满足：
 
-每轮顺序：
+- 至少3个可解析且结构对齐的实例；
+- 同一结构角色至少3个不同取值；
+- 对齐组覆盖至少60%的簇成员；
+- 元素是片段内已声明的局部变量，或不位于控制条件、返回值、下标、哨兵值和格式
+  字符串中的低语义字面量。
 
-1. **PlanningSynthesisAgent**：输入当前已合并代码、本组剩余候选片段列表（由编排层注入，未来可替换为工具查询结果）、当前轮次与最大轮次；输出 `should_stop`、`selected_indices`（本轮要并入的一个或多个候选下标）、`reason`。
-2. **CodeAssemblyAgent**：输入 `base_code` 与按规划顺序的 `segments_to_merge`，输出 `merged_code`。
-3. **CodeIdiomPipeline.evaluate(merged_code)**：与 7.2 相同的三 Agent + 规则再判定。  
-   - 若无效：终止该组合成，**保留上一轮仍合法**的合并结果（若从未成功合并则该组不产出合成记录）。  
-   - 若有效：更新当前代码，从池中移除已并入的候选，进入下一轮（直至规划停止、池空或达到 3 轮）。
+调用目标、类型、外部实体、控制条件、返回值、`0/1/-1/nullptr/true/false` 和
+格式字符串不会仅因变化而抽象。相同局部实体的定义和使用共享同一占位符。
+规则只产生 `AbstractionProposal`，不修改代码。随后语义/抽象 Agent 接收：
 
-### 3.3 入口
+- 代表代码和同一簇的全部成员代码；
+- 完整规则初判和警告；
+- 所有规则抽象提案、候选位置、取值、支持数与覆盖率。
 
-启动命令见 [Agent README](../../src/agents/README.md)。
+Agent 必须显式返回 `abstract` 或 `keep`。`abstract` 时只能批准输入中的
+`proposal_id`，确定性代码再应用批准集合与规则提案的交集；`keep`、规则无提案
+或抽象决策无法解析时，代表代码保持不变。拒绝抽象不是拒绝习语：只要后续业务
+质量和异味门禁通过，未抽象代码与成功抽象模板都会进入阶段4。
 
-写出 `{repo}_idiom_syn.pkl`，条目中包含 `center_point`、`loc_label`、聚合后的 `cnt` / `avg_ast_num`、`source_infos`、`merge_rounds`、`synthesis_trace` 等。
+正式运行还应从 `center_point_info` 自动读取代表函数/区域，校验仓库身份、相对
+路径、范围和整文件 `source_sha256`。该上下文同时进入语义/抽象与异味请求；
+`--require-context` 下任何校验失败都零调用拒绝当前簇。非严格兼容运行不会把
+缺失上下文伪装为已验证，`context_evidence.failure_kind` 会保留原因。
 
----
+### 2.3 两个专项 Agent 与裁决
 
-## 四、使用 AutoGen 的实现方式（实现细节）
+语义/抽象 Agent 在同一次完整簇审查中判断稳定意图、完整性、复用价值、前置条件
+和规则候选抽象安全性，并分别输出业务分与独立抽象决策；
+共享异味 Agent 按固定分类表独立检查资源/内存生命周期、错误与异常处理、并发、
+未定义行为、危险接口、控制流、耦合等风险，只输出带类别、严重度、置信度和可定位
+证据的 findings。风险分和过滤结论由确定性代码计算。两个请求使用
+`asyncio.gather()` 并行，但互不读取或抵消对方结论。
 
-### 4.1 为何选用 `autogen_core`
+裁决只产生 `accepted` 或 `rejected`，不会把边界样本转交运行时人工。业务总分为：
 
-- **`RoutedAgent` + `@message_handler`**：每个 Agent 是强类型的消息处理器，请求/响应用 **dataclass** 描述，适合**非对话、流水线式**调用。
-- **`SingleThreadedAgentRuntime`**：在同一线程内调度消息，与 `asyncio` 配合简单，避免多线程与锁的复杂度。
-- **`autogen_ext` 的 `OpenAIChatCompletionClient`**：统一封装 Chat Completions，与 `SystemMessage` / `UserMessage` 列表对接。
+- `0.20 × 规则分 + 0.45 × 语义分 + 0.35 × 复用分`；
+- 规则失败或语义/复用任一低于50时，业务门禁直接 `rejected`；
+- 通过硬门禁且总分至少70时 `accepted`，否则 `rejected`；
+- 异味不进入总分；确定性 `risk_score >= 60` 或异味分析失败时，由独立
+  `smell_gate` 直接覆盖业务结论为 `rejected`；
+- `--rule-only` 只生成规则与抽象提案，状态为 `pending_llm`，不能冒充已接受习语。
 
-本模块**未**使用 `autogen_agentchat` 的会话 Agent，因主路径是「单次请求 → 结构化返回」，而非多轮用户–助手对话。
+## 三、多习语合成
 
-### 4.2 Agent 类共性
+### 3.1 正式输入、合同适配与关系分组
 
-每个业务 Agent 均：
+`src.idiom_synthesis.sources` 支持：
 
-1. 业务 JSON Agent 继承 `JsonLLMAgent`，后者再继承两项目共享的 `BaseRoutedAgent`（`autogen_core.RoutedAgent`）。
-2. 在类内用 `@message_handler` 声明处理函数，入参为自定义 `Request` dataclass 与 `MessageContext`，返回 `Result` dataclass。
-3. 构造函数注入共享的 `OpenAIChatCompletionClient`；handler 通过 `JsonLLMAgent.ask_json(...)` 发起结构化调用。
-4. `src/llm/json_output.py` 启用原生 JSON mode，对完整响应执行严格解析和 schema 校验；首次失败时使用同一模型修复一次，再次失败才由领域 Agent 返回安全默认结果。
+- `idiom_judgment` artifact 的 `accepted` 记录，作为正式输入；
+- 单仓阶段2 `clusters.pkl`，仅用于内部适配与门槛合同测试。
 
-### 4.3 运行时注册与寻址（与文档示例的差异）
+两者归一化为 `IdiomCandidate`。合成只在代表位置完全相同的
+`project + file + function_extent` 下形成候选组，不使用其他成员位置扩大范围，
+也不因 embedding 相似就跨区域或跨仓强行合并。阶段4 artifact 明确标记为
+`synthesis_delta`，只记录合成尝试与成功增量；单例、未选择和未成功合成的习语
+继续由阶段3 `accepted` 产物持有，不作为 passthrough 复制到阶段4。
 
-当前代码通过共享的 **`register_agent`** / **`default_agent_id`** 统一封装 `register_factory` 与 `AgentId`，与早期 AutoGen 示例中的 `register` + 字符串 recipient 不同，例如：
+每组默认上限为12。超过上限时不再静默截取高支持候选：整个同区域组以
+`candidate_limit_exceeded` 零调用拒绝，并保存完整候选编号；调用者必须显式
+提高 `--max-group-candidates` 后重试。正式 CLI 的 `--input-kind` 只接受
+`judgment`，因此阶段2合同分支不会发起实际 LLM 调用。
 
-```python
-from autogen_core import SingleThreadedAgentRuntime
-from src.agents.base import default_agent_id, register_agent
+### 3.2 自动上下文与多 Agent 协作
 
-runtime = SingleThreadedAgentRuntime()
-await register_agent(
-    runtime,
-    "semantic_agent",
-    lambda: SemanticClarityAgent(model_client),
-)
-runtime.start()
+1. **确定性上下文加载器**：在调用 LLM 前，根据候选文件、代表范围和
+   `source_sha256` 自动读取同一代表区域；上下文缺失或校验失败时直接拒绝。
+2. **合成规划 Agent**：选择至少两个真正互补的习语，声明合成目标、顺序、上下文
+   使用和预期质量增益；找不到关系时停止。
+3. **代码组装 Agent**：严格按计划组装，只能使用选定习语和已验证上下文。
+4. **质量复审 Agent**：检查来源意图、绑定、前置条件和职责是否保留，且合成是否
+   比简单拼接产生明确增益。
+5. **共享异味审查 Agent**：直接复用阶段3的 Agent 类型、Request/Result、JSON
+   Schema、分类和阈值；阶段4通过同一 `related_examples` 字段传入已验证区域
+   上下文和来源习语，但对当前合成代码发起新的独立审查，检查是否传播或引入反模式。
 
-result = await runtime.send_message(
-    SemanticClarityRequest(code_snippet=code),
-    recipient=default_agent_id("semantic_agent"),
-)
-```
+上下文加载、规划和组装顺序执行；质量与异味复审并行。各 Agent 都使用强类型
+消息、显式 JSON Schema、原生 JSON mode、严格解析和单次修复；请求异常或修复
+耗尽时最多再执行1次完整逻辑尝试。
 
-要点：
+### 3.3 上下文与确定性门禁
 
-- **工厂**：`register_agent(runtime, name, factory)` 内部调用 `register_factory`，在首次投递到该 `AgentId` 时创建实例。
-- **收件人**：`default_agent_id("logical_name")` 与注册名一致并固定 `key="default"`；需要多实例时再显式构造其他 key。
+`--source-root` 是正式 CLI 的必需输入。编排层只读取候选 `info` 指向的代表源码行区间，
+拒绝路径越界、仓库身份不一致、文件缺失、内容 SHA 不一致、超过300行或
+12,000字符的上下文。任一检查失败时结果直接 `rejected`，且不会产生 LLM 调用。
 
-### 4.4 判定流水线中的并行
+合成后门禁检查：
 
-在 `CodeIdiomPipeline.evaluate` 内，对语义与语法两次 `send_message` 使用 **`asyncio.gather`**，实现说明书中的「并行接收同一代码段输入」；综合判定仍为第三次 `send_message`（依赖前两路结果，天然顺序执行）。
+- 模板占位符替换为哑元后，Tree-sitter 直接解析或函数包装解析无错误；
+- 通过 Tree-sitter 提取的新增调用目标必须存在于来源习语或允许上下文；
+- 编排层已经成功加载并验证代表区域上下文；
+- 质量复审确认意图保留且没有不受支持的新增内容。
 
-### 4.5 双运行时与 `CodeIdiomPipeline` 复用
+阶段4业务分就是 `quality_score`，正式阶段3输入至少70才可接受。阶段2合同分支
+仍以80作为严格阈值进行离线逻辑测试，但不进入正式执行。异味不进入业务分；业务门禁通过后，
+`risk_score >= 60` 或异味分析失败仍由独立 `smell_gate` 直接拒绝。
 
-- `run_synthesis`：**启动**合成用 `SingleThreadedAgentRuntime`，注册 `planning_synthesis_agent`、`code_assembly_agent`。
-- 同时构造 **`CodeIdiomPipeline(model, quiet=True)`**，内部再创建**第二个**运行时并注册三个判定 Agent。  
-  合成循环中只通过 `pipeline.evaluate` 与判定子系统交互，不手动向 Runtime A 注册合成类 Agent。
+## 四、代码异味分类与事后审计
 
----
+阶段3和阶段4共享同一份17类 C++异味分类与风险算法，但两个阶段分别审查自己的
+候选，不复用上一步结论。每条记录保存模型实际看到的 `smell_review_input`、
+结构化 findings 和 `smell_gate`。风险分由 finding 严重度、置信度及多异味累积项
+确定性计算，模型不输出总分或接受/拒绝结论。
 
-## 五、文件与模块索引
+正式实验从两个阶段的 artifact 分层抽取 `risk_threshold`、`none` 和
+`analysis_failure` 样本，由人工标注是否存在阻断复用的异味及其类别。审计报告
+总体、分阶段和逐类别指标；分析失败单列，不混入检测准确性。完整分类、公式和
+入口见[代码异味审查与事后审计](code-smell-review.md)。该指南同时维护运行时
+来源到 thesis 全局文献编号的映射；本仓库不复制文献库。
 
-| 文件 | 角色 |
-|------|------|
-| `src/agents/semantic_clarity_agent.py` | 语义清晰度 Agent |
-| `src/agents/syntax_logic_agent.py` | 语法与逻辑 Agent |
-| `src/agents/idiom_judge_agent.py` | 综合判定 Agent；**`patent_programming_pattern_valid`** |
-| `src/agents/judge_pipeline.py` | **`CodeIdiomPipeline`**：并行判定 + 规则裁定 + `quiet` |
-| `src/agents/planning_synthesis_agent.py` | 规划合成 Agent（7.3） |
-| `src/agents/code_assembly_agent.py` | 代码组装 Agent（7.3） |
-| `src/agents/idiom_judgement.py` | CLI：聚类结果 → `*_idiom.pkl` |
-| `src/agents/idiom_synthesis.py` | CLI / API：`*_idiom.pkl` → 规划–组装–再判定 → `*_idiom_syn.pkl` |
-| `src/agents/__init__.py` | 对外导出主要类型与 `MAX_SYNTHESIS_ITERATIONS` |
+## 五、运行时与失败回退
 
----
+两个领域流程各自创建 `SingleThreadedAgentRuntime`，使用
+`register_agent(...)` 和 `default_agent_id(...)`。生命周期固定为
+`start → try/finally → stop/close`，模型客户端只由创建它的流水线关闭。
 
-## 六、库内调用
+### 5.1 调用级恢复
 
-安装、环境变量与批量启动命令分别见根 [README](../../README.md) 和 [Agent README](../../src/agents/README.md)。库内调用示例：
+`JsonLLMAgent` 对每条路由消息采用以下固定顺序：
 
-```python
-import asyncio
-from src.agents.judge_pipeline import CodeIdiomPipeline
+1. 首次端点请求使用原生 JSON mode 和明确 Schema；
+2. 完整响应解析或 Schema 校验失败时，同一模型按同一 Schema 修复1次；
+3. 单次请求超过120秒、发生请求异常或修复仍失败时，等待固定短间隔后再执行
+   1次完整逻辑尝试；
+4. 第二次逻辑尝试仍失败时停止，不再请求端点，并返回领域安全默认值。
 
-async def main():
-    pipeline = CodeIdiomPipeline()  # 默认读取 OPENAI_MODEL_LOW=gpt-5.6-luna
-    try:
-        result = await pipeline.evaluate(
-            "int add_one(int x) { return x + 1; }\n"
-        )
-        pipeline.print_result(result)
-    finally:
-        await pipeline.shutdown()
+因此 `logical_attempts` 最大为2；每次逻辑尝试最多包含“首次响应+一次修复”，单个
+Agent 的端点请求上限为4。有效业务结果中的 `keep`、低分、无异味或
+`should_synthesize=false` 不属于技术失败，不会重试。日志只记录 Agent 名称、
+尝试序号和异常类型，不记录源码、完整响应、密钥或端点。
 
-asyncio.run(main())
-```
+### 5.2 阶段3失败矩阵
 
-### 6.2 单独向某个 Agent 发消息（正确注册方式）
+| 失败点 | 回退 | 后续动作 |
+| --- | --- | --- |
+| 规则/合同门禁 | 不调用 Agent | 拒绝当前簇，继续下一簇 |
+| 语义/抽象 Agent 两次失败 | 保留代表代码，语义/复用分置0 | 拒绝当前簇；异味并行分支仍独立完成 |
+| 异味 Agent 两次失败 | `analysis_status=failed`、风险安全值100 | 独立异味门禁拒绝；语义并行分支仍独立完成 |
+| Runtime 路由异常 | 映射为对应 Agent 的技术失败结果 | 拒绝当前簇，不抛弃另一并行分支 |
+| 未预料的单簇编排异常 | 写入 `unexpected_orchestration_error` | `skip_cluster`，命令继续后续簇 |
 
-```python
-import asyncio
-from autogen_core import SingleThreadedAgentRuntime
-from src.agents import SemanticClarityAgent, SemanticClarityRequest
-from src.agents.base import default_agent_id, register_agent
-from src.llm import create_model_client
+正常的抽象 `keep` 只保留原代码，不触发失败回退。阶段3 artifact Schema v6 在
+每条记录的 `agent_trace` 保存 `status`、`logical_attempts`、`failure_kind` 和
+`failure_action`；汇总中的 `technical_failure_count` 按含技术失败的记录计数。
 
-async def main():
-    runtime = SingleThreadedAgentRuntime()
-    model_client = create_model_client()
-    await register_agent(
-        runtime,
-        "semantic_agent",
-        lambda: SemanticClarityAgent(model_client),
-    )
-    runtime.start()
-    try:
-        out = await runtime.send_message(
-            SemanticClarityRequest(code_snippet="int twice(int x) { return x * 2; }"),
-            recipient=default_agent_id("semantic_agent"),
-        )
-        print(out.score, out.reason)
-    finally:
-        await runtime.stop()
+### 5.3 阶段4失败矩阵
 
-asyncio.run(main())
-```
+| 失败点 | 回退 | 被跳过的工作 |
+| --- | --- | --- |
+| 上下文加载/哈希门禁 | 零调用拒绝当前组 | 全部 Agent |
+| 同区域候选超过显式上限 | 不截断、零调用拒绝当前组 | 全部 Agent |
+| 规划 Agent 两次失败 | 无计划并拒绝当前组 | 组装、质量复审、异味复审 |
+| 规划正常返回无需合成 | 业务拒绝当前组 | 组装、质量复审、异味复审 |
+| 组装 Agent 两次失败或空输出 | 空结果并拒绝当前组 | 质量复审、异味复审 |
+| 语法失败或新增调用越界 | 确定性拒绝当前组 | 质量复审、异味复审 |
+| 质量复审两次失败 | `quality_score=0` | 异味并行分支仍独立完成，最终拒绝 |
+| 异味复审两次失败 | 独立异味门禁拒绝 | 质量并行分支仍独立完成 |
+| 未预料的组级编排异常 | 写入 `unexpected_orchestration_error` | `skip_group`，命令继续后续组 |
 
-## 七、LLM 输出约定
+阶段4 artifact Schema v6 使用同一 `agent_trace` 合同。取消信号和进程中断不会被
+转换为业务拒绝；只有当前簇/组内的普通技术异常会被隔离。
 
-各 Agent 的业务提示词和解释字段统一使用中文，代码、必要技术术语和 JSON 字段名保留英文。每类 Agent 声明显式 JSON Schema；模型直接返回 JSON object，不使用标签或 Markdown 包装。共享层只解析完整响应，不从正文猜测 JSON 片段，并把修复次数固定为一次。
+两个 CLI 都可选择 SQLite `--checkpoint`，每完成一个簇或组立即提交结果；中断后
+只有在输入 SHA-256、模型、范围、上下文根和关键参数完全一致时才允许
+`--resume`。最终 artifact 的 `run` 保存模型别名、提示词版本与 SHA-256、决策
+政策、token 用量、checkpoint 状态和
+`calibration_status=synthetic_smoke_only_pilot_required`。这避免把当前 synthetic
+smoke 误写为阈值已经经过人工 pilot 冻结；正式实验仍必须完成盲审校准。
 
----
+规则预检不需要模型。正常路径中，完整习语判断每个合格簇发起2个并行逻辑调用；
+习语合成每组最多发起规划、组装、质量复审和共享异味审查4个逻辑调用。最坏情况下
+每个 Agent 各产生4次端点请求，但规划或组装耗尽时会跳过下游，避免继续付费调用。
 
-## 八、判定标准（与专利 7.2 一致）
+运行命令分别见：
 
-- 语义 score 与语法 score 中，**较高者 ≥ 70 且较低者 ≥ 50** → `patent_programming_pattern_valid` 为真，即保留为有效编程模式。
-- LLM 给出的 `is_clear`、综合 Agent 的叙述用于解释与日志；**门禁**以分数规则为准。
+- [习语判断 README](../../src/idiom_judgment/README.md)
+- [习语合成 README](../../src/idiom_synthesis/README.md)
 
----
-
-## 九、常见问题
-
-**Q：为什么用 `autogen_core` 而不是 `autogen_agentchat`？**  
-A：本场景是结构化、可重复的流水线调用，不需要会话状态机；`RoutedAgent` + 运行时消息足够清晰且易于测试。
-
-**Q：`register` 与 `register_factory` 区别？**  
-A：本仓库统一使用包装函数 **`register_agent`**，其内部调用 `register_factory`，并配合 `default_agent_id` 寻址；业务代码不再混用不同注册形式。
-
-**Q：合成与判定能否合并为一个 Runtime？**  
-A：可以技术上合并为五个 Agent 同注册在一个运行时，但当前实现**刻意分离**，以降低命名耦合并单独控制 `CodeIdiomPipeline` 生命周期。
-
----
-
-## 十、关联文档
-
-- 修改约束：`docs/guides/agent-contracts.md`
-- 仓库数据契约：`docs/guides/repository-architecture.md`
-- 运行与验证：`docs/guides/testing.md`
+[Agent README](../../src/agents/README.md) 说明公共基础设施边界。

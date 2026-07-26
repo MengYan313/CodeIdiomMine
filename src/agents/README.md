@@ -1,15 +1,10 @@
-# Agent 模块
+# Agent 公共基础设施
 
-本模块完成候选习语判断与模板合成。判断阶段并行执行语义和语法评估，再按固定阈值生成最终结论；合成阶段按 `loc_label` 分组，执行规划、组装和合成后再判断，最多三轮。
+本包只保留阶段3与阶段4实际复用的 AutoGen 基类、Agent 注册函数、JSON 调用的
+超时/单次修复/有界重试和简洁调用状态。所有领域提示词、消息 Schema、评分和
+流程分别位于
+[`src/idiom_judgment`](../idiom_judgment/README.md) 与
+[`src/idiom_synthesis`](../idiom_synthesis/README.md)。
 
-## 启动命令
-
-```bash
-.venv/bin/python -m src.agents.idiom_judgement \
-  --input outputs/cpp/clusters.pkl --output-dir results/cpp
-
-.venv/bin/python -m src.agents.idiom_synthesis \
-  --input-dir results/cpp --output-dir results/cpp
-```
-
-运行前必须配置 `.env`，并确认代码片段对外发送的范围、调用成本和模型档位。详细设计见 [Agent 子系统](../../docs/guides/agent-system.md)，修改约束见 [Agent 开发契约](../../docs/guides/agent-contracts.md)。
+本包没有独立业务 CLI。阶段3和阶段4入口见根目录
+[`README.md`](../../README.md)。

@@ -4,13 +4,16 @@ from __future__ import annotations
 
 import argparse
 import json
-import pickle
 from pathlib import Path
 from typing import Any, Dict, Mapping
 
 from ..common.logging import get_logger
 from .baseline_common import is_source_info, validate_metric_payload
-from .idiom_metrics import DEFAULT_EVALUATION_MODE, evaluate_cpp
+from .idiom_metrics import (
+    DEFAULT_EVALUATION_MODE,
+    evaluate_cpp,
+    load_idiom_artifact,
+)
 
 
 logger = get_logger(__name__)
@@ -76,10 +79,12 @@ def _validate_artifacts(
     for path in sorted(root.glob(pattern)):
         suffix = "_idiom" if artifact_stage == "judgment" else "_idiom_syn"
         project = path.stem.removesuffix(suffix)
-        with path.open("rb") as file:
-            idioms = pickle.load(file)
-        if not isinstance(idioms, list):
-            raise ValueError(f"{path} 顶层不是 list")
+        artifact_project, idioms = load_idiom_artifact(str(path))
+        if artifact_project and artifact_project != project:
+            raise ValueError(
+                f"{path} 文件名项目 {project} 与 artifact 项目 "
+                f"{artifact_project} 不一致"
+            )
         for index, idiom in enumerate(idioms):
             if not isinstance(idiom, Mapping):
                 raise ValueError(f"{path}[{index}] 不是对象")

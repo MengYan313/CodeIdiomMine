@@ -1,8 +1,8 @@
 # C++ 习语实验方法与 baseline 复现
 
-- 版本：**Sol 5.8**
+- 版本：**Sol 5.9**
 - 状态：当前 baseline 实现与复现规范
-- 生效日期：2026-07-18
+- 生效日期：2026-07-26
 - 适用范围：三条 baseline、CIMAS-CPP 对照边界、公共产物适配和九指标验证
 
 当前端到端比较固定为四种方法：`Haggis-CPP`、`LLM-Direct-Budget`、`Rules-Embedding-Clustering` 和本文方法 `CIMAS-CPP`。其中 `LLM-Direct-Budget` 是仅 LLM 的端点消融，`Rules-Embedding-Clustering` 是不经过 LLM 判断与合成的端点消融。它们与更细粒度的模块消融可以同时保留，但不应重复计为两个不同方法。
@@ -247,22 +247,32 @@ manifest 对每个项目保存 `input_cluster_count`、`minimum_size_eligible_co
 ### CIMAS-CPP
 
 ```bash
-.venv/bin/python -m src.agents.idiom_judgement \
-  --input outputs/cpp/clusters.pkl --output-dir results/cpp
+.venv/bin/python -m src.idiom_judgment.judge_clusters \
+  --input outputs/cpp/cli11/clusters.pkl \
+  --source-root repos/cli11 --require-context \
+  --output results/cpp/cli11_idiom.pkl
 
-.venv/bin/python -m src.agents.idiom_synthesis \
-  --input-dir results/cpp --output-dir results/cpp
+.venv/bin/python -m src.idiom_synthesis.synthesize_idioms \
+  --input results/cpp/cli11_idiom.pkl \
+  --source-root repos/cli11 \
+  --output results/cpp/cli11_idiom_syn.pkl
 
 .venv/bin/python -m src.evaluation.baseline_validation \
   --method cimas-cpp --idiom-dir results/cpp \
   --dataset outputs/cpp/dataset.pkl --allow-main-method
 ```
 
-上面的主方法评价示例使用判断阶段产物。若论文明确采用合成后的知识库，应改为 `--stage synthesis`，并对所有方法冻结同一评价阶段。不能把 `results/evaluation-mock/` 传给 `--allow-main-method`。
+上面的主方法评价示例使用阶段3完整 `accepted` 产物。阶段4是
+`synthesis_delta`，使用 `--stage synthesis` 只能分析合成增量本身，不能把该
+增量误当作包含未合成习语的完整知识库。不能把 `results/evaluation-mock/`
+传给 `--allow-main-method`。
 
 ## 7. 当前验证状态
 
-- 离线端到端测试使用三个确定性合成项目，真实运行三条 baseline，并通过 fake model client 运行 CIMAS-CPP 的三 Agent 判断路径；四种方法都在逐项目、仓库宏平均和全局层通过九指标合同。
+- 离线端到端测试使用三个确定性合成项目，真实运行三条 baseline，并以当前
+  `idiom_judgment` artifact 验证 CIMAS-CPP 与九指标入口的兼容性；Agent 编排由
+  阶段3和阶段4各自的专门测试覆盖。四种方法都在逐项目、仓库宏平均和全局层通过
+  九指标合同。
 - `Rules-Embedding-Clustering` 的三段组合截断已由确定性测试覆盖；旧的 `selection_ratio=1` 本地产物不再符合当前合同，不能作为正式规则 baseline。
 - `Haggis-CPP` 已在当前三个项目上完成每项目 20 个函数、6 轮采样的有界 smoke。
 - `LLM-Direct-Budget` 已用两个合成 C++ 短函数完成低档模型的 1 次 map + 1 次 reduce smoke；没有发送仓库源码。

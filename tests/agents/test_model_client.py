@@ -2,7 +2,8 @@ import os
 import unittest
 from unittest.mock import patch
 
-from src.agents._base import create_model_client, load_project_env
+from src.agents._base import create_model_client
+from src.llm.config import load_project_env
 
 
 class AgentModelClientTests(unittest.TestCase):

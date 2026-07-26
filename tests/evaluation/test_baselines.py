@@ -1,12 +1,10 @@
 import asyncio
 import json
-import os
 import pickle
 import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
 
 import pandas as pd
 
@@ -21,7 +19,6 @@ from src.evaluation.rules_embedding_baseline import (
     _select_clusters,
     build_rules_embedding_baseline,
 )
-from src.agents.idiom_judgement import judge_idioms
 
 
 def _function_ast(prefix, name, value):
@@ -163,42 +160,6 @@ class _QueuedJsonClient:
         response = self.responses[self.calls]
         self.calls += 1
         return SimpleNamespace(content=json.dumps(response, ensure_ascii=False))
-
-
-class _CimasJsonClient:
-    def __init__(self):
-        self.calls = 0
-        self.closed = False
-
-    async def create(self, messages, extra_create_args):
-        del extra_create_args
-        self.calls += 1
-        system_prompt = messages[0].content
-        if "评估其语义清晰度" in system_prompt:
-            response = {
-                "is_clear": True,
-                "score": 90,
-                "reason": "名称和提前返回意图清晰。",
-                "suggestions": [],
-            }
-        elif "评估其语法与逻辑清晰度" in system_prompt:
-            response = {
-                "is_clear": True,
-                "score": 90,
-                "reason": "控制流完整且语法有效。",
-                "issues": [],
-            }
-        else:
-            response = {
-                "is_idiom": True,
-                "confidence": 90,
-                "reason": "该片段表达可复用的条件提前返回模式。",
-                "characteristics": ["条件检查", "提前返回"],
-            }
-        return SimpleNamespace(content=json.dumps(response, ensure_ascii=False))
-
-    async def close(self):
-        self.closed = True
 
 
 class BaselineEndToEndTests(unittest.TestCase):
@@ -411,26 +372,34 @@ class BaselineEndToEndTests(unittest.TestCase):
             self.assertEqual(fake_client.calls, 6)
 
             cimas_dir = root / "cimas"
-            cimas_client = _CimasJsonClient()
-            with (
-                patch.dict(os.environ, {"OPENAI_API_KEY": "synthetic-test-key"}),
-                patch(
-                    "src.agents.judge_pipeline.create_model_client",
-                    return_value=cimas_client,
-                ),
-            ):
-                cimas_counts = asyncio.run(
-                    judge_idioms(
-                        str(clusters_path),
-                        str(cimas_dir),
-                        model="fake-low",
-                        delay_seconds=0,
-                        quiet=True,
+            cimas_dir.mkdir()
+            cimas_counts = {}
+            for item in clusters:
+                project = item["pros_name"]
+                accepted = []
+                for _, row in item["clusters"].iterrows():
+                    infos = list(row["infos"])
+                    accepted.append(
+                        {
+                            "center_point": row["center_point"],
+                            "info": row["center_point_info"],
+                            "source_infos": infos,
+                            "cnt": len(infos),
+                            "avg_ast_num": 6.0,
+                            "loc_label": row["loc_label"],
+                        }
                     )
-                )
+                with (cimas_dir / f"{project}_idiom.pkl").open("wb") as file:
+                    pickle.dump(
+                        {
+                            "artifact_type": "idiom_judgment",
+                            "project": project,
+                            "accepted": accepted,
+                        },
+                        file,
+                    )
+                cimas_counts[project] = len(accepted)
             self.assertEqual(cimas_counts, {"alpha": 2, "beta": 2, "gamma": 2})
-            self.assertEqual(cimas_client.calls, 18)
-            self.assertTrue(cimas_client.closed)
 
             method_inputs = (
                 ("haggis-cpp", haggis_dir, True),

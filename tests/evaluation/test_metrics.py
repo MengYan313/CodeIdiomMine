@@ -329,6 +329,61 @@ class MetricHelperTests(unittest.TestCase):
         self.assertEqual(result["global"]["total_cluster_instances"], 4)
         self.assertNotIn('"rank"', json.dumps(result))
 
+    def test_evaluator_reads_recursive_synthesis_artifact(self):
+        first_ast = _function_ast(1, "value", 1)
+        second_ast = _function_ast(10, "ready", 2)
+        files = ["sample-a.cpp", "sample-b.cpp"]
+        data = pd.DataFrame(
+            [
+                {
+                    "project": "sample",
+                    "cppFile": files,
+                    "func_ast": [[first_ast], [second_ast]],
+                    "func_src": [
+                        [first_ast[0]["code_snippet"]],
+                        [second_ast[0]["code_snippet"]],
+                    ],
+                }
+            ]
+        )
+        infos = [
+            ["sample", files[0], first_ast[0]["extent"], first_ast[1]],
+            ["sample", files[1], second_ast[0]["extent"], second_ast[1]],
+        ]
+        artifact = {
+            "artifact_type": "idiom_synthesis",
+            "project": "sample",
+            "accepted": [
+                {
+                    "center_point": first_ast[1]["code_snippet"],
+                    "info": infos[0],
+                    "source_infos": infos,
+                    "cnt": 2,
+                }
+            ],
+            "rejected": [],
+        }
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            idiom_dir = root / "idioms" / "sample"
+            idiom_dir.mkdir(parents=True)
+            dataset_path = root / "dataset.pkl"
+            data.to_pickle(dataset_path)
+            with (idiom_dir / "idiom-synthesis.pkl").open("wb") as file:
+                pickle.dump(artifact, file)
+            result = evaluate_cpp(
+                str(root / "idioms"),
+                str(dataset_path),
+                str(root / "eval.json"),
+                artifact_stage="synthesis",
+                test_fraction=0.5,
+            )
+
+        self.assertEqual(result["artifact_stage"], "synthesis")
+        self.assertEqual(result["projects"][0]["project"], "sample")
+        self.assertEqual(result["projects"][0]["idiom_type_count"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

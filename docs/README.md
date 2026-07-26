@@ -18,8 +18,9 @@
 - [baseline 复现](guides/baselines.md)：三条 baseline、CIMAS-CPP、统一产物合同、运行命令与验证状态。
 - [本地验证指南](guides/testing.md)：从自动化测试到完整流水线的验证顺序。
 - [本地开发基线](guides/local-baseline.md)：已验证环境、实际产物、错误证据和延期事项。
-- [Agent 子系统架构](guides/agent-system.md)：判断与合成流水线的详细设计。
-- [Agent 开发契约](guides/agent-contracts.md)：修改或新增 Agent 时必须保持的行为约束。
+- [习语判断与合成 Agent 架构](guides/agent-system.md)：规则前置抽象决策、多习语合成、确定性门禁和 Agent 失败恢复矩阵。
+- [习语判断与合成开发契约](guides/agent-contracts.md)：修改规则、抽象、重试、回退或 Agent 时必须保持的行为约束。
+- [C++代码异味审查与事后审计](guides/code-smell-review.md)：共享分类表、独立过滤门禁、人工标签与逐类别准确性指标。
 
 ## 研究文档
 
@@ -33,4 +34,7 @@
 
 研究文档是论文背景和未来实验设计，不是当前实现规格。除非任务明确要求论文方案对齐，否则以源代码和开发文档中已验证的行为为准。
 
-两份研究稿引用了 `docs/references/英文文献库.md` 和 `docs/references/中文文献库.md`，但这些文献库不在当前仓库中。现阶段保留原引用，不伪造缺失内容；补入正式文献库后再统一验证锚点。
+本仓库不建立文献库副本。两份研究稿使用的全局 `E/C` 编号与完整著录均由同级
+thesis 仓库的[英文文献库](../../thesis/references/英文文献库.md)和
+[中文文献库](../../thesis/references/中文文献库.md)统一维护；研究稿中的文献链接
+直接指向该唯一事实来源。运行时代码仅保存 thesis 编号、名称和官方 URL。

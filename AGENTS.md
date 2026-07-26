@@ -27,8 +27,8 @@
 ## 项目使命与范围
 
 CodeIdiomMine 用于从 C++ 仓库中挖掘重复出现的代码习语。当前正式流程使用
-Tree-sitter C++、预训练代码嵌入、DBSCAN，以及基于 AutoGen 的判断与合成
-子系统；HDBSCAN 作为阶段2实验对照保留，不进入正式流水线。
+Tree-sitter C++、预训练代码嵌入、DBSCAN，以及基于规则与 AutoGen 的习语判断
+和多习语合成子系统；HDBSCAN 作为阶段2实验对照保留，不进入正式流水线。
 
 当前工程基线是仓库中的既有实现，而不是论文草案中的拟议实现。运行时和公共 CLI
 有意仅支持 C++：未经用户明确授权，不得重新引入语言选择器、非 C++ 语法依赖或
@@ -43,7 +43,7 @@ CodeIdiomMine 不研究跨仓库迁移或未知仓库泛化。目标是针对每
 高于研究稿中的旧实验设想，后续实验设计、文档解释和实现判断必须遵守：
 
 1. 仓库是完整、独立的挖掘单元；每个仓库独立执行
-   `源码 → Parser → fragments → embedding → DBSCAN → 判断 → 合成 → 评价`。
+   `源码 → Parser → fragments → embedding → DBSCAN → 习语判断 → 习语合成 → 评价`。
 2. 不同仓库的候选、embedding 和聚类输入不得混合；多仓库汇总只能在每个仓库
    独立完成指标计算之后发生，例如报告仓库宏平均。
 3. embedding、聚类、习语判断和合成之前，不把单个仓库拆成训练集、开发集
@@ -94,9 +94,13 @@ Parser 的长期架构不变量是：**免目标项目编译、免链接、免�
 7. `docs/guides/testing.md`，了解验证层级和当前命令。
 8. 当任务涉及论文对齐时，阅读上述两份研究文档。
 
+代码异味文献事实及全局稳定编号由同级 `thesis/references/library.json`
+统一维护，本仓库不得建立文献库副本。相关文档只链接 thesis 的中英文文献库；
+运行时审计来源只保存 thesis 编号、资料名称和官方 URL。
+
 文档发生冲突时，优先采用已验证的源码行为，其次采用上述指南。应将已确认的差异记录到 `docs/guides/local-baseline.md`，不得静默改写行为。
 
-目录名称应根据语义职责和既有 Python 约定选择，不得机械地全部使用复数。源码包包括 `agents`、`common`、`evaluation`、`llm`、`mining`、`parser` 和 `utils`；其中 `agents` 与 `utils` 有意使用复数，流程或领域包使用单数。`research` 是不可数名词。集合或产物根目录沿用 `tests`、`repos`、`outputs`、`results`、`logs` 和 `guides`。保留 `src` 作为常规源码根目录缩写，`cpp` 作为语言限定词，`.venv` 作为约定的虚拟环境名称。测试子目录必须与七个 `src` 包逐一对应。
+目录名称应根据语义职责和既有 Python 约定选择，不得机械地全部使用复数。源码包包括 `agents`、`common`、`evaluation`、`idiom_judgment`、`idiom_synthesis`、`llm`、`mining`、`parser` 和 `utils`；其中 `agents` 与 `utils` 有意使用复数，流程或领域包使用单数。`idiom_judgment` 表示单簇规则/LLM 判断，`idiom_synthesis` 表示多习语上下文感知合成；不得用 `stage3`、`stage4` 等仅表达顺序的包名替代。`research` 是不可数名词。集合或产物根目录沿用 `tests`、`repos`、`outputs`、`results`、`logs` 和 `guides`。保留 `src` 作为常规源码根目录缩写，`cpp` 作为语言限定词，`.venv` 作为约定的虚拟环境名称。测试子目录必须与九个 `src` 包逐一对应。
 
 ## 本地 Python 环境
 
@@ -151,16 +155,27 @@ Parser 的长期架构不变量是：**免目标项目编译、免链接、免�
   DataFrame 列为 `label`、`center_point`、`else_point`、`cluster_size`、
   `center_point_info`、`infos`、`loc_label`。正式产物使用 DBSCAN；
   HDBSCAN 对照产物可以附加 `clustering_metadata`，但不得改变下游必需字段。
-- 判断输出 `{repo}_idiom.pkl`：记录包含 `center_point`、`info`、`cnt`、`avg_ast_num`、`loc_label`。
-- 合成输出 `{repo}_idiom_syn.pkl`：增加 `source_infos`、`merge_rounds` 和 `synthesis_trace`。
+- 习语判断输出 `idiom-judgment.pkl`：按簇保存 `accepted` 和 `rejected`，离线规则预检另存 `pending_llm`；记录规则证据、保守抽象提案、完整簇、经哈希验证的代表函数/区域上下文、LLM 的 `abstract/keep` 决策、实际批准集合、语义/复用价值业务评分，以及与业务评分分离的共享代码异味审查输入、分类发现和独立门禁。拒绝抽象只表示保持代表代码不变，不得据此拒绝本来合格的习语；`agent_trace` 记录各 Agent 的逻辑尝试数、技术失败类型和回退动作。
+- 习语合成输出 `idiom-synthesis.pkl`：正式消费习语判断的已接受产物，是只记录合成尝试及成功结果、不复制未合成阶段3习语的 `synthesis_delta`；只按完全相同的代表 `project + file + function_extent` 分组，保存自动同区域上下文证据、合成计划、组装证据、质量复审业务分、与阶段3同合同但独立执行的代码异味审查输入/分类发现/门禁、确定性检查、`agent_trace`、`source_infos` 和 `synthesis_trace`。阶段2适配只保留合同和后备逻辑验证，不进入正式 CLI 或实际实验执行。
 - 评估输出 `eval.json`：包含各项目及汇总的 `IC`、`ISP`、`F1`、`avg_idiom_size`。
 
 上述阶段产物必须按仓库隔离保存和消费。评价器正式默认使用仓库内参考/测量文件
 分区；`leave_one_project_out` 只为历史产物兼容保留。
 
-Agent 子系统直接使用 `autogen_core`。判断流程并发运行语义 Agent 和语法 Agent，随后调用判断 Agent。最终 `is_idiom` 由 `patent_programming_pattern_valid` 决定：较高分必须至少为 70，较低分必须至少为 50。LLM 原始判断仅用于解释。合成流程使用独立 runtime 和第二套静默判断流水线；最多执行三轮合并，只保留成功合并的结果。
+习语判断直接使用 `autogen_core`：确定性规则先拒绝合同无效和确定性低价值簇，抽象规则只对至少3个结构对齐实例中至少3个不同取值、覆盖率至少60%的局部变量或低语义字面量提出候选，调用名、类型、控制条件、返回值和哨兵值不得仅因变化而抽象；随后语义/抽象 Agent 必须读取完整簇成员、规则证据、全部提案和自动加载的代表函数/区域上下文，显式返回 `abstract` 或 `keep`，且只能批准规则候选。正式运行使用严格上下文门禁，路径、范围或 `source_sha256` 失败时零调用拒绝。有效响应中的 `keep` 或无提案均保留代表代码不变，候选仍按语义/复用价值和异味门禁判断是否进入阶段4；整份语义/抽象响应失败时保留原代码作为审计证据，但业务分安全降级并拒绝。规则、语义和复用价值形成业务分，异味不进入业务分；分类风险达到冻结阈值或异味分析失败时由独立门禁直接拒绝。
 
-`src/llm/` 负责共享配置、模型客户端工厂、严格 JSON 解析、轻量 Schema 校验和单次 LLM 修复。判断与合成流程使用其底层 AutoGen 客户端，而 `src/agents/` 负责所有 C++ 习语提示词、领域 Schema、阈值和编排逻辑。
+习语合成使用独立 runtime，正式接受习语判断已接受产物；阶段2簇到同一内部候选 Schema 的适配和严格阈值只作不启动正式 Agent 的合同验证。编排层在任何 LLM 调用前自动加载并验证同区域上下文；合成规划、代码组装、质量复审和与阶段3相同的共享异味审查通过路由消息协作。只能合成同仓库完全相同代表函数/区域内至少两个具有数据、控制、生命周期或稳定顺序关系的习语，不得扩大到跨区域。候选超过显式上限时不得静默截断。核心确定性门禁只检查上下文合同、Tree-sitter 语法和新增调用目标。质量复审分单独决定业务质量，异味按同一分类和阈值重新审查当前合成代码并可独立否决。阶段3和阶段4的异味过滤必须以分层人工审计报告总体、分阶段和逐类别准确性。
+
+`src/llm/` 负责共享配置、模型客户端工厂、严格 JSON 解析、轻量 Schema 校验和单次 LLM 修复。习语判断与合成流程使用其底层 AutoGen 客户端；C++ 习语提示词、领域 Schema、阈值和编排逻辑分别归属 `src/idiom_judgment/` 与 `src/idiom_synthesis/`，`src/agents/` 只保留当前流程实际复用的 Agent 基类和注册函数。
+
+阶段3/4的 `JsonLLMAgent` 单次调用超时120秒，每条消息最多执行2次逻辑尝试；每次尝试内部仍只允许
+共享 `src.llm` 完成1次 JSON 修复，因此单个 Agent 最多产生4次端点请求。只有
+请求异常或 JSON 修复耗尽才重试，业务上的 `keep`、拒绝或低分不得重试。全部
+尝试失败后按 Agent 职责安全拒绝当前簇/组或跳过下游 Agent，不能中断其余批次；
+取消信号和进程中断不得吞掉。
+长时付费运行应使用 SQLite checkpoint；续跑必须校验输入哈希、模型、上下文根和
+关键参数。最终产物保存提示词版本/哈希、决策政策、token 用量和校准状态；完成
+人工 pilot 前不得把 synthetic smoke 写成阈值已冻结。
 
 ## 本地产物与已知现象
 

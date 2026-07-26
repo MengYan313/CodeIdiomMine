@@ -1,15 +1,15 @@
 # 仓库架构
 
 CodeIdiomMine 从 C++ 仓库中提取候选 AST 片段，经代码嵌入和 DBSCAN 聚类后，
-使用 AutoGen Agent 判断候选是否为代码习语，并尝试合成可复用模板。HDBSCAN
-仅保留为阶段2对照实现。
+由习语判断模块判断单个簇是否为代码习语，再由习语合成模块尝试把同一区域内
+相关习语合成为质量更高的模板。HDBSCAN 仅保留为阶段2对照实现。
 
 本文描述当前实现。论文研究路线位于 `docs/research/`，不作为现有代码必须满足的规格。
 
 ## 最高优先级架构不变量：仓库隔离挖掘
 
 每个 C++ 仓库是完整且独立的挖掘单元。Parser、片段构建、embedding、聚类、
-判断、合成和评价必须按仓库分别执行和保存；任何两个仓库的候选、向量或聚类
+习语判断、习语合成和评价必须按仓库分别执行和保存；任何两个仓库的候选、向量或聚类
 输入都不得合并。单仓库完整合格源码是发现阶段的语料边界，不在 embedding 或
 聚类前拆为训练、开发、测试区域。
 
@@ -51,11 +51,13 @@ Parser 基础结果的门禁。任何后端失败都应以能力掩码、诊断�
 | `src/common/` | 统一日志、LLM 配置兼容导出与 C++ 函数、块、语句节点类型集合 |
 | `src/parser/` | 通用 Tree-sitter 操作、C++ Adapter、异常/宏恢复、原文映射、Def-Use、目标 tokenizer 长度治理及 model-ready 片段 |
 | `src/mining/` | 对 Parser 已准备片段执行预训练模型嵌入和正式 DBSCAN 聚类，提供仓库无关、仅改进领域目标函数的标准 GP+EI warm-start 调参；HDBSCAN 保留为实验对照 |
-| `src/agents/` | 通用 AutoGen 基类，以及习语判断、规划、代码组装与合成后再判断 |
+| `src/idiom_judgment/` | 单簇合同/低价值规则、保守抽象提案、经哈希验证的代表区域上下文、语义/复用价值业务评分、共享异味分类与独立门禁、Agent 失败回退和事后审计 |
+| `src/idiom_synthesis/` | 阶段3正式输入、阶段2合同适配、严格同代表区域分组、自动验证上下文、合成规划、代码组装、质量复审、合成增量产物、组级跳过，以及对合成结果独立执行的共享异味门禁 |
+| `src/agents/` | 当前判断与合成流程复用的 Agent 基类、结构化调用状态和注册函数 |
 | `src/evaluation/` | 固定评价指标、三条 baseline、统一产物/指标合同、按仓库与全局聚合及明确标注的离线模拟验证 |
 | `src/llm/` | 两项目统一的模型分档、`.env`、AutoGen 客户端、JSON schema/单次修复与轻量对话封装 |
 | `src/utils/` | 原始 pickle/CSV 转换和流水线可读 JSON 投影 |
-| `tests/` | 与上述七个源码子包一一对应的离线自动化测试 |
+| `tests/` | 与上述九个源码子包一一对应的离线自动化测试 |
 
 ## 数据流与契约
 
@@ -69,8 +71,8 @@ repos/<project>/...
   -> outputs/cpp/<project>/clusters.pkl             # DBSCAN 正式聚类出口
        \-> outputs/cpp/<project>/dbscan-tuning.json # 无监督参数选择证据
        \-> outputs/cpp/<project>/readables/...
-  -> results/cpp/<project>/{project}_idiom.pkl
-  -> results/cpp/<project>/{project}_idiom_syn.pkl
+  -> outputs/cpp/<project>/idiom-judgment.pkl     # 单簇判断，阶段3
+  -> results/cpp/<project>/idiom-synthesis.pkl    # 多习语合成，阶段4
   -> results/cpp/<project>/eval.json
 ```
 
@@ -83,8 +85,8 @@ repos/<project>/...
   无监督可行性条件、三指标目标权重和最终 incumbent；标准 GP 代理模型与 EI
   采集函数不作改动。选择器不读取仓库身份、人工标签或最终评价指标；该 JSON
   是选择证据，不替代阶段间 pickle。
-- `{repo}_idiom.pkl`：包含 `center_point`、与代表代码一致的 `info`、完整簇证据 `source_infos`、`cnt`、兼容字段 `avg_ast_num`、完整子树统计 `avg_subtree_size` 和 `loc_label`。
-- `{repo}_idiom_syn.pkl`：继续保留合并后全部 `source_infos`，并增加 `merge_rounds`、`synthesis_trace`。
+- `idiom-judgment.pkl`：Schema v6。正式结果按 `accepted`、`rejected` 分区，离线预检另有 `pending_llm`；每条记录保存规则证据、抽象提案、含完整簇成员和经路径/范围/哈希验证代表上下文的 `semantic_review_input`、独立 `context_evidence`、LLM `abstract/keep` 决策、实际批准集合与 `abstraction_applied`、语义/复用价值业务 `scorecard`、完整 `smell_review_input`、结构化异味 findings 与独立 `smell_gate`、各 Agent 尝试/失败/回退的 `agent_trace`，以及 `center_point`、`info`、`source_infos`、`cnt`、`avg_ast_num`、`avg_subtree_size` 和 `loc_label` 兼容投影。
+- `idiom-synthesis.pkl`：Schema v6，语义固定为 `synthesis_delta`。正式读取习语判断的 `accepted` 记录，只把代表 `project + source_path + source_extent` 完全一致的候选组成一组；缺少可验证代表区域时不使用历史 `loc_label` 猜测分组。产物只保存合成尝试和成功增量，不复制未合成、未选择或合成失败的阶段3习语；它们继续由阶段3产物持有。每次尝试保存自动同区域 `context_evidence`、合成计划、组装来源、质量复审业务 `scorecard`、针对合成结果的 `smell_review_input`/分类 findings/独立 `smell_gate`、Tree-sitter 语法与新增调用门禁、各 Agent 尝试/失败/跳过的 `agent_trace`、全部 `source_infos`、`merge_rounds` 和 `synthesis_trace`。阶段2 `clusters.pkl` 只验证适配和严格阈值逻辑，程序化调用生成 `contract_only_not_executed` 空 artifact，不进入正式 CLI 或实验执行。
 - `eval.json`：正式默认在每个仓库完成全仓发现后，对来源文件做确定性的参考/测量分区，并在测量分区上计算 `IC_macro`、`IC_micro`、最终 `IC=(IC_macro+IC_micro)/2`、集合复现率 `ISP` 及使用最终 IC 的 `F1`；另报告习语种类数、平均聚类簇大小、平均跨文件支持数和 `AvgAST`，并保留必要分子分母。兼容字段 `training_*`、`test_*` 只表示参考/测量分区。留一项目模式只作历史兼容，聚类模拟模式只作公式验证。
 
 指标的正式公式、统计单位、仓库宏平均、全局汇总和解释边界统一见[评价指标规范](evaluation-metrics.md)；其他文档只保留入口或实验记录，不另行定义不同口径。
@@ -106,7 +108,7 @@ Parser 的恢复、映射、候选 profile 和 Def-Use 算法见
 [Parser 基线与优化对比](parser-quality-report.md)。复杂 C++ 节点策略、宏边界和
 Parser 长度降级见[C++ Adapter 与模型输入治理](cpp-adapter-and-model-input.md)。
 
-`src.utils.export_artifacts` 不改变上述接口：PKL 保留完整嵌套 AST、CPU tensor 和簇成员，JSON 只作为可重新生成的人工分析投影。每阶段的 `*.summary.json` 统计全量输入；`dataset.preview.json` 和 `embeddings.preview.json` 默认各取前 100 条，`clusters.top100.json` 默认按项目分别取簇大小 Top100。真实 Agent 运行后还可按需导出 `judgment` 和 `synthesis` 的摘要及前 100 条。预览中的长源码会显式截断，嵌入只展示形状、范数和向量头部，因此这些 JSON 不得回流为下一阶段输入，也不得作为 Haggis、LLM-Direct 或 CIMAS-CPP 的产物截断清单。
+`src.utils.export_artifacts` 不改变上述接口：PKL 保留完整嵌套 AST、CPU tensor 和簇成员，JSON 只作为可重新生成的人工分析投影。每阶段的 `*.summary.json` 统计全量输入；`dataset.preview.json` 和 `embeddings.preview.json` 默认各取前 100 条，`clusters.top100.json` 默认按项目分别取簇大小 Top100。真实语义产物生成后可按需导出 `judgment` 和 `synthesis` 的状态汇总及前100条已接受记录；同名阶段也自动兼容旧 `*_idiom.pkl` 与 `*_idiom_syn.pkl` 列表产物。预览中的长源码会显式截断，嵌入只展示形状、范数和向量头部，因此这些 JSON 不得回流为下一阶段输入，也不得作为 Haggis、LLM-Direct 或 CIMAS-CPP 的产物截断清单。
 
 ## C++ 范围边界
 
@@ -119,16 +121,24 @@ Parser 长度降级见[C++ Adapter 与模型输入治理](cpp-adapter-and-model-
 
 `repos`、`outputs/cpp` 和 `results/cpp` 中的 `cpp` 是固定的现有产物命名空间，不是可切换语言参数。扫描器接受 `.c`、`.cc`、`.cpp`、`.cxx`、`.c++`、`.h`、`.hh`、`.hpp` 和 `.hxx`，具体清洗规则及排除计数以源码和 `dataset.audit.json` 为准。`repo2data --project <目录名>` 可从多项目输入根中精确选择一个或多个项目，不构成语言选择器。重新引入其他语言属于新的架构变更，不能通过增加一个 CLI 选项或静默回退实现。
 
-## Agent 子系统
+## 习语判断与合成 Agent
 
-Agent 基于 `autogen_core` 的 `RoutedAgent`、强类型 dataclass 消息和 `SingleThreadedAgentRuntime`，不是 `autogen_agentchat`。
+两个领域包均基于 `autogen_core` 的 `RoutedAgent`、强类型 dataclass 消息和
+`SingleThreadedAgentRuntime`，不是 `autogen_agentchat`。
 
-- 判断：语义与语法 Agent 通过 `asyncio.gather` 并行执行，再由 judge Agent 汇总。
-- 最终 `is_idiom` 由确定性规则决定：较高分至少 70，较低分至少 50。
-- 合成：规划与组装使用独立 runtime，并持有第二个 quiet 判断流水线做合并后再判断。
-- 每个区域最多合并三轮；无成功合并的组不产生合成记录。
+- 习语判断：确定性规则与抽象提案先运行，编排层验证代表函数/区域上下文后，
+  语义/复用价值 Agent 和共享代码异味 Agent 并行；业务评分与不可抵消的异味
+  门禁自动给出二态结果。
+- 习语合成：阶段3已接受产物 → 完全相同代表区域分组 → 自动加载同区域上下文
+  → 合成规划 → 代码组装
+  → 质量/共享异味并行复审；异味针对当前合成代码独立重审且不进入质量分。
+  输出为不含阶段3透传项的合成增量。阶段2只运行不调用 Agent 的适配合同测试，
+  禁止跨仓或跨区域合成。
+- 上下文只允许读取代表源码范围并校验文件哈希；合成结果新增的调用目标必须来自
+  输入习语或该上下文。
 
-详细设计见 `docs/guides/agent-system.md`，修改约束见 `docs/guides/agent-contracts.md`。
+详细设计见 `docs/guides/agent-system.md`，修改约束见
+`docs/guides/agent-contracts.md`。
 
 ## 日志和生成物
 

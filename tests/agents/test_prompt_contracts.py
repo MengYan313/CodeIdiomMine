@@ -2,20 +2,20 @@
 
 import unittest
 
-from src.agents import code_assembly_agent
-from src.agents import idiom_judge_agent
-from src.agents import planning_synthesis_agent
-from src.agents import semantic_clarity_agent
-from src.agents import syntax_logic_agent
+from src.idiom_synthesis import assembly_agent
+from src.idiom_synthesis import planning_agent as synthesis_planning_agent
+from src.idiom_synthesis import review_agent
+from src.idiom_judgment import semantic_review_agent
+from src.idiom_judgment import smell_review_agent
 
 
 class PromptContractTests(unittest.TestCase):
     MODULES = (
-        code_assembly_agent,
-        idiom_judge_agent,
-        planning_synthesis_agent,
-        semantic_clarity_agent,
-        syntax_logic_agent,
+        semantic_review_agent,
+        smell_review_agent,
+        synthesis_planning_agent,
+        assembly_agent,
+        review_agent,
     )
 
     def test_system_prompts_are_chinese_and_marker_free(self):

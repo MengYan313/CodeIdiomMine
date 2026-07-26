@@ -28,7 +28,7 @@ import re
 from collections import defaultdict
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 import pandas as pd
 
@@ -157,9 +157,35 @@ def _code_match(idiom_code: str, func_code: str) -> bool:
     return f" {idiom_signature} " in f" {function_signature} "
 
 
-def load_idioms(idiom_path: str) -> List[Dict[str, Any]]:
+def load_idiom_artifact(
+    idiom_path: str,
+) -> Tuple[Optional[str], List[Dict[str, Any]]]:
+    """读取当前语义产物或旧列表产物，并投影为可评价的习语记录。"""
     with open(idiom_path, "rb") as file:
-        return pickle.load(file)
+        payload = pickle.load(file)
+    if isinstance(payload, list):
+        if not all(isinstance(record, dict) for record in payload):
+            raise TypeError(f"{idiom_path} 的旧习语列表包含非对象记录")
+        return None, payload
+    if not isinstance(payload, Mapping):
+        raise TypeError(f"{idiom_path} 顶层必须是 list 或习语 artifact")
+
+    artifact_type = str(payload.get("artifact_type") or "")
+    if artifact_type not in {"idiom_judgment", "idiom_synthesis"}:
+        raise ValueError(f"{idiom_path} 的 artifact_type 不受支持: {artifact_type!r}")
+    records = payload.get("accepted")
+    if not isinstance(records, list) or not all(
+        isinstance(record, dict) for record in records
+    ):
+        raise TypeError(f"{idiom_path} 的 accepted 必须是对象列表")
+    project = str(payload.get("project") or "") or None
+    return project, records
+
+
+def load_idioms(idiom_path: str) -> List[Dict[str, Any]]:
+    """兼容旧调用，只返回可进入知识库的记录。"""
+    _, records = load_idiom_artifact(idiom_path)
+    return records
 
 
 def load_dataset(dataset_path: str) -> pd.DataFrame:
@@ -988,11 +1014,17 @@ def evaluate_mock_cluster_file_split(
     }
 
 
-def _artifact_pattern(stage: str) -> Tuple[str, str]:
+def _artifact_patterns(stage: str) -> Tuple[Tuple[str, str], ...]:
     if stage == "judgment":
-        return "*_idiom.pkl", "_idiom"
+        return (
+            ("**/idiom-judgment.pkl", "idiom-judgment"),
+            ("*_idiom.pkl", "_idiom"),
+        )
     if stage == "synthesis":
-        return "*_idiom_syn.pkl", "_idiom_syn"
+        return (
+            ("**/idiom-synthesis.pkl", "idiom-synthesis"),
+            ("*_idiom_syn.pkl", "_idiom_syn"),
+        )
     raise ValueError(f"未知评价阶段: {stage}")
 
 
@@ -1006,16 +1038,33 @@ def evaluate_cpp(
 ) -> Dict[str, Any]:
     """逐仓执行评价并在各仓完成后汇总保存 JSON。"""
     idiom_root = Path(idiom_dir)
-    pattern, suffix = _artifact_pattern(artifact_stage)
-    idiom_files = sorted(idiom_root.glob(pattern)) if idiom_root.exists() else []
+    patterns = _artifact_patterns(artifact_stage)
+    idiom_files = sorted(
+        {
+            path: suffix
+            for pattern, suffix in patterns
+            for path in idiom_root.glob(pattern)
+        }.items()
+    ) if idiom_root.exists() else []
     if not idiom_files:
-        logger.warning("未找到习语文件: %s/%s", idiom_root, pattern)
+        logger.warning(
+            "未找到习语文件: %s (%s)",
+            idiom_root,
+            ", ".join(pattern for pattern, _ in patterns),
+        )
         return {}
 
     all_idioms: Dict[str, List[Dict[str, Any]]] = {}
-    for path in idiom_files:
-        repo = path.stem.removesuffix(suffix)
-        all_idioms[repo] = load_idioms(str(path))
+    idiom_paths: Dict[str, Path] = {}
+    for path, suffix in idiom_files:
+        artifact_project, records = load_idiom_artifact(str(path))
+        repo = artifact_project or path.stem.removesuffix(suffix)
+        if not repo:
+            raise ValueError(f"无法从习语产物确定仓库身份: {path}")
+        if repo in all_idioms:
+            raise ValueError(f"仓库 {repo} 存在重复的 {artifact_stage} 产物")
+        all_idioms[repo] = records
+        idiom_paths[repo] = path
 
     if not os.path.exists(dataset_path):
         logger.warning("数据集不存在，无法执行 AST 匹配: %s", dataset_path)
@@ -1039,9 +1088,12 @@ def evaluate_cpp(
         unit="项目",
     ):
         if evaluation_mode == "leave_one_project_out":
+            idiom_path = idiom_paths.get(project_name)
+            if idiom_path is None:
+                raise ValueError(f"仓库 {project_name} 缺少 {artifact_stage} 产物")
             result = evaluate_project(
                 project_name=project_name,
-                idiom_path=str(idiom_root / f"{project_name}{suffix}.pkl"),
+                idiom_path=str(idiom_path),
                 data=data,
                 project_idx=project_idx,
                 all_idioms=all_idioms,
@@ -1251,8 +1303,10 @@ def main() -> None:
     parser.add_argument(
         "--stage",
         choices=("judgment", "synthesis"),
-        default="judgment",
-        help="评价判断或合成产物，默认 judgment",
+        default="synthesis",
+        help=(
+            "评价习语判断或习语合成产物；同时兼容旧列表产物，默认 synthesis"
+        ),
     )
     parser.add_argument(
         "--mode",

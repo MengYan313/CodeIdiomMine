@@ -437,18 +437,53 @@ def export_clusters(
     return summary
 
 
-def _result_paths(result_dir: Path, stage: str) -> list[Path]:
+def _result_paths(
+    result_dir: Path,
+    stage: str,
+    *,
+    legacy_result_dir: Path | None = None,
+) -> list[Path]:
     if stage == "judgment":
-        paths = [
-            path for path in result_dir.glob("*_idiom.pkl")
+        paths = list(result_dir.glob("**/idiom-judgment.pkl"))
+        legacy_root = legacy_result_dir or result_dir
+        paths.extend(
+            path for path in legacy_root.glob("*_idiom.pkl")
             if not path.name.endswith("_idiom_syn.pkl")
-        ]
+        )
+    elif stage == "synthesis":
+        paths = list(result_dir.glob("**/idiom-synthesis.pkl"))
+        paths.extend(result_dir.glob("*_idiom_syn.pkl"))
     else:
-        paths = list(result_dir.glob("*_idiom_syn.pkl"))
-    paths.sort()
+        raise ValueError(f"未知 Agent 产物阶段: {stage}")
+    paths = sorted(set(paths))
     if not paths:
         raise FileNotFoundError(f"{result_dir} 中没有 {stage} PKL 产物")
     return paths
+
+
+def _load_result_records(
+    path: Path,
+    stage: str,
+) -> tuple[list[dict[str, Any]], dict[str, int] | None]:
+    payload = pd.read_pickle(path)
+    if isinstance(payload, list):
+        return payload, None
+
+    expected_type = {
+        "judgment": "idiom_judgment",
+        "synthesis": "idiom_synthesis",
+    }[stage]
+    if not isinstance(payload, dict) or payload.get("artifact_type") != expected_type:
+        raise TypeError(f"{path} 必须包含 {expected_type} artifact")
+    records = payload.get("accepted")
+    if not isinstance(records, list):
+        raise TypeError(f"{path} 的 accepted 必须是 list")
+    status_counts = {
+        key: len(payload.get(key) or [])
+        for key in ("accepted", "rejected", "pending_llm")
+        if key in payload
+    }
+    return records, status_counts
 
 
 def _finite_number(value: Any) -> float | int | None:
@@ -476,8 +511,14 @@ def export_agent_results(
     stage: str,
     limit: int,
     text_limit: int,
+    *,
+    legacy_result_dir: Path | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    paths = _result_paths(result_dir, stage)
+    paths = _result_paths(
+        result_dir,
+        stage,
+        legacy_result_dir=legacy_result_dir,
+    )
     required = {
         "judgment": {"center_point", "info", "cnt", "avg_ast_num", "loc_label"},
         "synthesis": {
@@ -491,6 +532,33 @@ def export_agent_results(
             "synthesis_trace",
         },
     }[stage]
+    current_required = {
+        "judgment": {
+            "source_infos",
+            "rules",
+            "abstraction_proposals",
+            "approved_abstraction_ids",
+            "abstraction_applied",
+            "semantic",
+            "semantic_review_input",
+            "smell",
+            "smell_gate",
+            "smell_review_input",
+            "agent_trace",
+            "scorecard",
+        },
+        "synthesis": {
+            "context_evidence",
+            "synthesis_plan",
+            "review",
+            "smell",
+            "smell_gate",
+            "smell_review_input",
+            "agent_trace",
+            "scorecard",
+        },
+    }[stage]
+    synthesis_stage = stage == "synthesis"
     preview: list[dict[str, Any]] = []
     artifacts: list[dict[str, Any]] = []
     all_counts: list[int] = []
@@ -499,9 +567,7 @@ def export_agent_results(
     representative_kinds = Counter()
 
     for path in paths:
-        records = pd.read_pickle(path)
-        if not isinstance(records, list):
-            raise TypeError(f"{path} 必须包含 list，实际为 {type(records)!r}")
+        records, status_counts = _load_result_records(path, stage)
         file_counts: list[int] = []
         file_ast_averages: list[float] = []
         file_merge_rounds: list[int] = []
@@ -509,7 +575,12 @@ def export_agent_results(
         for record_index, record in enumerate(records):
             if not isinstance(record, dict):
                 raise TypeError(f"{path} 的第 {record_index} 条记录不是 dict")
-            missing = required - record.keys()
+            record_required = (
+                required | current_required
+                if status_counts is not None
+                else required
+            )
+            missing = record_required - record.keys()
             if missing:
                 raise ValueError(f"{path} 的第 {record_index} 条缺少字段: {sorted(missing)}")
 
@@ -521,7 +592,7 @@ def export_agent_results(
             file_ast_averages.append(ast_average)
             all_counts.append(count)
             all_ast_averages.append(ast_average)
-            if stage == "synthesis":
+            if synthesis_stage:
                 rounds = int(record["merge_rounds"])
                 file_merge_rounds.append(rounds)
                 all_merge_rounds.append(rounds)
@@ -540,7 +611,7 @@ def export_agent_results(
                     "center_source": source,
                     "center_source_truncated": truncated,
                 }
-                if stage == "synthesis":
+                if synthesis_stage:
                     item.update(
                         {
                             "merge_rounds": int(record["merge_rounds"]),
@@ -564,7 +635,9 @@ def export_agent_results(
                 "max": max(file_ast_averages) if file_ast_averages else 0.0,
             },
         }
-        if stage == "synthesis":
+        if status_counts is not None:
+            artifact_summary["status_counts"] = status_counts
+        if synthesis_stage:
             artifact_summary["merge_rounds"] = {
                 "min": min(file_merge_rounds) if file_merge_rounds else 0,
                 "median": median(file_merge_rounds) if file_merge_rounds else 0,
@@ -597,7 +670,7 @@ def export_agent_results(
             "text_limit": text_limit,
         },
     }
-    if stage == "synthesis":
+    if synthesis_stage:
         summary["totals"]["merge_rounds"] = {
             "min": min(all_merge_rounds) if all_merge_rounds else 0,
             "median": median(all_merge_rounds) if all_merge_rounds else 0,
@@ -709,7 +782,13 @@ def export_artifacts(
     requested_stages = set(stages)
     stages = [
         stage
-        for stage in ("dataset", "embeddings", "clusters", "judgment", "synthesis")
+        for stage in (
+            "dataset",
+            "embeddings",
+            "clusters",
+            "judgment",
+            "synthesis",
+        )
         if stage in requested_stages
     ]
     if not stages:
@@ -765,9 +844,15 @@ def export_artifacts(
 
     for stage in ("judgment", "synthesis"):
         if stage in stages:
-            print(f"导出 {stage}: {result_dir}")
+            artifact_root = input_dir if stage == "judgment" else result_dir
+            print(f"导出 {stage}: {artifact_root}")
             summary, path_metadata = export_agent_results(
-                result_dir, output_dir, stage, limit, text_limit
+                artifact_root,
+                output_dir,
+                stage,
+                limit,
+                text_limit,
+                legacy_result_dir=result_dir,
             )
             summaries[stage] = summary
             inputs[stage] = path_metadata
@@ -838,7 +923,13 @@ def main() -> None:
     parser.add_argument(
         "--stages",
         nargs="+",
-        choices=["dataset", "embeddings", "clusters", "judgment", "synthesis"],
+        choices=[
+            "dataset",
+            "embeddings",
+            "clusters",
+            "judgment",
+            "synthesis",
+        ],
         default=["dataset", "embeddings", "clusters"],
     )
     parser.add_argument("--limit", type=int, default=100)
