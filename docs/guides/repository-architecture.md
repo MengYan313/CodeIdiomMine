@@ -18,6 +18,24 @@ CodeIdiomMine 从 C++ 仓库中提取候选 AST 片段，经代码嵌入和 DBSC
 聚类，也不表示未知仓库泛化。多仓库统计只能在各仓独立完成指标后做宏平均或
 必要的全局汇总。历史 `leave_one_project_out` 入口不属于正式架构。
 
+## 最终知识组织不变量：通用、专属与联合视图
+
+仓库隔离约束的是发现证据；阶段3和阶段4完成后的习语库另按受控目录进行双层知识
+组织：
+
+- 能够精确对应当前目录稳定编号的已接受结果是**目录化通用习语**，其类型身份为
+  `taxonomy_version + catalog_id`。所有仓库分别完成流水线后，可以按这一身份
+  跨仓库汇总、比较，并在满足适用前提时作为复用候选；
+- 无法可靠对应当前目录的已接受结果是**仓库专属习语**，其身份保留
+  项目和阶段内记录作用域。该集合也收纳可能具有一般意义、但当前目录尚未总结的
+  不常见习语，不得因此临时创造类型编号或跨仓库合并；
+- **全量联合视图**是上述两个集合的并集，用于总体规模、覆盖和结构分析，但必须
+  保留 `kind`、目录版本、项目和来源，不得把联合统计解释为类型身份相同。
+
+上述分类属于最终知识层，不得反向影响 Parser、embedding、DBSCAN 或 Agent 的
+仓库内证据边界。阶段4必须针对合成结果重新分类。详细合同见
+[C++习语类型目录与开放分类合同](idiom-taxonomy.md)。
+
 ## 架构不变量：零构建解析
 
 Parser 的固定入口合同是：**免目标项目编译、免链接、免执行，源码可得即可解析**。
@@ -51,8 +69,8 @@ Parser 基础结果的门禁。任何后端失败都应以能力掩码、诊断�
 | `src/common/` | 统一日志、LLM 配置兼容导出与 C++ 函数、块、语句节点类型集合 |
 | `src/parser/` | 通用 Tree-sitter 操作、C++ Adapter、异常/宏恢复、原文映射、Def-Use、目标 tokenizer 长度治理及 model-ready 片段 |
 | `src/mining/` | 对 Parser 已准备片段执行预训练模型嵌入和正式 DBSCAN 聚类，提供仓库无关、仅改进领域目标函数的标准 GP+EI warm-start 调参；HDBSCAN 保留为实验对照 |
-| `src/idiom_judgment/` | 单簇合同/低价值规则、保守抽象提案、经哈希验证的代表区域上下文、语义/复用价值业务评分、共享异味分类与独立门禁、Agent 失败回退和事后审计 |
-| `src/idiom_synthesis/` | 阶段3正式输入、阶段2合同适配、严格同代表区域分组、自动验证上下文、合成规划、代码组装、质量复审、合成增量产物、组级跳过，以及对合成结果独立执行的共享异味门禁 |
+| `src/idiom_judgment/` | 单簇合同/低价值规则、保守抽象提案、经哈希验证的代表区域上下文、语义/复用价值业务评分、目录化通用习语与仓库专属习语分类、共享异味分类与独立门禁、Agent 理由链、失败回退和事后审计 |
+| `src/idiom_synthesis/` | 阶段3正式输入、阶段2合同适配、严格同代表区域分组、自动验证上下文、合成规划、代码组装、对当前结果重新执行质量与习语类型复审、理由链、合成增量产物、组级跳过，以及独立执行的共享异味门禁 |
 | `src/agents/` | 当前判断与合成流程复用的 Agent 基类、结构化调用状态和注册函数 |
 | `src/evaluation/` | 固定评价指标、三条 baseline、统一产物/指标合同、按仓库与全局聚合及明确标注的离线模拟验证 |
 | `src/llm/` | 两项目统一的模型分档、`.env`、AutoGen 客户端、JSON schema/单次修复与轻量对话封装 |
@@ -85,9 +103,13 @@ repos/<project>/...
   无监督可行性条件、三指标目标权重和最终 incumbent；标准 GP 代理模型与 EI
   采集函数不作改动。选择器不读取仓库身份、人工标签或最终评价指标；该 JSON
   是选择证据，不替代阶段间 pickle。
-- `idiom-judgment.pkl`：Schema v6。正式结果按 `accepted`、`rejected` 分区，离线预检另有 `pending_llm`；每条记录保存规则证据、抽象提案、含完整簇成员和经路径/范围/哈希验证代表上下文的 `semantic_review_input`、独立 `context_evidence`、LLM `abstract/keep` 决策、实际批准集合与 `abstraction_applied`、语义/复用价值业务 `scorecard`、完整 `smell_review_input`、结构化异味 findings 与独立 `smell_gate`、各 Agent 尝试/失败/回退的 `agent_trace`，以及 `center_point`、`info`、`source_infos`、`cnt`、`avg_ast_num`、`avg_subtree_size` 和 `loc_label` 兼容投影。
-- `idiom-synthesis.pkl`：Schema v6，语义固定为 `synthesis_delta`。正式读取习语判断的 `accepted` 记录，只把代表 `project + source_path + source_extent` 完全一致的候选组成一组；缺少可验证代表区域时不使用历史 `loc_label` 猜测分组。产物只保存合成尝试和成功增量，不复制未合成、未选择或合成失败的阶段3习语；它们继续由阶段3产物持有。每次尝试保存自动同区域 `context_evidence`、合成计划、组装来源、质量复审业务 `scorecard`、针对合成结果的 `smell_review_input`/分类 findings/独立 `smell_gate`、Tree-sitter 语法与新增调用门禁、各 Agent 尝试/失败/跳过的 `agent_trace`、全部 `source_infos`、`merge_rounds` 和 `synthesis_trace`。阶段2 `clusters.pkl` 只验证适配和严格阈值逻辑，程序化调用生成 `contract_only_not_executed` 空 artifact，不进入正式 CLI 或实验执行。
+- `idiom-judgment.pkl`：Schema v7。正式结果按 `accepted`、`rejected` 分区，离线预检另有 `pending_llm`；每条记录保存规则证据、抽象提案、含完整簇成员和经路径/范围/哈希验证代表上下文的 `semantic_review_input`、独立 `context_evidence`、LLM `is_idiom` 与 `abstract/keep` 决策、实际批准集合与 `abstraction_applied`、目录化通用习语或仓库专属习语的 `idiom_classification`、语义/类型/异味 `agent_reasons`、最终 `decision_reason`、语义/复用价值业务 `scorecard`、完整 `smell_review_input`、结构化异味 findings 与独立 `smell_gate`、各 Agent 尝试/失败/回退的 `agent_trace`，以及 `center_point`、`info`、`source_infos`、`cnt`、`avg_ast_num`、`avg_subtree_size` 和 `loc_label` 兼容投影。
+- `idiom-synthesis.pkl`：Schema v7，语义固定为 `synthesis_delta`。正式读取习语判断的 `accepted` 记录并以顶层 `source_judgments` 携带其判断理由和类型，只把代表 `project + source_path + source_extent` 完全一致的候选组成一组；缺少可验证代表区域时不使用历史 `loc_label` 猜测分组。产物只保存合成尝试和成功增量，不复制未合成、未选择或合成失败的阶段3习语；它们继续由阶段3产物持有。每次尝试保存自动同区域 `context_evidence`、合成计划、组装来源、针对合成结果重新执行的 `is_idiom` 与 `idiom_classification`、规划/组装/质量/类型/异味 `agent_reasons`、最终 `decision_reason`、质量复审业务 `scorecard`、当前合成代码的 `smell_review_input`/分类 findings/独立 `smell_gate`、Tree-sitter 语法与新增调用门禁、各 Agent 尝试/失败/跳过的 `agent_trace`、全部 `source_infos`、`merge_rounds` 和 `synthesis_trace`。阶段2 `clusters.pkl` 只验证适配和严格阈值逻辑，程序化调用生成 `contract_only_not_executed` 空 artifact，不进入正式 CLI 或实验执行。
 - `eval.json`：正式默认在每个仓库完成全仓发现后，对来源文件做确定性的参考/测量分区，并在测量分区上计算 `IC_macro`、`IC_micro`、最终 `IC=(IC_macro+IC_micro)/2`、集合复现率 `ISP` 及使用最终 IC 的 `F1`；另报告习语种类数、平均聚类簇大小、平均跨文件支持数和 `AvgAST`，并保留必要分子分母。兼容字段 `training_*`、`test_*` 只表示参考/测量分区。留一项目模式只作历史兼容，聚类模拟模式只作公式验证。
+
+当前九项正式指标默认计算全量联合视图。阶段3/4的分类字段还允许在报告层对
+目录化通用与仓库专属子集分别复算同口径分布，并按稳定目录编号生成跨仓库通用
+类型统计；这些分层视图不是新的调参目标，也不得改变原始记录身份。
 
 指标的正式公式、统计单位、仓库宏平均、全局汇总和解释边界统一见[评价指标规范](evaluation-metrics.md)；其他文档只保留入口或实验记录，不另行定义不同口径。
 

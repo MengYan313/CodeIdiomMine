@@ -126,6 +126,16 @@ class IdiomSynthesisTests(unittest.TestCase):
                                 "cnt": 2,
                                 "status": "accepted",
                                 "semantic": {"intent": "获取资源"},
+                                "decision_reason": "语义与异味门禁均通过。",
+                                "idiom_classification": {
+                                    "kind": "repository_specific",
+                                    "label": "仓库特有习语",
+                                    "catalog_ids": [],
+                                },
+                                "agent_reasons": {
+                                    "semantic_review": "意图稳定。",
+                                    "smell_review": "未见异味。",
+                                },
                                 "abstraction_proposals": [
                                     {
                                         "proposal_id": "var-1",
@@ -148,6 +158,16 @@ class IdiomSynthesisTests(unittest.TestCase):
                                 "cnt": 2,
                                 "status": "accepted",
                                 "semantic": {"intent": "释放资源"},
+                                "decision_reason": "语义与异味门禁均通过。",
+                                "idiom_classification": {
+                                    "kind": "repository_specific",
+                                    "label": "仓库特有习语",
+                                    "catalog_ids": [],
+                                },
+                                "agent_reasons": {
+                                    "semantic_review": "意图稳定。",
+                                    "smell_review": "未见异味。",
+                                },
                             },
                         ],
                     },
@@ -156,6 +176,14 @@ class IdiomSynthesisTests(unittest.TestCase):
             project, candidates, kind = load_idiom_candidates(judgment_path)
             self.assertEqual((project, kind), ("sample", "judgment"))
             self.assertTrue(all(item.input_stage == 3 for item in candidates))
+            self.assertEqual(
+                candidates[0].idiom_classification["kind"],
+                "repository_specific",
+            )
+            self.assertEqual(
+                candidates[0].agent_reasons["semantic_review"],
+                "意图稳定。",
+            )
             self.assertEqual(
                 candidates[0].placeholders,
                 [
@@ -266,6 +294,7 @@ class IdiomSynthesisTests(unittest.TestCase):
             syntax_valid=True,
             unsupported_calls=[],
             context_contract_valid=True,
+            review_is_idiom=True,
             improves_quality=True,
             preserves_intents=True,
             review_unsupported_additions=[],
@@ -282,6 +311,12 @@ class IdiomSynthesisTests(unittest.TestCase):
             **common,
         )
         self.assertEqual(status, "accepted")
+        status, _ = decide_synthesis_status(
+            contains_stage2_input=False,
+            quality_score=100,
+            **{**common, "review_is_idiom": False},
+        )
+        self.assertEqual(status, "rejected")
 
     def test_multi_agent_pipeline_accepts_supported_synthesis(self):
         class FakeClient:
@@ -290,6 +325,8 @@ class IdiomSynthesisTests(unittest.TestCase):
                 self.user_prompts = []
                 self.requests = []
                 self.smell_findings = []
+                self.quality_reason = "合成补全了资源获取与释放。"
+                self.smell_reason = "未见可定位的代码异味。"
 
             async def create(self, messages, extra_create_args):
                 del extra_create_args
@@ -318,19 +355,26 @@ class IdiomSynthesisTests(unittest.TestCase):
                         "added_from_context": [],
                         "reason": "按生命周期顺序合成。",
                     }
-                elif "独立质量复审 Agent" in system_prompt:
+                elif "独立质量、有效性与类型复审 Agent" in system_prompt:
                     response = {
+                        "is_idiom": True,
                         "quality_score": 90,
                         "improves_quality": True,
                         "preserves_intents": True,
                         "unsupported_additions": [],
                         "issues": [],
-                        "reason": "合成补全了资源获取与释放。",
+                        "idiom_classification": {
+                            "kind": "repository_specific",
+                            "catalog_ids": [],
+                            "confidence": 84,
+                            "reason": "显式资源配对依赖当前仓库 API。",
+                        },
+                        "reason": self.quality_reason,
                     }
                 else:
                     response = {
                         "findings": self.smell_findings,
-                        "reason": "未见可定位的代码异味。",
+                        "reason": self.smell_reason,
                     }
                 return SimpleNamespace(
                     content=json.dumps(response, ensure_ascii=False)
@@ -366,6 +410,16 @@ class IdiomSynthesisTests(unittest.TestCase):
                     input_stage=3,
                     intent="获取资源",
                     judgment_status="accepted",
+                    judgment_reason="获取资源候选已通过阶段3门禁。",
+                    idiom_classification={
+                        "kind": "repository_specific",
+                        "label": "仓库特有习语",
+                        "catalog_ids": [],
+                    },
+                    agent_reasons={
+                        "semantic_review": "获取意图稳定。",
+                        "smell_review": "未见异味。",
+                    },
                 ),
                 IdiomCandidate(
                     candidate_id="judgment:2",
@@ -378,6 +432,16 @@ class IdiomSynthesisTests(unittest.TestCase):
                     input_stage=3,
                     intent="释放资源",
                     judgment_status="accepted",
+                    judgment_reason="释放资源候选已通过阶段3门禁。",
+                    idiom_classification={
+                        "kind": "repository_specific",
+                        "label": "仓库特有习语",
+                        "catalog_ids": [],
+                    },
+                    agent_reasons={
+                        "semantic_review": "释放意图稳定。",
+                        "smell_review": "未见异味。",
+                    },
                 ),
             ]
             client = FakeClient()
@@ -411,6 +475,11 @@ class IdiomSynthesisTests(unittest.TestCase):
                 [],
             )
             self.assertFalse(result.smell_gate["rejected"])
+            self.assertEqual(
+                result.review["idiom_classification"]["kind"],
+                "repository_specific",
+            )
+            self.assertIn("质量复审依据", result.decision_reason)
             self.assertNotIn("smell_risk_score", result.scorecard)
             self.assertEqual(
                 result.agent_trace["planning"]["status"],
@@ -439,6 +508,25 @@ class IdiomSynthesisTests(unittest.TestCase):
             )
             self.assertFalse(artifact["passthrough_included"])
             self.assertNotIn("manual_review", artifact)
+            self.assertEqual(
+                artifact["summary"]["accepted_classification_kind_counts"][
+                    "repository_specific"
+                ],
+                1,
+            )
+            source_judgments = artifact["accepted"][0][
+                "source_judgments"
+            ]
+            self.assertEqual(len(source_judgments), 2)
+            self.assertTrue(
+                all(
+                    item["judgment_reason"]
+                    and item["idiom_classification"]["kind"]
+                    == "repository_specific"
+                    and item["agent_reasons"]["semantic_review"]
+                    for item in source_judgments
+                )
+            )
 
             risky_client = FakeClient()
             risky_client.smell_findings = [
@@ -459,6 +547,32 @@ class IdiomSynthesisTests(unittest.TestCase):
                 "risk_threshold",
             )
             self.assertEqual(risky_result.scorecard["final_score"], 90)
+
+            missing_quality_reason = FakeClient()
+            missing_quality_reason.quality_reason = ""
+            missing_quality_result = asyncio.run(
+                run_pipeline(missing_quality_reason)
+            )
+            self.assertEqual(missing_quality_result.status, "rejected")
+            self.assertEqual(
+                missing_quality_result.agent_trace["quality_review"][
+                    "failure_kind"
+                ],
+                "invalid_domain_payload",
+            )
+
+            missing_smell_reason = FakeClient()
+            missing_smell_reason.smell_reason = ""
+            missing_smell_result = asyncio.run(
+                run_pipeline(missing_smell_reason)
+            )
+            self.assertEqual(missing_smell_result.status, "rejected")
+            self.assertEqual(
+                missing_smell_result.agent_trace["smell_review"][
+                    "failure_kind"
+                ],
+                "invalid_domain_payload",
+            )
 
     def test_grouping_never_crosses_representative_region(self):
         base = {

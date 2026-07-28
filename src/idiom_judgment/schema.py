@@ -5,10 +5,17 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Mapping, Sequence
 
+from .idiom_taxonomy import (
+    CATALOGED_IDIOM_KIND,
+    NOT_APPLICABLE_IDIOM_KIND,
+    REPOSITORY_SPECIFIC_IDIOM_KIND,
+    IdiomClassification,
+    empty_idiom_classification,
+)
 from .smell_taxonomy import SmellFinding
 
 
-IDIOM_JUDGMENT_SCHEMA_VERSION = 6
+IDIOM_JUDGMENT_SCHEMA_VERSION = 7
 
 
 def _node_info(info: Any) -> Mapping[str, Any]:
@@ -123,6 +130,7 @@ class AbstractionProposal:
 
 @dataclass(frozen=True)
 class SemanticAssessment:
+    is_idiom: bool
     semantic_score: float
     reuse_score: float
     intent: str
@@ -130,6 +138,7 @@ class SemanticAssessment:
     abstraction_decision: str
     approved_abstraction_ids: List[str]
     abstraction_reason: str
+    idiom_classification: IdiomClassification
     reason: str
 
 
@@ -177,6 +186,18 @@ class IdiomJudgmentResult:
             if isinstance(info, Mapping)
             and info.get("subtree_size") is not None
         ]
+        classification = (
+            self.semantic.idiom_classification
+            if self.semantic
+            else empty_idiom_classification("尚未执行语义习语类型判断。")
+        )
+        agent_reasons = {
+            "semantic_review": (
+                self.semantic.reason if self.semantic else ""
+            ),
+            "idiom_classification": classification.reason,
+            "smell_review": self.smell.reason if self.smell else "",
+        }
         record = {
             "idiom_judgment_schema_version": IDIOM_JUDGMENT_SCHEMA_VERSION,
             "project": self.candidate.project,
@@ -208,6 +229,7 @@ class IdiomJudgmentResult:
             ),
             "abstraction_applied": bool(self.abstraction_applied),
             "semantic": asdict(self.semantic) if self.semantic else None,
+            "idiom_classification": asdict(classification),
             "semantic_review_input": dict(self.semantic_review_input),
             "context_evidence": dict(self.context_evidence),
             "smell": asdict(self.smell) if self.smell else None,
@@ -216,6 +238,7 @@ class IdiomJudgmentResult:
             "agent_trace": dict(self.agent_trace),
             "scorecard": dict(self.scorecard),
             "decision_reason": self.decision_reason,
+            "agent_reasons": agent_reasons,
         }
         return record
 
@@ -239,13 +262,30 @@ def build_judgment_artifact(
         if status == "pending_llm" and not rule_only:
             raise ValueError("完整阶段3运行不得输出 pending_llm")
         by_status[status].append(record)
+    accepted = by_status["accepted"]
+    classification_kind_counts = {
+        CATALOGED_IDIOM_KIND: 0,
+        REPOSITORY_SPECIFIC_IDIOM_KIND: 0,
+        NOT_APPLICABLE_IDIOM_KIND: 0,
+    }
+    catalog_type_counts: Dict[str, int] = {}
+    for record in accepted:
+        classification = record.get("idiom_classification") or {}
+        kind = str(classification.get("kind") or NOT_APPLICABLE_IDIOM_KIND)
+        classification_kind_counts[kind] = (
+            classification_kind_counts.get(kind, 0) + 1
+        )
+        for type_id in classification.get("catalog_ids") or []:
+            catalog_type_counts[str(type_id)] = (
+                catalog_type_counts.get(str(type_id), 0) + 1
+            )
     return {
         "artifact_type": "idiom_judgment",
         "stage": 3,
         "idiom_judgment_schema_version": IDIOM_JUDGMENT_SCHEMA_VERSION,
         "project": project,
         "rule_only": bool(rule_only),
-        "accepted": by_status["accepted"],
+        "accepted": accepted,
         "rejected": by_status["rejected"],
         "pending_llm": by_status["pending_llm"],
         "summary": {
@@ -276,6 +316,12 @@ def build_judgment_artifact(
             "accepted_unchanged_count": sum(
                 not bool(record.get("abstraction_applied"))
                 for record in by_status["accepted"]
+            ),
+            "accepted_classification_kind_counts": (
+                classification_kind_counts
+            ),
+            "accepted_catalog_type_counts": dict(
+                sorted(catalog_type_counts.items())
             ),
             "technical_failure_count": sum(
                 any(

@@ -1,6 +1,7 @@
 import asyncio
 import hashlib
 import json
+import math
 import pickle
 import tempfile
 import unittest
@@ -15,6 +16,12 @@ from src.idiom_judgment.abstraction import (
     propose_abstractions,
 )
 from src.idiom_judgment.judge_clusters import judge_clusters
+from src.idiom_judgment.idiom_taxonomy import (
+    IDIOM_TAXONOMY_VERSION,
+    KNOWN_IDIOM_TYPES,
+    REPOSITORY_SPECIFIC_IDIOM_LABEL,
+    normalize_idiom_classification,
+)
 from src.idiom_judgment.pipeline import (
     IdiomJudgmentPipeline,
     decide_judgment_status,
@@ -61,6 +68,73 @@ def _candidate(codes, *, files=None, kinds=None):
 
 
 class IdiomJudgmentTests(unittest.TestCase):
+    def test_taxonomy_source_refs_use_only_thesis_global_ids(self):
+        for idiom_type in KNOWN_IDIOM_TYPES:
+            self.assertTrue(idiom_type.source_refs, idiom_type.type_id)
+            for source_ref in idiom_type.source_refs:
+                self.assertRegex(source_ref, r"^E\d{3}$", idiom_type.type_id)
+
+        refs_by_type = {
+            idiom_type.type_id: set(idiom_type.source_refs)
+            for idiom_type in KNOWN_IDIOM_TYPES
+        }
+        self.assertEqual(refs_by_type["raii"], {"E025", "E112", "E113"})
+        self.assertEqual(refs_by_type["scope-guard"], {"E025", "E115"})
+        self.assertEqual(
+            refs_by_type["rule-of-three-five"],
+            {"E025", "E112", "E114"},
+        )
+
+    def test_known_and_repository_specific_idiom_classification(self):
+        known, invalid = normalize_idiom_classification(
+            {
+                "kind": "cataloged",
+                "catalog_ids": ["raii"],
+                "confidence": 92,
+                "reason": "资源生命周期与局部对象作用域绑定。",
+            },
+            is_idiom=True,
+        )
+        self.assertFalse(invalid)
+        self.assertEqual(known.taxonomy_version, IDIOM_TAXONOMY_VERSION)
+        self.assertEqual(known.catalog_ids, ["raii"])
+        self.assertIn("RAII", known.label)
+
+        specific, invalid = normalize_idiom_classification(
+            {
+                "kind": "repository_specific",
+                "catalog_ids": [],
+                "confidence": 80,
+                "reason": "组合依赖仓库私有 API 与稳定顺序。",
+            },
+            is_idiom=True,
+        )
+        self.assertFalse(invalid)
+        self.assertEqual(specific.label, REPOSITORY_SPECIFIC_IDIOM_LABEL)
+
+        _, invalid = normalize_idiom_classification(
+            {
+                "kind": "cataloged",
+                "catalog_ids": ["invented-type"],
+                "confidence": 100,
+                "reason": "强行套用。",
+            },
+            is_idiom=True,
+        )
+        self.assertTrue(invalid)
+
+        normalized, invalid = normalize_idiom_classification(
+            {
+                "kind": "repository_specific",
+                "catalog_ids": [],
+                "confidence": math.nan,
+                "reason": "置信度不是有限数。",
+            },
+            is_idiom=True,
+        )
+        self.assertTrue(invalid)
+        self.assertEqual(normalized.confidence, 0.0)
+
     def test_judgment_loads_project_env_before_processing(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
@@ -154,8 +228,9 @@ class IdiomJudgmentTests(unittest.TestCase):
                 del extra_create_args
                 system_prompt = messages[0].content
                 self.prompts.append(messages[-1].content)
-                if "语义与抽象决策专家" in system_prompt:
+                if "习语语义、类型与抽象决策专家" in system_prompt:
                     response = {
+                        "is_idiom": True,
                         "semantic_score": 90,
                         "reuse_score": 85,
                         "intent": "获取值后消费。",
@@ -163,6 +238,12 @@ class IdiomJudgmentTests(unittest.TestCase):
                         "abstraction_decision": "keep",
                         "approved_abstraction_ids": [],
                         "abstraction_reason": "保持代表代码。",
+                        "idiom_classification": {
+                            "kind": "repository_specific",
+                            "catalog_ids": [],
+                            "confidence": 86,
+                            "reason": "该加载与消费组合依赖当前仓库 API。",
+                        },
                         "reason": "意图完整。",
                     }
                 else:
@@ -379,6 +460,7 @@ class IdiomJudgmentTests(unittest.TestCase):
         accepted, _ = decide_judgment_status(
             rule_eligible=True,
             rule_score=80,
+            semantic_is_idiom=True,
             semantic_score=75,
             reuse_score=65,
         )
@@ -386,6 +468,7 @@ class IdiomJudgmentTests(unittest.TestCase):
         rejected, _ = decide_judgment_status(
             rule_eligible=True,
             rule_score=90,
+            semantic_is_idiom=True,
             semantic_score=49,
             reuse_score=90,
         )
@@ -393,10 +476,19 @@ class IdiomJudgmentTests(unittest.TestCase):
         boundary, _ = decide_judgment_status(
             rule_eligible=True,
             rule_score=50,
+            semantic_is_idiom=True,
             semantic_score=60,
             reuse_score=60,
         )
         self.assertEqual(boundary, "rejected")
+        semantic_veto, _ = decide_judgment_status(
+            rule_eligible=True,
+            rule_score=100,
+            semantic_is_idiom=False,
+            semantic_score=100,
+            reuse_score=100,
+        )
+        self.assertEqual(semantic_veto, "rejected")
 
     def test_multi_agent_judgment_applies_only_approved_proposal(self):
         class FakeClient:
@@ -405,14 +497,17 @@ class IdiomJudgmentTests(unittest.TestCase):
                 self.smell_findings = []
                 self.abstraction_decision = "abstract"
                 self.prompts = []
+                self.semantic_reason = "局部变量名称不影响稳定意图。"
+                self.smell_reason = "未见可定位的代码异味。"
 
             async def create(self, messages, extra_create_args):
                 del extra_create_args
                 self.calls += 1
                 system_prompt = messages[0].content
                 self.prompts.append(messages[-1].content)
-                if "语义与抽象决策专家" in system_prompt:
+                if "习语语义、类型与抽象决策专家" in system_prompt:
                     response = {
+                        "is_idiom": True,
                         "semantic_score": 85,
                         "reuse_score": 80,
                         "intent": "加载值后交给消费者。",
@@ -423,12 +518,18 @@ class IdiomJudgmentTests(unittest.TestCase):
                             "invented-id",
                         ],
                         "abstraction_reason": "局部变量名称不承载稳定语义。",
-                        "reason": "局部变量名称不影响稳定意图。",
+                        "idiom_classification": {
+                            "kind": "repository_specific",
+                            "catalog_ids": [],
+                            "confidence": 82,
+                            "reason": "该加载与消费组合未对应目录中的通用习语。",
+                        },
+                        "reason": self.semantic_reason,
                     }
                 else:
                     response = {
                         "findings": self.smell_findings,
-                        "reason": "未见可定位的代码异味。",
+                        "reason": self.smell_reason,
                     }
                 return SimpleNamespace(
                     content=json.dumps(response, ensure_ascii=False)
@@ -458,6 +559,11 @@ class IdiomJudgmentTests(unittest.TestCase):
         self.assertGreaterEqual(result.scorecard["final_score"], 70)
         self.assertNotIn("smell_risk_score", result.scorecard)
         self.assertFalse(result.smell_gate["rejected"])
+        self.assertEqual(
+            result.semantic.idiom_classification.kind,
+            "repository_specific",
+        )
+        self.assertIn("语义判断依据", result.decision_reason)
         self.assertEqual(
             result.agent_trace["semantic_review"]["status"],
             "completed",
@@ -508,6 +614,12 @@ class IdiomJudgmentTests(unittest.TestCase):
             artifact["summary"]["accepted_unchanged_count"],
             1,
         )
+        self.assertEqual(
+            artifact["summary"]["accepted_classification_kind_counts"][
+                "repository_specific"
+            ],
+            2,
+        )
 
         risky_client = FakeClient()
         risky_client.smell_findings = [
@@ -525,6 +637,32 @@ class IdiomJudgmentTests(unittest.TestCase):
         self.assertTrue(risky_result.smell_gate["rejected"])
         self.assertGreaterEqual(risky_result.scorecard["final_score"], 70)
 
+        missing_semantic_reason = FakeClient()
+        missing_semantic_reason.semantic_reason = ""
+        missing_semantic_result = asyncio.run(
+            run_pipeline(missing_semantic_reason)
+        )
+        self.assertEqual(missing_semantic_result.status, "rejected")
+        self.assertEqual(
+            missing_semantic_result.agent_trace["semantic_review"][
+                "failure_kind"
+            ],
+            "invalid_domain_payload",
+        )
+
+        missing_smell_reason = FakeClient()
+        missing_smell_reason.smell_reason = ""
+        missing_smell_result = asyncio.run(
+            run_pipeline(missing_smell_reason)
+        )
+        self.assertEqual(missing_smell_result.status, "rejected")
+        self.assertEqual(
+            missing_smell_result.agent_trace["smell_review"][
+                "failure_kind"
+            ],
+            "invalid_domain_payload",
+        )
+
     def test_request_failure_retries_once_then_recovers(self):
         class RetryClient:
             def __init__(self):
@@ -534,11 +672,12 @@ class IdiomJudgmentTests(unittest.TestCase):
             async def create(self, messages, extra_create_args):
                 del extra_create_args
                 system_prompt = messages[0].content
-                if "语义与抽象决策专家" in system_prompt:
+                if "习语语义、类型与抽象决策专家" in system_prompt:
                     self.semantic_calls += 1
                     if self.semantic_calls == 1:
                         raise TimeoutError("synthetic timeout")
                     response = {
+                        "is_idiom": True,
                         "semantic_score": 85,
                         "reuse_score": 80,
                         "intent": "加载值后交给消费者。",
@@ -546,6 +685,12 @@ class IdiomJudgmentTests(unittest.TestCase):
                         "abstraction_decision": "keep",
                         "approved_abstraction_ids": [],
                         "abstraction_reason": "保持原代码。",
+                        "idiom_classification": {
+                            "kind": "repository_specific",
+                            "catalog_ids": [],
+                            "confidence": 80,
+                            "reason": "没有与已知目录精确对应。",
+                        },
                         "reason": "意图稳定且具有复用价值。",
                     }
                 else:

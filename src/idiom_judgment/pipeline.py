@@ -18,6 +18,12 @@ from .abstraction import (
 )
 from .rules import evaluate_cluster_rules
 from .source_context import load_verified_source_context
+from .idiom_taxonomy import (
+    IDIOM_TAXONOMY_VERSION,
+    KNOWN_IDIOM_TYPES,
+    REPOSITORY_SPECIFIC_IDIOM_LABEL,
+    empty_idiom_classification,
+)
 from .schema import (
     ClusterCandidate,
     SemanticAssessment,
@@ -92,6 +98,7 @@ def decide_judgment_status(
     *,
     rule_eligible: bool,
     rule_score: float,
+    semantic_is_idiom: bool,
     semantic_score: float,
     reuse_score: float,
 ) -> tuple[str, str]:
@@ -99,6 +106,8 @@ def decide_judgment_status(
 
     if not rule_eligible:
         return "rejected", "确定性规则门禁失败。"
+    if not semantic_is_idiom:
+        return "rejected", "语义有效性 Agent 判断该候选不属于代码习语。"
     if semantic_score < 50 or reuse_score < 50:
         return "rejected", "语义稳定性或复用价值低于最低门槛。"
     scorecard = build_judgment_scorecard(
@@ -152,6 +161,13 @@ class IdiomJudgmentPipeline:
                 ),
             },
             "abstraction_policy": asdict(self.abstraction_policy),
+            "idiom_taxonomy": {
+                "version": IDIOM_TAXONOMY_VERSION,
+                "known_type_count": len(KNOWN_IDIOM_TYPES),
+                "repository_specific_label": (
+                    REPOSITORY_SPECIFIC_IDIOM_LABEL
+                ),
+            },
             "prompt_contracts": {
                 "semantic_review": {
                     "version": SEMANTIC_REVIEW_PROMPT_VERSION,
@@ -301,6 +317,7 @@ class IdiomJudgmentPipeline:
             raise semantic_result
         if isinstance(semantic_result, BaseException):
             semantic_result = SemanticReviewResult(
+                is_idiom=False,
                 semantic_score=0.0,
                 reuse_score=0.0,
                 intent="",
@@ -308,6 +325,9 @@ class IdiomJudgmentPipeline:
                 abstraction_decision="keep",
                 approved_abstraction_ids=[],
                 abstraction_reason="Runtime 路由失败，保持代表代码不变。",
+                idiom_classification=empty_idiom_classification(
+                    "Runtime 路由失败，未执行习语类型判断。"
+                ),
                 reason="语义/抽象 Agent 未能完成，采用安全拒绝。",
                 call_status="failed",
                 call_attempts=0,
@@ -328,6 +348,7 @@ class IdiomJudgmentPipeline:
                 failure_kind="runtime_dispatch_error",
             )
         semantic = SemanticAssessment(
+            is_idiom=semantic_result.is_idiom,
             semantic_score=semantic_result.semantic_score,
             reuse_score=semantic_result.reuse_score,
             intent=semantic_result.intent,
@@ -337,6 +358,7 @@ class IdiomJudgmentPipeline:
                 semantic_result.approved_abstraction_ids
             ),
             abstraction_reason=semantic_result.abstraction_reason,
+            idiom_classification=semantic_result.idiom_classification,
             reason=semantic_result.reason,
         )
         smell = SmellAssessment(
@@ -350,6 +372,7 @@ class IdiomJudgmentPipeline:
         status, reason = decide_judgment_status(
             rule_eligible=rules.eligible_for_llm,
             rule_score=rules.score,
+            semantic_is_idiom=semantic.is_idiom,
             semantic_score=semantic.semantic_score,
             reuse_score=semantic.reuse_score,
         )
@@ -375,6 +398,10 @@ class IdiomJudgmentPipeline:
                     f"代码异味风险分 {smell.risk_score:.2f} 达到独立过滤阈值；"
                     f"类别：{categories}。"
                 )
+        reason = (
+            f"{reason} 语义判断依据：{semantic.reason} "
+            f"异味审查依据：{smell.reason}"
+        ).strip()
         requested_ids = (
             set(semantic.approved_abstraction_ids)
             if semantic.abstraction_decision == "abstract"

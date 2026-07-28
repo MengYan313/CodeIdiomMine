@@ -256,7 +256,10 @@ async def synthesize_idioms(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="自动填充同代表区域上下文并对多个相关习语执行规划、组装与复审"
+        description=(
+            "自动填充同代表区域上下文并对多个相关习语执行规划、组装、"
+            "有效性与类型复审"
+        )
     )
     parser.add_argument(
         "--input",

@@ -37,6 +37,25 @@ class PromptContractTests(unittest.TestCase):
                 set(schema["properties"]),
             )
 
+    def test_validity_agents_require_reasons_and_type_classification(self):
+        for module in (
+            semantic_review_agent,
+            smell_review_agent,
+            synthesis_planning_agent,
+            assembly_agent,
+            review_agent,
+        ):
+            self.assertIn("reason", module._RESPONSE_SCHEMA["required"])
+        for module in (semantic_review_agent, review_agent):
+            self.assertIn("is_idiom", module._RESPONSE_SCHEMA["required"])
+            self.assertIn(
+                "idiom_classification",
+                module._RESPONSE_SCHEMA["required"],
+            )
+            prompt = module._SYSTEM_MESSAGE
+            self.assertIn("repository_specific", prompt)
+            self.assertIn("raii", prompt)
+
 
 if __name__ == "__main__":
     unittest.main()

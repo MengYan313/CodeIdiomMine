@@ -43,11 +43,14 @@ _SYSTEM_MESSAGE = build_json_system_prompt(
         "证据不足时不生成 finding；不得输出总分、通过/失败或人工复核状态。",
     ),
     field_rules=(
-        "category 必须逐字使用固定英文标识；evidence、impact、remediation 和 reason 使用中文。",
+        (
+            "category 必须逐字使用固定英文标识；evidence、impact、remediation "
+            "和 reason 使用中文，reason 必须概括本次有效性审查依据且不得为空。"
+        ),
     ),
     stop_rules=("没有可定位异味时 findings 返回空数组，并简要说明未发现可见异味。",),
 )
-SMELL_REVIEW_PROMPT_VERSION = 1
+SMELL_REVIEW_PROMPT_VERSION = 2
 SMELL_REVIEW_PROMPT_SHA256 = hashlib.sha256(
     _SYSTEM_MESSAGE.encode("utf-8")
 ).hexdigest()
@@ -227,14 +230,18 @@ class SmellReviewAgent(JsonLLMAgent):
                 failure_kind=trace.failure_kind,
             )
         findings, invalid_payload = _normalize_findings(data.get("findings"))
-        if invalid_payload:
+        reason = str(data.get("reason") or "").strip()
+        if invalid_payload or not reason:
             return SmellReviewResult(
                 analysis_status="failed",
                 risk_score=100.0,
                 max_severity="none",
                 categories=[],
                 findings=[],
-                reason="响应含不完整或越界的异味发现，独立门禁按失败状态拒绝。",
+                reason=(
+                    "响应缺少有效判断理由，或含不完整、越界的异味发现，"
+                    "独立门禁按失败状态拒绝。"
+                ),
                 call_status="failed",
                 call_attempts=trace.attempts,
                 failure_kind="invalid_domain_payload",
@@ -257,7 +264,7 @@ class SmellReviewAgent(JsonLLMAgent):
             max_severity=max_severity,
             categories=sorted({finding.category for finding in findings}),
             findings=findings,
-            reason=str(data.get("reason") or ""),
+            reason=reason,
             call_status=trace.status,
             call_attempts=trace.attempts,
             failure_kind=trace.failure_kind,

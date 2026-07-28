@@ -20,6 +20,7 @@
 - [本地开发基线](guides/local-baseline.md)：已验证环境、实际产物、错误证据和延期事项。
 - [习语判断与合成 Agent 架构](guides/agent-system.md)：规则前置抽象决策、多习语合成、确定性门禁和 Agent 失败恢复矩阵。
 - [习语判断与合成开发契约](guides/agent-contracts.md)：修改规则、抽象、重试、回退或 Agent 时必须保持的行为约束。
+- [C++习语类型目录与开放分类合同](guides/idiom-taxonomy.md)：目录化通用习语、仓库专属习语、全量联合视图、分类理由和 Schema v7 审计字段。
 - [C++代码异味审查与事后审计](guides/code-smell-review.md)：共享分类表、独立过滤门禁、人工标签与逐类别准确性指标。
 
 ## 研究文档

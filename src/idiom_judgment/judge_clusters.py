@@ -232,7 +232,9 @@ async def judge_clusters(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="对单仓库聚类簇执行规则、保守抽象、语义和异味审查"
+        description=(
+            "对单仓库聚类簇执行规则、保守抽象、语义、习语类型和异味审查"
+        )
     )
     parser.add_argument("--input", "-i", required=True, help="阶段2 clusters.pkl")
     parser.add_argument("--output", "-o", required=True, help="习语判断 PKL")

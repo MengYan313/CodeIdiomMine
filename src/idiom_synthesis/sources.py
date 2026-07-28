@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pickle
 from pathlib import Path
-from typing import Any, Dict, Iterable, List
+from typing import Any, Dict, Iterable, List, Mapping
 
 from .schema import IdiomCandidate
 
@@ -32,6 +32,16 @@ def _from_judgment_artifact(
             if isinstance(proposal, dict)
             and str(proposal.get("proposal_id")) in approved_ids
         ]
+        raw_agent_reasons = record.get("agent_reasons")
+        agent_reasons = {
+            str(key): str(value)
+            for key, value in (
+                raw_agent_reasons.items()
+                if isinstance(raw_agent_reasons, Mapping)
+                else []
+            )
+        }
+        raw_classification = record.get("idiom_classification")
         candidates.append(
             IdiomCandidate(
                 candidate_id=f"judgment:{record.get('cluster_id')}",
@@ -48,6 +58,13 @@ def _from_judgment_artifact(
                 input_stage=3,
                 intent=_semantic_intent(record),
                 judgment_status=str(record.get("status") or ""),
+                judgment_reason=str(record.get("decision_reason") or ""),
+                idiom_classification=(
+                    dict(raw_classification)
+                    if isinstance(raw_classification, Mapping)
+                    else {}
+                ),
+                agent_reasons=agent_reasons,
                 placeholders=approved_proposals,
                 judgment_evidence={
                     "rules": record.get("rules"),
@@ -59,6 +76,11 @@ def _from_judgment_artifact(
                     "abstraction_applied": record.get(
                         "abstraction_applied"
                     ),
+                    "decision_reason": record.get("decision_reason"),
+                    "idiom_classification": record.get(
+                        "idiom_classification"
+                    ),
+                    "agent_reasons": record.get("agent_reasons"),
                 },
             )
         )

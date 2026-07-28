@@ -20,6 +20,12 @@ from ..idiom_judgment.smell_review_agent import (
     SmellReviewResult,
 )
 from ..idiom_judgment.smell_taxonomy import build_smell_gate
+from ..idiom_judgment.idiom_taxonomy import (
+    IDIOM_TAXONOMY_VERSION,
+    KNOWN_IDIOM_TYPES,
+    REPOSITORY_SPECIFIC_IDIOM_LABEL,
+    empty_idiom_classification,
+)
 from .assembly_agent import (
     IDIOM_ASSEMBLY_PROMPT_SHA256,
     IDIOM_ASSEMBLY_PROMPT_VERSION,
@@ -101,6 +107,7 @@ def decide_synthesis_status(
     syntax_valid: bool,
     unsupported_calls: Sequence[str],
     context_contract_valid: bool,
+    review_is_idiom: bool,
     quality_score: float,
     improves_quality: bool,
     preserves_intents: bool,
@@ -116,6 +123,8 @@ def decide_synthesis_status(
         return "rejected", "合成结果包含输入习语和允许上下文之外的新增操作。"
     if not context_contract_valid:
         return "rejected", "未能提供通过来源校验的同代表区域上下文。"
+    if not review_is_idiom:
+        return "rejected", "质量有效性 Agent 判断合成结果不属于代码习语。"
     if not preserves_intents:
         return "rejected", "合成结果未忠实保留来源习语意图。"
     if not improves_quality:
@@ -168,6 +177,13 @@ class IdiomSynthesisPipeline:
                 ),
             },
             "max_group_candidates": self.max_group_candidates,
+            "idiom_taxonomy": {
+                "version": IDIOM_TAXONOMY_VERSION,
+                "known_type_count": len(KNOWN_IDIOM_TYPES),
+                "repository_specific_label": (
+                    REPOSITORY_SPECIFIC_IDIOM_LABEL
+                ),
+            },
             "prompt_contracts": {
                 "planning": {
                     "version": SYNTHESIS_PLANNING_PROMPT_VERSION,
@@ -235,6 +251,9 @@ class IdiomSynthesisPipeline:
             "input_stage": candidate.input_stage,
             "intent": candidate.intent,
             "judgment_status": candidate.judgment_status,
+            "judgment_reason": candidate.judgment_reason,
+            "idiom_classification": candidate.idiom_classification,
+            "agent_reasons": candidate.agent_reasons,
             "loc_label": candidate.loc_label,
         }
 
@@ -517,7 +536,20 @@ class IdiomSynthesisPipeline:
                 available_context,
                 *[candidate.code for candidate in selected],
             ][:5],
-            deterministic_evidence=deterministic,
+            deterministic_evidence={
+                **deterministic,
+                "source_judgments": [
+                    {
+                        "candidate_id": candidate.candidate_id,
+                        "judgment_reason": candidate.judgment_reason,
+                        "idiom_classification": (
+                            candidate.idiom_classification
+                        ),
+                        "agent_reasons": candidate.agent_reasons,
+                    }
+                    for candidate in selected
+                ],
+            },
         )
 
         review_result, smell_result = await asyncio.gather(
@@ -544,11 +576,15 @@ class IdiomSynthesisPipeline:
             raise review_result
         if isinstance(review_result, BaseException):
             review_result = SynthesisReviewResult(
+                is_idiom=False,
                 quality_score=0.0,
                 improves_quality=False,
                 preserves_intents=False,
                 unsupported_additions=[],
                 issues=["质量复审 Agent Runtime 路由失败"],
+                idiom_classification=empty_idiom_classification(
+                    "Runtime 路由失败，未执行合成习语类型判断。"
+                ),
                 reason="不能自动确认合成质量，采用安全拒绝。",
                 call_status="failed",
                 call_attempts=0,
@@ -579,6 +615,7 @@ class IdiomSynthesisPipeline:
             syntax_valid=syntax_valid,
             unsupported_calls=unsupported_calls,
             context_contract_valid=context_contract_valid,
+            review_is_idiom=review_result.is_idiom,
             quality_score=review_result.quality_score,
             improves_quality=review_result.improves_quality,
             preserves_intents=review_result.preserves_intents,
@@ -605,6 +642,10 @@ class IdiomSynthesisPipeline:
                     f"代码异味风险分 {smell_result.risk_score:.2f} "
                     f"达到独立过滤阈值；类别：{categories}。"
                 )
+        reason = (
+            f"{reason} 质量复审依据：{review_result.reason} "
+            f"异味审查依据：{smell_result.reason}"
+        ).strip()
         return SynthesisResult(
             project=project,
             status=status,

@@ -29,13 +29,13 @@ _SYSTEM_MESSAGE = build_json_system_prompt(
         "不得为追求完整而改变原始行为或掩盖冲突。",
     ),
     field_rules=(
-        "added_from_context 和 reason 使用中文。",
+        "added_from_context 和 reason 使用中文，reason 必须说明组装依据且不得为空。",
     ),
     stop_rules=(
         "计划冲突或证据不足时 merged_code 返回空字符串，并在 reason 中说明。",
     ),
 )
-IDIOM_ASSEMBLY_PROMPT_VERSION = 2
+IDIOM_ASSEMBLY_PROMPT_VERSION = 3
 IDIOM_ASSEMBLY_PROMPT_SHA256 = hashlib.sha256(
     _SYSTEM_MESSAGE.encode("utf-8")
 ).hexdigest()
@@ -123,6 +123,17 @@ class IdiomAssemblyAgent(JsonLLMAgent):
                 failure_kind=trace.failure_kind,
             )
         used_context = bool(data.get("used_context"))
+        reason = str(data.get("reason") or "").strip()
+        if not reason:
+            return IdiomAssemblyResult(
+                merged_code="",
+                used_context=False,
+                added_from_context=[],
+                reason="组装响应缺少有效依据，采用安全停止。",
+                call_status="failed",
+                call_attempts=trace.attempts,
+                failure_kind="invalid_domain_payload",
+            )
         return IdiomAssemblyResult(
             merged_code=str(data.get("merged_code") or "").strip(),
             used_context=used_context,
@@ -132,7 +143,7 @@ class IdiomAssemblyAgent(JsonLLMAgent):
             ]
             if used_context
             else [],
-            reason=str(data.get("reason") or ""),
+            reason=reason,
             call_status=trace.status,
             call_attempts=trace.attempts,
             failure_kind=trace.failure_kind,

@@ -10,6 +10,12 @@ from .pipeline import (
     build_judgment_scorecard,
     decide_judgment_status,
 )
+from .idiom_taxonomy import (
+    IDIOM_TAXONOMY_VERSION,
+    KNOWN_IDIOM_TYPES,
+    REPOSITORY_SPECIFIC_IDIOM_LABEL,
+    IdiomClassification,
+)
 from .rules import evaluate_cluster_rules
 from .schema import (
     AbstractionProposal,
@@ -30,6 +36,10 @@ __all__ = [
     "AbstractionProposal",
     "ClusterCandidate",
     "RuleAssessment",
+    "IDIOM_TAXONOMY_VERSION",
+    "KNOWN_IDIOM_TYPES",
+    "REPOSITORY_SPECIFIC_IDIOM_LABEL",
+    "IdiomClassification",
     "SMELL_REJECTION_THRESHOLD",
     "SMELL_TAXONOMY_VERSION",
     "SmellFinding",

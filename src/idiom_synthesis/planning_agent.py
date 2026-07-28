@@ -28,13 +28,16 @@ _SYSTEM_MESSAGE = build_json_system_prompt(
         "阶段2合同候选若用于离线逻辑验证必须更保守，不得把聚类频率当成习语质量；正式流程不执行该分支。",
     ),
     field_rules=(
-        "synthesis_goal、ordering_constraints、expected_improvement 和 reason 使用中文。",
+        (
+            "synthesis_goal、ordering_constraints、expected_improvement 和 "
+            "reason 使用中文；reason 必须说明选择或停止依据且不得为空。"
+        ),
     ),
     stop_rules=(
         "找不到至少两个互补候选时 should_synthesize 为 false、selected_indices 为空。",
     ),
 )
-SYNTHESIS_PLANNING_PROMPT_VERSION = 2
+SYNTHESIS_PLANNING_PROMPT_VERSION = 3
 SYNTHESIS_PLANNING_PROMPT_SHA256 = hashlib.sha256(
     _SYSTEM_MESSAGE.encode("utf-8")
 ).hexdigest()
@@ -137,6 +140,19 @@ class SynthesisPlanningAgent(JsonLLMAgent):
         should_synthesize = bool(data.get("should_synthesize")) and len(indices) >= 2
         if not should_synthesize:
             indices = []
+        reason = str(data.get("reason") or "").strip()
+        if not reason:
+            return SynthesisPlanningResult(
+                should_synthesize=False,
+                selected_indices=[],
+                synthesis_goal="",
+                ordering_constraints=[],
+                expected_improvement="",
+                reason="规划响应缺少有效判断理由，采用安全停止。",
+                call_status="failed",
+                call_attempts=trace.attempts,
+                failure_kind="invalid_domain_payload",
+            )
         return SynthesisPlanningResult(
             should_synthesize=should_synthesize,
             selected_indices=indices,
@@ -146,7 +162,7 @@ class SynthesisPlanningAgent(JsonLLMAgent):
                 for value in (data.get("ordering_constraints") or [])
             ],
             expected_improvement=str(data.get("expected_improvement") or ""),
-            reason=str(data.get("reason") or ""),
+            reason=reason,
             call_status=trace.status,
             call_attempts=trace.attempts,
             failure_kind=trace.failure_kind,

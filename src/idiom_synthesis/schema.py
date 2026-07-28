@@ -5,8 +5,14 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Mapping, Sequence
 
+from ..idiom_judgment.idiom_taxonomy import (
+    CATALOGED_IDIOM_KIND,
+    NOT_APPLICABLE_IDIOM_KIND,
+    REPOSITORY_SPECIFIC_IDIOM_KIND,
+    empty_idiom_classification,
+)
 
-IDIOM_SYNTHESIS_SCHEMA_VERSION = 6
+IDIOM_SYNTHESIS_SCHEMA_VERSION = 7
 SYNTHESIS_ARTIFACT_SEMANTICS = "synthesis_delta"
 
 
@@ -29,6 +35,9 @@ class IdiomCandidate:
     input_stage: int
     intent: str = ""
     judgment_status: str = ""
+    judgment_reason: str = ""
+    idiom_classification: Dict[str, Any] = field(default_factory=dict)
+    agent_reasons: Dict[str, str] = field(default_factory=dict)
     placeholders: List[Dict[str, Any]] = field(default_factory=list)
     judgment_evidence: Dict[str, Any] = field(default_factory=dict)
 
@@ -89,6 +98,35 @@ class SynthesisResult:
         loc_labels = sorted(
             {candidate.loc_label for candidate in self.selected if candidate.loc_label}
         )
+        classification = self.review.get("idiom_classification")
+        if not isinstance(classification, Mapping):
+            classification = asdict(
+                empty_idiom_classification(
+                    "尚未执行或未通过合成结果习语类型复审。"
+                )
+            )
+        agent_reasons = {
+            "planning": str(self.plan.get("reason") or ""),
+            "assembly": str(self.assembly.get("reason") or ""),
+            "quality_review": str(self.review.get("reason") or ""),
+            "idiom_classification": str(
+                classification.get("reason") or ""
+            ),
+            "smell_review": str(self.smell.get("reason") or ""),
+        }
+        source_judgments = [
+            {
+                "candidate_id": candidate.candidate_id,
+                "judgment_status": candidate.judgment_status,
+                "intent": candidate.intent,
+                "judgment_reason": candidate.judgment_reason,
+                "idiom_classification": dict(
+                    candidate.idiom_classification
+                ),
+                "agent_reasons": dict(candidate.agent_reasons),
+            }
+            for candidate in self.selected
+        ]
         return {
             "idiom_synthesis_schema_version": IDIOM_SYNTHESIS_SCHEMA_VERSION,
             "project": self.project,
@@ -98,6 +136,7 @@ class SynthesisResult:
             "selected_candidate_ids": [
                 candidate.candidate_id for candidate in self.selected
             ],
+            "source_judgments": source_judgments,
             "input_stages": sorted(
                 {candidate.input_stage for candidate in self.selected}
             ),
@@ -114,6 +153,7 @@ class SynthesisResult:
             "synthesis_plan": self.plan,
             "assembly": self.assembly,
             "review": self.review,
+            "idiom_classification": dict(classification),
             "smell": self.smell,
             "smell_gate": self.smell_gate,
             "smell_review_input": self.smell_review_input,
@@ -121,6 +161,7 @@ class SynthesisResult:
             "scorecard": self.scorecard,
             "deterministic_checks": self.deterministic_checks,
             "decision_reason": self.decision_reason,
+            "agent_reasons": agent_reasons,
             "merge_rounds": 1,
             "synthesis_trace": [
                 {
@@ -158,6 +199,22 @@ def build_synthesis_artifact(
         )
     accepted = [record for record in records if record["status"] == "accepted"]
     rejected = [record for record in records if record["status"] == "rejected"]
+    classification_kind_counts = {
+        CATALOGED_IDIOM_KIND: 0,
+        REPOSITORY_SPECIFIC_IDIOM_KIND: 0,
+        NOT_APPLICABLE_IDIOM_KIND: 0,
+    }
+    catalog_type_counts: Dict[str, int] = {}
+    for record in accepted:
+        classification = record.get("idiom_classification") or {}
+        kind = str(classification.get("kind") or NOT_APPLICABLE_IDIOM_KIND)
+        classification_kind_counts[kind] = (
+            classification_kind_counts.get(kind, 0) + 1
+        )
+        for type_id in classification.get("catalog_ids") or []:
+            catalog_type_counts[str(type_id)] = (
+                catalog_type_counts.get(str(type_id), 0) + 1
+            )
     return {
         "artifact_type": "idiom_synthesis",
         "stage": 4,
@@ -188,6 +245,12 @@ def build_synthesis_artifact(
                 else None
             ),
             "passthrough_candidate_count": 0,
+            "accepted_classification_kind_counts": (
+                classification_kind_counts
+            ),
+            "accepted_catalog_type_counts": dict(
+                sorted(catalog_type_counts.items())
+            ),
             "technical_failure_count": sum(
                 any(
                     isinstance(trace, Mapping)
