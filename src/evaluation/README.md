@@ -16,6 +16,7 @@
   --mode within_project_file_split --test-fraction 0.2
 
 .venv/bin/python -m src.evaluation.baseline_validation --help
+.venv/bin/python -m src.evaluation.idiomine_cpp --help
 ```
 
 指标定义见[评价指标规范](../../docs/guides/evaluation-metrics.md)，复现实验见[baseline 规范](../../docs/guides/baselines.md)。

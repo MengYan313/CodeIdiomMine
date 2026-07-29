@@ -64,6 +64,87 @@ def _validate_output_selection_contract(
             raise ValueError("规则 baseline 组合截断参数无效")
         return dict(selection_rule)
 
+    if normalized_method.startswith("idiomine-cpp-"):
+        raise ValueError("不支持 IdioMine-CPP 派生方法名，仅支持单一正式名称")
+
+    if normalized_method.startswith("idiomine-cpp"):
+        output_selection = manifest.get("output_selection")
+        if not isinstance(output_selection, Mapping):
+            raise ValueError(f"{manifest_path} 缺少 output_selection")
+        if (
+            output_selection.get("policy")
+            != "accepted_independent_idioms_plus_direct_syntheses"
+        ):
+            raise ValueError("IdioMine-CPP 最终输出策略无效")
+        if output_selection.get("final_idiom_count_cap", "missing") is not None:
+            raise ValueError("IdioMine-CPP 不允许最终习语种类数量上限")
+
+        parameters = manifest.get("parameters")
+        if not isinstance(parameters, Mapping):
+            raise ValueError(f"{manifest_path} 缺少 IdioMine-CPP 参数")
+        if (
+            parameters.get("candidate_origin") != "semantic_def_use"
+            or parameters.get("analysis_version") != "def-use-v1"
+            or parameters.get("metric") != "cosine"
+            or not str(parameters.get("embedding_model") or "").strip()
+            or parameters.get("region_grouping")
+            != "exact_representative_project_file_function_extent"
+        ):
+            raise ValueError("IdioMine-CPP 的候选、embedding 或分组参数无效")
+        try:
+            eps = float(parameters["eps"])
+            min_samples = int(parameters["min_samples"])
+            token_budget = int(parameters["token_budget"])
+            max_output_tokens = int(parameters["max_output_tokens"])
+            max_examples = int(parameters["max_examples_per_judgment"])
+        except (KeyError, TypeError, ValueError) as error:
+            raise ValueError("IdioMine-CPP 参数不完整") from error
+        if (
+            not 0 < eps <= 1
+            or min_samples < 2
+            or token_budget < 1
+            or max_output_tokens < 1
+            or max_examples < 1
+        ):
+            raise ValueError("IdioMine-CPP 参数无效")
+
+        adaptation = manifest.get("adaptation")
+        if (
+            not isinstance(adaptation, Mapping)
+            or adaptation.get("claim")
+            != "simplified_cpp_migration_not_full_reproduction"
+        ):
+            raise ValueError("IdioMine-CPP 必须标明简化迁移边界")
+
+        pipeline = manifest.get("pipeline")
+        if not isinstance(pipeline, Mapping):
+            raise ValueError(f"{manifest_path} 缺少 IdioMine-CPP 流程")
+        if (
+            pipeline.get("judgment")
+            != "one_independent_call_per_candidate_cluster"
+            or pipeline.get("synthesis")
+            != "one_attempt_per_same_region_group_of_accepted_idioms"
+            or pipeline.get("post_synthesis_judgment") is not False
+            or pipeline.get("final_output")
+            != "accepted_independent_idioms_plus_direct_syntheses"
+        ):
+            raise ValueError("IdioMine-CPP 判断或合成顺序无效")
+        candidate_generation = manifest.get("candidate_generation")
+        candidate_selection = (
+            candidate_generation.get("output_selection")
+            if isinstance(candidate_generation, Mapping)
+            else None
+        )
+        if (
+            not isinstance(candidate_selection, Mapping)
+            or candidate_selection.get("policy")
+            != "all_non_noise_dbscan_clusters"
+        ):
+            raise ValueError("IdioMine-CPP 内部候选选择合同无效")
+        if manifest.get("token_budget_exhausted") is True:
+            raise ValueError("IdioMine-CPP token 预算耗尽，产物不完整")
+        return dict(output_selection)
+
     return {"policy": "method_specific", "final_idiom_count_cap": None}
 
 

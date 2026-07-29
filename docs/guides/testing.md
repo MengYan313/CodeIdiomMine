@@ -22,7 +22,7 @@
 
 测试覆盖 C++ Adapter、预处理续行遮蔽、扫描与 AST 提取、Parser token 预算与
 超长函数降级、embedding 合同、DBSCAN 自动调参、DBSCAN/HDBSCAN Schema、
-单簇习语判断、完整簇语义抽象决策、抽象拒绝后原样保留、二态评分裁决、
+多重可信门控、完整簇语义抽象决策、抽象拒绝后原样保留、二态评分裁决、
 阶段2合同适配与阶段3正式合成输入、自动代表区域上下文、
 通用习语/仓库特有习语开放分类、Agent 非空理由链、
 共享异味分类/独立门禁/事后审计、合成确定性门限、评价辅助函数、LLM
@@ -177,7 +177,7 @@ PKL 是阶段间的规范格式；不要用原样 CSV 替换嵌套 AST、tensor 
 `judgment`、`synthesis` 仍可读取旧 `*_idiom.pkl` 与 `*_idiom_syn.pkl`。
 这些导出都只读取本地文件，不会发起新的 LLM 请求。
 
-## 7. 习语判断与合成
+## 7. 多重可信门控与关联闭环融合
 
 无付费验证先运行：
 
@@ -270,7 +270,7 @@ token 用量和 `calibration_status`；在人工 pilot 完成前，状态应保�
 ```
 
 正式默认模式是仓库内参考/测量文件分区。待每个仓库使用全部合格源码完成
-Parser、embedding、逐仓聚类、习语判断和习语合成后，评价器按稳定哈希划分来源文件，
+Parser、embedding、逐仓聚类、多重可信门控和关联闭环融合后，评价器按稳定哈希划分来源文件，
 只用参考分区中的已发现实例构造匹配变体，在测量分区计算 IC 与 ISP。该分区不
 重新运行任何发现阶段。当前未参数化的候选通过保留关键字/运算符、抽象标识符和
 字面量的结构化词法签名匹配，并要求候选 AST 节点类型一致。v2 的
@@ -312,7 +312,9 @@ Parser、embedding、逐仓聚类、习语判断和习语合成后，评价器�
 
 ## 9. Baseline 与主方法的统一验证
 
-确定性离线集成测试会实际运行 Haggis-CPP、LLM-Direct-Budget（fake client）、规则+嵌入聚类，以及 CIMAS-CPP 的三 Agent 判断路径（fake client），并要求四种产物都通过同一个九指标合同：
+确定性离线集成测试会实际运行 Haggis-CPP、LLM-Direct-Budget（fake client）、
+规则+嵌入聚类、IdioMine-CPP（fake client），以及 CIMAS-CPP 的兼容判断产物，并要求五种
+产物都通过同一个九指标合同：
 
 ```bash
 .venv/bin/python -m unittest tests.evaluation.test_baselines -v
@@ -326,9 +328,25 @@ Parser、embedding、逐仓聚类、习语判断和习语合成后，评价器�
   --dataset outputs/cpp/dataset.pkl
 ```
 
-验证器拒绝 `mock_provenance`、空来源证据、`cnt` 不一致和缺失 baseline provenance；它还拒绝 Haggis/LLM 的最终种类数量上限，以及没有执行三段组合截断的旧规则配置。评价器直接接受各方法不同数量的完整产物，不要求公共 Top100 或相同习语种类数，并确认逐项目、仓库宏平均、全局三层都包含九项有限数值。各方法的定义、参数和完整命令见[Baseline 复现](baselines.md)。
+验证器拒绝 `mock_provenance`、空来源证据、`cnt` 不一致和缺失 baseline
+provenance；它还拒绝 Haggis/LLM/IdioMine-CPP 的最终种类数量上限、
+IdioMine-CPP 缺失 DCC-lite/DBSCAN/迁移声明、独立判断、精确同区域分组、
+直接合成或预算完整性
+证据的 manifest，以及没有执行三段
+组合截断的旧规则配置。评价器直接接受各方法不同数量的完整产物，不要求公共
+Top100 或相同习语种类数，并确认逐项目、仓库宏平均、全局三层都包含九项有限
+数值。各方法的定义、参数和完整命令见[Baseline 复现](baselines.md)。
 
-Haggis smoke 使用 `--max-functions-per-project`、较少 `--iterations` 和独立输出目录，参数必须标成 smoke；正式 Haggis 不限制最终习语种类数。LLM smoke 只使用合成代码，预先说明基础模型、最大逻辑调用数、JSON 修复上限、token 预算、可能费用和披露范围；正式 LLM-Direct 不限制最终习语种类数。CIMAS 的 `--limit` 只允许用于独立 smoke，正式结果必须省略。只有规则 baseline 使用“最小簇大小→比例→数量上限”的产物截断；`results/evaluation-mock/` 的历史 Top100 模拟不能伪装成任何正式方法产物。
+Haggis smoke 使用 `--max-functions-per-project`、较少 `--iterations` 和独立输出
+目录，参数必须标成 smoke；正式 Haggis 不限制最终习语种类数。LLM smoke 只使用
+合成代码，预先说明基础模型、最大逻辑调用数、JSON 修复上限、token 预算、可能
+费用和披露范围；正式 LLM-Direct 不限制最终习语种类数。IdioMine-CPP 可以
+复用缓存 embedding，不下载模型；embedding 模型、DCC-lite 候选版本和 DBSCAN
+参数必须写入最终 manifest。真实运行前还要使用 `--estimate-only` 审批模型、判断/合成
+调用上界、token 预算、费用和源码披露范围。CIMAS 的
+`--limit` 只允许用于独立 smoke，正式结果必须省略。只有规则 baseline 使用
+“最小簇大小→比例→数量上限”的产物截断；`results/evaluation-mock/` 的历史
+Top100 模拟不能伪装成任何正式方法产物。
 
 ## 10. 日志、产物和证据
 

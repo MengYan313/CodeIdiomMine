@@ -1,9 +1,10 @@
-# 习语判断与合成 Agent 架构
+# 可信门控与闭环融合 Agent 架构
 
-当前正式 Agent 流程按功能职责拆为两个领域包：
+论文方法将阶段3命名为“多重可信门控”，将阶段4命名为“关联闭环融合”。当前
+正式 Agent 流程按功能职责拆为两个沿用简洁工程命名的领域包：
 
-- `src/idiom_judgment/`：判断单个 DBSCAN 聚类簇能否成为代码习语；
-- `src/idiom_synthesis/`：尝试把同一区域内多个相关习语合成为质量更高的习语。
+- `src/idiom_judgment/`：实现多重可信门控，处理单个 DBSCAN 聚类簇；
+- `src/idiom_synthesis/`：实现关联闭环融合，处理同一区域内多个相关习语。
 
 `src/agents/` 只保留当前流程实际复用的 `BaseRoutedAgent`、结构化调用基类和
 注册函数。
@@ -46,7 +47,7 @@
 生成 `execution_status=contract_only_not_executed` 的空 artifact，不创建 Agent、
 不读取 API key，也不发起 LLM 调用。
 
-## 二、单簇习语判断
+## 二、多重可信门控
 
 ### 2.1 确定性规则
 
@@ -120,7 +121,7 @@ Schema v7 保存标准化 `idiom_classification`、各 Agent 的 `agent_reasons`
 汇总；仓库专属结果保留项目和阶段内记录作用域；全量分析使用二者并集，但不消除
 类别边界。
 
-## 三、多习语合成
+## 三、关联闭环融合
 
 ### 3.1 正式输入、合同适配与关系分组
 
@@ -254,13 +255,13 @@ Agent 的端点请求上限为4。有效业务结果中的 `keep`、低分、无
 `calibration_status=synthetic_smoke_only_pilot_required`。这避免把当前 synthetic
 smoke 误写为阈值已经经过人工 pilot 冻结；正式实验仍必须完成盲审校准。
 
-规则预检不需要模型。正常路径中，完整习语判断每个合格簇发起2个并行逻辑调用；
-习语合成每组最多发起规划、组装、质量复审和共享异味审查4个逻辑调用。最坏情况下
+规则预检不需要模型。正常路径中，多重可信门控每个合格簇发起2个并行逻辑调用；
+关联闭环融合每组最多发起规划、组装、质量复审和共享异味审查4个逻辑调用。最坏情况下
 每个 Agent 各产生4次端点请求，但规划或组装耗尽时会跳过下游，避免继续付费调用。
 
 运行命令分别见：
 
-- [习语判断 README](../../src/idiom_judgment/README.md)
-- [习语合成 README](../../src/idiom_synthesis/README.md)
+- [多重可信门控 README](../../src/idiom_judgment/README.md)
+- [关联闭环融合 README](../../src/idiom_synthesis/README.md)
 
 [Agent README](../../src/agents/README.md) 说明公共基础设施边界。

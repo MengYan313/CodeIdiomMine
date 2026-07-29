@@ -15,11 +15,11 @@
 - [C++ 数据集 Parser 优化与回归](guides/cpp-dataset-parser-regression.md)：27 个候选的修改前基线、通用扫描与路径修正、优化后全量结果和确定性证据。
 - [阶段2 Embedding 与聚类验收](guides/stage2-acceptance.md)：Embedding 合同、聚类有效性、头部候选质量、逐仓警告与结束判定。
 - [评价指标规范](guides/evaluation-metrics.md)：最终指标分类、公式、聚合方式、解释边界与变更控制。
-- [baseline 复现](guides/baselines.md)：三条 baseline、CIMAS-CPP、统一产物合同、运行命令与验证状态。
+- [baseline 复现](guides/baselines.md)：四条 baseline、CIMAS-CPP、统一产物合同、运行命令与验证状态。
 - [本地验证指南](guides/testing.md)：从自动化测试到完整流水线的验证顺序。
 - [本地开发基线](guides/local-baseline.md)：已验证环境、实际产物、错误证据和延期事项。
-- [习语判断与合成 Agent 架构](guides/agent-system.md)：规则前置抽象决策、多习语合成、确定性门禁和 Agent 失败恢复矩阵。
-- [习语判断与合成开发契约](guides/agent-contracts.md)：修改规则、抽象、重试、回退或 Agent 时必须保持的行为约束。
+- [可信门控与闭环融合 Agent 架构](guides/agent-system.md)：多重可信门控、关联闭环融合、确定性门禁和 Agent 失败恢复矩阵。
+- [可信门控与闭环融合开发契约](guides/agent-contracts.md)：修改规则、抽象、重试、回退或 Agent 时必须保持的行为约束。
 - [C++习语类型目录与开放分类合同](guides/idiom-taxonomy.md)：目录化通用习语、仓库专属习语、全量联合视图、分类理由和 Schema v7 审计字段。
 - [C++代码异味审查与事后审计](guides/code-smell-review.md)：共享分类表、独立过滤门禁、人工标签与逐类别准确性指标。
 

@@ -1084,6 +1084,120 @@ token；发现来源理由只能从嵌套异味输入读取后，新增顶层 `s
 视图”。这一定位区分了“仓库隔离发现”和“下游知识组织”，不恢复跨仓库候选
 混合、留一仓库挖掘或未知仓库泛化评价。
 
+### 2026-07-29 Sol 6.1 IdioMine-CPP 简化迁移与26仓调用估算
+
+项目版本升级到 `Sol 6.1`。本次发布增加 IdioMine 核心操作的 C++ 简化迁移、
+独立 ChatGPT 判断与同区域直接合成流程，接入统一九指标合同；同时将本文阶段3和
+阶段4的论文名称固定为“多重可信门控”和“关联闭环融合”，工程包、CLI、Schema
+及产物文件名继续沿用既有简洁标识。
+
+新增单一公开入口 `src.evaluation.idiomine_cpp` 作为第四条正式 baseline；
+DCC-lite 与 DBSCAN 候选生成只作为该入口的私有实现步骤。方法来源固定为
+IdioMine [E006]、DOI `10.1145/3597503.3639135`，代码分析固定参考作者仓库
+commit `b9961c9fe85203eff16351d470b11b381572467f`。原方法的核心链路为 Java
+DvCFG、Data-driven Control Chain（DCC）子习语、GraphCodeBERT 表示、DBSCAN、
+同函数子习语关联，以及 ChatGPT 合成与判断。当前 C++ 入口保留下列操作：
+
+- 使用 Parser `semantic_def_use + def-use-v1` 片段近似 DCC，明确命名为
+  DCC-lite，不声称具备精确控制依赖；
+- 复用已有 `embeddings.pkl` 中的实际预训练模型表示，并在 manifest 与记录中
+  保存模型名；
+- 对每个仓库独立执行余弦 DBSCAN，并保留全部非噪声簇作为判断前候选；
+- 对每个候选簇执行一次相互独立的 ChatGPT 结构化判断，只接受
+  `is_idiom=true`；
+- 只把代表位置的 `project + file + function_extent` 完全相同视为同一区域，对
+  每个至少含两个已接受习语的组尝试一次 ChatGPT 合成；
+- `can_synthesize=true` 且代码非空的合成结果直接作为习语，不执行合成后复审；
+  最终集合为全部独立判断通过项与全部成功合成项，不设 Top-K 或数量上限。
+
+Java DvCFG、精确 DCC、原作者实现的字符串关联启发式、多 Agent 分类/评分/异味
+门禁和合成后再判断均被省略。最终 manifest 的 adaptation claim 固定为
+`simplified_cpp_migration_not_full_reproduction`；正式比较方法必须写作
+`IdioMine-CPP`，不能拆分为额外方法，也不能用判断前候选诊断替代最终判断与
+合成指标。
+
+本次复用26个冻结仓库已缓存的 UniXcoder embedding，没有下载模型、发起网络
+请求或调用付费 LLM。使用单一入口的 `--estimate-only` 只完成候选发现与调用
+估算，不发送源码：
+
+```bash
+idiomine_embedding_args=()
+for path in outputs/experiments/repo-isolated-v1/repos/*/stage2/embeddings.pkl
+do
+  idiomine_embedding_args+=(--embeddings "$path")
+done
+.venv/bin/python -m src.evaluation.idiomine_cpp \
+  "${idiomine_embedding_args[@]}" \
+  --embedding-model microsoft/unixcoder-base \
+  --eps 0.25 --min-samples 2 \
+  --estimate-only --max-output-tokens 512 --max-examples-per-judgment 5
+
+.venv/bin/python -m unittest \
+  tests.evaluation.test_idiomine_cpp \
+  tests.evaluation.test_baselines -v
+```
+
+233,912 个输入候选中有8,413个符合 DCC-lite 合同，0个 embedding 无效；
+DBSCAN 产生1,083个非噪声簇、4,796个噪声候选，非噪声簇共有3,617个去重实例。
+这些数字只描述 IdioMine-CPP 内部的判断前候选供给，不是独立方法结果，也不计算
+或报告单独的九指标。该运行完整处理26仓，但当前参数只沿用工程默认值，尚未完成
+预注册；不能根据最终 IC、ISP、F1 或人工标签回调 `eps`、`min_samples` 或候选
+规则。
+
+离线估算读取了全部1,083个候选簇：需要1,083次独立判断；按全部候选均通过的
+保守上界，并用与代表代码对应的来源位置分组，共有122个同区域组可能触发合成，
+因此逻辑调用上界为1,205次。如果每次结构化调用都触发一次共享 JSON 修复，端点
+请求上界为2,410次。判断与合成主请求的估算输入 token（含各自 JSON Schema）为
+1,149,282；按每次预留512个输出 token 后，主请求输入输出预算上界为1,766,242
+token，不含可能发生的 JSON 修复请求。
+默认模型为 `gpt-5.6-luna`。中转服务没有可核验的精确价格，真实26仓运行必须
+另行确认预算。输入来自已冻结的26个公开仓库，但源码片段仍会发送到配置端点。
+
+用户批准少量真实付费测试后，先尝试从 `entt` 判断前候选中选择3个，其中2个
+代表位置相同。受限网络内的3次请求均返回 `APIConnectionError`，没有有效模型
+响应；提升权限发送仓库片段被安全审查拒绝，因此没有继续发送真实仓库源码。该
+失败证据保存在已忽略的历史 smoke 目录，不能作为模型结果。
+
+随后只用完全合成的 C++ 代码完成两次真实 smoke，模型均为
+`gpt-5.6-luna`：
+
+- 第一批执行3次独立判断，模型把资源获取、释放和普通返回三个过短候选全部拒绝，
+  因此按流程执行0次合成；共3次端点请求、近似1,269 token，无修复或技术失败；
+- 第二批使用两个各含3个重复示例的并发候选，2/2独立判断通过，同一区域的1/1组
+  合成成功并直接接受；共3次端点请求、近似1,795 token，无修复或技术失败，
+  最终输出2个独立习语和1个合成习语。
+
+两批有效真实 smoke 合计6次端点请求和近似3,064 token；中转服务未提供精确
+账单，因此不声称具体费用。第二批产物通过统一九指标合同：
+
+| 指标 | 合成 smoke |
+|---|---:|
+| `IC_macro` | 0.0000 |
+| `IC_micro` | 0.0000 |
+| `IC` | 0.0000 |
+| `ISP` | 0.0000 |
+| `F1` | 0.0000 |
+| `idiom_type_count` | 3 |
+| `avg_cluster_size` | 2.6667 |
+| `avg_cross_file_support` | 1.0000 |
+| `AvgAST` | 9.0000 |
+
+覆盖与复现指标为0是因为 smoke 只有一个合成文件，稳定分区后没有参考文件；这些
+数值只证明“判断→同区域合成→直接接受→九指标”路径可执行，不是方法质量结论。
+输入、决策、产物和 `eval.json` 位于已忽略的历史 smoke 目录。
+
+确定性 fake client 测试现实际运行四条 baseline，并用兼容主方法产物验证
+CIMAS-CPP；五种方法均在逐项目、仓库宏平均和全局层具备全部九项有限指标。
+IdioMine-CPP 专项测试覆盖3次独立判断、同区域2个已接受习语的1次直接
+合成、拒绝项不参与合成、合成后不复审，以及所有判断/合成理由的审计落盘。
+统一验证器在同一 IdioMine-CPP manifest 中校验 DCC-lite、embedding、DBSCAN、
+独立判断、精确同区域分组、直接接受、迁移声明和预算完整性合同。
+
+本轮最终通过 `.venv/bin/python -m pip check`、`src` 与 `tests` 全量
+`compileall`、全部95项确定性离线 `unittest`、单一 IdioMine-CPP CLI 的
+`--help` 和
+`git diff --check`。未修改共享基础设施，因此不需要执行双仓共享文件同步检查。
+
 ## 当前阻碍与延期工作
 
 1. 中转端点、凭据加载、Luna JSON 模式以及当前二态评分、自动上下文、共享异味
@@ -1095,9 +1209,11 @@ token；发现来源理由只能从嵌套异味输入读取后，新增顶层 `s
    UniXcoder embedding、DBSCAN 默认基线、HDBSCAN 对照和单一 DBSCAN 最终
    聚类。历史
    三个快照上的 96,039 个片段仍只作旧语料证据，不得与新正式产物混用。
-3. Baseline 实现和有界验证已获授权并完成，固定源码 commit 与总语料 manifest
-   也已形成。完整 CIMAS token 测量及源码披露/成本决策属于后续付费 Agent
-   运行门槛；后续应先由习语判断逐仓消费 `clustering-final/clusters.pkl`，
+3. Baseline 实现和有界验证已获授权并完成，IdioMine-CPP 的26仓判断前候选
+   统计、固定源码 commit、总语料 manifest 及调用估算也已形成。26仓真实判断/
+   合成、完整四条 baseline 的全仓正式重复和
+   CIMAS token 测量及源码披露/成本决策属于后续付费 Agent 运行门槛；后续应先由
+   习语判断逐仓消费 `clustering-final/clusters.pkl`，
    习语合成再消费其 `accepted` 产物；阶段2到阶段4只保留不启动 Agent 的合同
    适配，不执行后备或消融合成。不得根据最终 IC、ISP 或 F1 反向调整本轮算法
    与参数。
@@ -1106,7 +1222,10 @@ token；发现来源理由只能从嵌套异味输入读取后，新增顶层 `s
 
 ## 建议的下一项决策
 
-下一项实验级决策是先运行习语判断的离线规则预检，统计硬拒绝、
+IdioMine-CPP 的下一项实验级决策是是否批准默认低档模型的至多1,205次
+逻辑调用、2,410次含最坏修复的端点请求和约1.77M主请求 token 预留预算
+（JSON 修复另计）。CIMAS-CPP
+主线则仍应先运行习语判断的离线规则预检，统计硬拒绝、
 `pending_llm`、抽象提案和预计逻辑调用量，再估算 token、费用和源码披露量。
 随后才能决定是否执行正式单簇 LLM 判断及多习语合成。可以先使用少量公开仓库
 代表簇验证接受率和 Schema，但冒烟结果不得作为正式习语质量结论，也不得用于

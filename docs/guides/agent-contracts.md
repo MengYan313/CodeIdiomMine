@@ -1,6 +1,8 @@
-# 习语判断与合成开发契约
+# 可信门控与闭环融合开发契约
 
 设计见 [`agent-system.md`](agent-system.md)。修改相关代码时必须遵守以下合同。
+论文方法名为“多重可信门控”和“关联闭环融合”；代码包、CLI、Schema 与产物
+继续沿用 `idiom_judgment`、`idiom_synthesis`、`judgment` 和 `synthesis`。
 
 ## 公共 Agent 基础设施
 

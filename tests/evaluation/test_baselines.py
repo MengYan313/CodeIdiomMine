@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
+import numpy as np
 import pandas as pd
 
 from src.evaluation.baseline_common import FINAL_METRICS
@@ -14,6 +15,9 @@ from src.evaluation.baseline_validation import (
     validate_method_metrics,
 )
 from src.evaluation.haggis_cpp import mine_haggis_cpp
+from src.evaluation.idiomine_cpp import (
+    run_idiomine_cpp_baseline,
+)
 from src.evaluation.llm_direct_baseline import generate_llm_direct_budget
 from src.evaluation.rules_embedding_baseline import (
     _select_clusters,
@@ -150,6 +154,49 @@ def _fixture():
     return pd.DataFrame(rows), clusters, evidence_code
 
 
+def _idiomine_embedding_fixture(data):
+    rows = []
+    for _, row in data.iterrows():
+        project = row["project"]
+        files = row["cppFile"]
+        ast_a = row["func_ast"][0][0]
+        ast_b = row["func_ast"][1][0]
+        semantic_a = {
+            **ast_a[1],
+            "candidate_level": "region",
+            "candidate_origin": "semantic_def_use",
+            "analysis_version": "def-use-v1",
+        }
+        semantic_b = {
+            **ast_b[1],
+            "candidate_level": "region",
+            "candidate_origin": "semantic_def_use",
+            "analysis_version": "def-use-v1",
+        }
+        infos = [
+            [project, files[0], ast_a[0]["extent"], semantic_a],
+            [project, files[1], ast_b[0]["extent"], semantic_b],
+            [project, files[0], ast_a[0]["extent"], ast_a[0]],
+        ]
+        rows.append(
+            {
+                "pros_name": project,
+                "pros_src": [
+                    semantic_a["code_snippet"],
+                    semantic_b["code_snippet"],
+                    ast_a[0]["code_snippet"],
+                ],
+                "pros_emb": [
+                    np.array([[1.0, 0.01, 0.0]]),
+                    np.array([[1.0, 0.02, 0.0]]),
+                    np.array([[0.0, 1.0, 0.0]]),
+                ],
+                "pros_info": infos,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
 class _QueuedJsonClient:
     def __init__(self, responses):
         self.responses = list(responses)
@@ -198,6 +245,120 @@ class BaselineEndToEndTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "参数无效"):
                 _validate_output_selection_contract(
                     "rules-embedding-clustering",
+                    root,
+                    require_baseline_provenance=True,
+                )
+
+            manifest_path.write_text(
+                json.dumps(
+                    {
+                        "parameters": {
+                            "candidate_origin": "semantic_def_use",
+                            "analysis_version": "def-use-v1",
+                            "embedding_model": "synthetic",
+                            "eps": 0.25,
+                            "min_samples": 2,
+                            "metric": "cosine",
+                            "region_grouping": (
+                                "exact_representative_project_file_function_extent"
+                            ),
+                            "token_budget": 10_000,
+                            "max_output_tokens": 256,
+                            "max_examples_per_judgment": 5,
+                        },
+                        "output_selection": {
+                            "policy": (
+                                "accepted_independent_idioms_plus_direct_syntheses"
+                            ),
+                            "final_idiom_count_cap": 100,
+                        },
+                        "adaptation": {
+                            "claim": (
+                                "simplified_cpp_migration_not_full_reproduction"
+                            )
+                        },
+                        "pipeline": {
+                            "judgment": (
+                                "one_independent_call_per_candidate_cluster"
+                            ),
+                            "synthesis": (
+                                "one_attempt_per_same_region_group_of_accepted_idioms"
+                            ),
+                            "post_synthesis_judgment": False,
+                            "final_output": (
+                                "accepted_independent_idioms_plus_direct_syntheses"
+                            ),
+                        },
+                        "candidate_generation": {
+                            "output_selection": {
+                                "policy": "all_non_noise_dbscan_clusters"
+                            }
+                        },
+                        "token_budget_exhausted": False,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "不允许"):
+                _validate_output_selection_contract(
+                    "idiomine-cpp",
+                    root,
+                    require_baseline_provenance=True,
+                )
+
+            manifest_path.write_text(
+                json.dumps(
+                    {
+                        "parameters": {
+                            "candidate_origin": "semantic_def_use",
+                            "analysis_version": "def-use-v1",
+                            "embedding_model": "synthetic",
+                            "eps": 0.25,
+                            "min_samples": 2,
+                            "metric": "cosine",
+                            "region_grouping": (
+                                "exact_representative_project_file_function_extent"
+                            ),
+                            "token_budget": 10_000,
+                            "max_output_tokens": 256,
+                            "max_examples_per_judgment": 5,
+                        },
+                        "adaptation": {
+                            "claim": (
+                                "simplified_cpp_migration_not_full_reproduction"
+                            )
+                        },
+                        "output_selection": {
+                            "policy": (
+                                "accepted_independent_idioms_plus_direct_syntheses"
+                            ),
+                            "final_idiom_count_cap": None,
+                        },
+                        "pipeline": {
+                            "judgment": (
+                                "one_independent_call_per_candidate_cluster"
+                            ),
+                            "synthesis": (
+                                "one_attempt_per_same_region_group_of_accepted_idioms"
+                            ),
+                            "post_synthesis_judgment": True,
+                            "final_output": (
+                                "accepted_independent_idioms_plus_direct_syntheses"
+                            ),
+                        },
+                        "candidate_generation": {
+                            "output_selection": {
+                                "policy": "all_non_noise_dbscan_clusters"
+                            }
+                        },
+                        "token_budget_exhausted": False,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "顺序无效"):
+                _validate_output_selection_contract(
+                    "idiomine-cpp",
                     root,
                     require_baseline_provenance=True,
                 )
@@ -289,15 +450,17 @@ class BaselineEndToEndTests(unittest.TestCase):
             manifest["estimated_input_output_tokens"], manifest["token_budget"]
         )
 
-    def test_three_baselines_and_main_method_share_all_nine_metrics(self):
+    def test_baselines_and_main_method_share_all_nine_metrics(self):
         data, clusters, evidence_code = _fixture()
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
             dataset_path = root / "dataset.pkl"
             clusters_path = root / "clusters.pkl"
+            embeddings_path = root / "embeddings.pkl"
             data.to_pickle(dataset_path)
             with clusters_path.open("wb") as file:
                 pickle.dump(clusters, file)
+            _idiomine_embedding_fixture(data).to_pickle(embeddings_path)
 
             rules_dir = root / "rules"
             self.assertEqual(
@@ -371,6 +534,32 @@ class BaselineEndToEndTests(unittest.TestCase):
             self.assertEqual(llm_counts, {"alpha": 2, "beta": 2, "gamma": 2})
             self.assertEqual(fake_client.calls, 6)
 
+            idiomine_dir = root / "idiomine"
+            idiomine_client = _QueuedJsonClient(
+                [
+                    {"is_idiom": True, "reason": "候选重复且意图完整。"},
+                    {"is_idiom": True, "reason": "候选重复且意图完整。"},
+                    {"is_idiom": True, "reason": "候选重复且意图完整。"},
+                ]
+            )
+            self.assertEqual(
+                asyncio.run(
+                    run_idiomine_cpp_baseline(
+                        [embeddings_path],
+                        idiomine_dir,
+                        embedding_model="synthetic-test-embedding",
+                        eps=0.1,
+                        min_samples=2,
+                        model="fake-low",
+                        token_budget=30_000,
+                        max_output_tokens=256,
+                        model_client=idiomine_client,
+                    )
+                ),
+                {"alpha": 1, "beta": 1, "gamma": 1},
+            )
+            self.assertEqual(idiomine_client.calls, 3)
+
             cimas_dir = root / "cimas"
             cimas_dir.mkdir()
             cimas_counts = {}
@@ -405,6 +594,7 @@ class BaselineEndToEndTests(unittest.TestCase):
                 ("haggis-cpp", haggis_dir, True),
                 ("llm-direct-budget", llm_dir, True),
                 ("rules-embedding-clustering", rules_dir, True),
+                ("idiomine-cpp", idiomine_dir, True),
                 ("cimas-cpp", cimas_dir, False),
             )
             for method, idiom_dir, require_provenance in method_inputs:
@@ -433,6 +623,11 @@ class BaselineEndToEndTests(unittest.TestCase):
             rules_manifest = json.loads(
                 (rules_dir / "baseline-manifest.json").read_text(encoding="utf-8")
             )
+            idiomine_manifest = json.loads(
+                (idiomine_dir / "baseline-manifest.json").read_text(
+                    encoding="utf-8"
+                )
+            )
             self.assertIsNone(
                 haggis_manifest["output_selection"]["final_idiom_count_cap"]
             )
@@ -454,6 +649,20 @@ class BaselineEndToEndTests(unittest.TestCase):
                     "selection_ratio": 0.5,
                 },
             )
+            self.assertIsNone(
+                idiomine_manifest["output_selection"]["final_idiom_count_cap"]
+            )
+            self.assertEqual(
+                idiomine_manifest["adaptation"]["claim"],
+                "simplified_cpp_migration_not_full_reproduction",
+            )
+            self.assertFalse(
+                idiomine_manifest["pipeline"]["post_synthesis_judgment"]
+            )
+            self.assertEqual(
+                idiomine_manifest["output_selection"]["policy"],
+                "accepted_independent_idioms_plus_direct_syntheses",
+            )
 
             with (rules_dir / "alpha_idiom.pkl").open("rb") as file:
                 rules_idioms = pickle.load(file)
@@ -462,6 +671,19 @@ class BaselineEndToEndTests(unittest.TestCase):
                 rules_idioms[0]["baseline_provenance"]["method"],
                 "rules_embedding_clustering",
             )
+            with (idiomine_dir / "alpha_idiom.pkl").open("rb") as file:
+                idiomine_idioms = pickle.load(file)
+            self.assertEqual(
+                idiomine_idioms[0]["baseline_provenance"]["method"],
+                "idiomine_cpp",
+            )
+            self.assertEqual(
+                idiomine_idioms[0]["baseline_provenance"][
+                    "candidate_provenance"
+                ]["embedding_model"],
+                "synthetic-test-embedding",
+            )
+            self.assertEqual(idiomine_idioms[0]["cnt"], 2)
 
 
 if __name__ == "__main__":

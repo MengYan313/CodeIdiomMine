@@ -1,15 +1,16 @@
 # 仓库架构
 
 CodeIdiomMine 从 C++ 仓库中提取候选 AST 片段，经代码嵌入和 DBSCAN 聚类后，
-由习语判断模块判断单个簇是否为代码习语，再由习语合成模块尝试把同一区域内
-相关习语合成为质量更高的模板。HDBSCAN 仅保留为阶段2对照实现。
+由阶段3“多重可信门控”筛选、抽象并定型单个候选簇，再由阶段4“关联闭环融合”
+把同一区域内具有明确关系的习语组织为质量更高的模板。工程代码包仍分别命名为
+`idiom_judgment` 和 `idiom_synthesis`。HDBSCAN 仅保留为阶段2对照实现。
 
 本文描述当前实现。论文研究路线位于 `docs/research/`，不作为现有代码必须满足的规格。
 
 ## 最高优先级架构不变量：仓库隔离挖掘
 
 每个 C++ 仓库是完整且独立的挖掘单元。Parser、片段构建、embedding、聚类、
-习语判断、习语合成和评价必须按仓库分别执行和保存；任何两个仓库的候选、向量或聚类
+多重可信门控、关联闭环融合和评价必须按仓库分别执行和保存；任何两个仓库的候选、向量或聚类
 输入都不得合并。单仓库完整合格源码是发现阶段的语料边界，不在 embedding 或
 聚类前拆为训练、开发、测试区域。
 
@@ -72,7 +73,7 @@ Parser 基础结果的门禁。任何后端失败都应以能力掩码、诊断�
 | `src/idiom_judgment/` | 单簇合同/低价值规则、保守抽象提案、经哈希验证的代表区域上下文、语义/复用价值业务评分、目录化通用习语与仓库专属习语分类、共享异味分类与独立门禁、Agent 理由链、失败回退和事后审计 |
 | `src/idiom_synthesis/` | 阶段3正式输入、阶段2合同适配、严格同代表区域分组、自动验证上下文、合成规划、代码组装、对当前结果重新执行质量与习语类型复审、理由链、合成增量产物、组级跳过，以及独立执行的共享异味门禁 |
 | `src/agents/` | 当前判断与合成流程复用的 Agent 基类、结构化调用状态和注册函数 |
-| `src/evaluation/` | 固定评价指标、三条 baseline、统一产物/指标合同、按仓库与全局聚合及明确标注的离线模拟验证 |
+| `src/evaluation/` | 固定评价指标、四条 baseline、统一产物/指标合同、按仓库与全局聚合及明确标注的离线模拟验证 |
 | `src/llm/` | 两项目统一的模型分档、`.env`、AutoGen 客户端、JSON schema/单次修复与轻量对话封装 |
 | `src/utils/` | 原始 pickle/CSV 转换和流水线可读 JSON 投影 |
 | `tests/` | 与上述九个源码子包一一对应的离线自动化测试 |
@@ -89,8 +90,8 @@ repos/<project>/...
   -> outputs/cpp/<project>/clusters.pkl             # DBSCAN 正式聚类出口
        \-> outputs/cpp/<project>/dbscan-tuning.json # 无监督参数选择证据
        \-> outputs/cpp/<project>/readables/...
-  -> outputs/cpp/<project>/idiom-judgment.pkl     # 单簇判断，阶段3
-  -> results/cpp/<project>/idiom-synthesis.pkl    # 多习语合成，阶段4
+  -> outputs/cpp/<project>/idiom-judgment.pkl     # 多重可信门控，阶段3
+  -> results/cpp/<project>/idiom-synthesis.pkl    # 关联闭环融合，阶段4
   -> results/cpp/<project>/eval.json
 ```
 
@@ -113,7 +114,14 @@ repos/<project>/...
 
 指标的正式公式、统计单位、仓库宏平均、全局汇总和解释边界统一见[评价指标规范](evaluation-metrics.md)；其他文档只保留入口或实验记录，不另行定义不同口径。
 
-三条正式 baseline 分别由 `haggis_cpp.py`、`llm_direct_baseline.py` 和 `rules_embedding_baseline.py` 生成与判断阶段兼容的 `*_idiom.pkl`。`baseline_common.py` 维护公共记录与九指标名单，`baseline_validation.py` 拒绝 mock/不完整证据并调用现有评价器。方法定义、算法适配边界和完整命令见[Baseline 复现](baselines.md)。
+四条正式 baseline 分别由 `haggis_cpp.py`、`llm_direct_baseline.py`、
+`rules_embedding_baseline.py` 和 `idiomine_cpp.py` 生成与判断阶段兼容的
+`*_idiom.pkl`。`idiomine_cpp.py` 在单一入口内复用 `semantic_def_use`
+片段作为 DCC-lite 候选，按仓库独立执行 DBSCAN，再逐簇独立判断，并只对代表
+位置完全相同的已接受习语尝试一次直接合成。候选聚类是私有实现步骤，不构成
+额外 baseline。`baseline_common.py` 维护公共记录与九指标名单，
+`baseline_validation.py` 拒绝 mock/不完整证据并调用现有评价器。方法定义、
+算法适配边界和完整命令见[Baseline 复现](baselines.md)。
 
 这些 pickle schema 是阶段间接口。Parser v2 不改变四列外层 Schema，
 并保留历史 `extent` 和 `ast_num`；`mapping_version=2`、字节范围、文件身份、
@@ -143,15 +151,15 @@ Parser 长度降级见[C++ Adapter 与模型输入治理](cpp-adapter-and-model-
 
 `repos`、`outputs/cpp` 和 `results/cpp` 中的 `cpp` 是固定的现有产物命名空间，不是可切换语言参数。扫描器接受 `.c`、`.cc`、`.cpp`、`.cxx`、`.c++`、`.h`、`.hh`、`.hpp` 和 `.hxx`，具体清洗规则及排除计数以源码和 `dataset.audit.json` 为准。`repo2data --project <目录名>` 可从多项目输入根中精确选择一个或多个项目，不构成语言选择器。重新引入其他语言属于新的架构变更，不能通过增加一个 CLI 选项或静默回退实现。
 
-## 习语判断与合成 Agent
+## 可信门控与闭环融合 Agent
 
 两个领域包均基于 `autogen_core` 的 `RoutedAgent`、强类型 dataclass 消息和
 `SingleThreadedAgentRuntime`，不是 `autogen_agentchat`。
 
-- 习语判断：确定性规则与抽象提案先运行，编排层验证代表函数/区域上下文后，
+- 多重可信门控（`idiom_judgment`）：确定性规则与抽象提案先运行，编排层验证代表函数/区域上下文后，
   语义/复用价值 Agent 和共享代码异味 Agent 并行；业务评分与不可抵消的异味
   门禁自动给出二态结果。
-- 习语合成：阶段3已接受产物 → 完全相同代表区域分组 → 自动加载同区域上下文
+- 关联闭环融合（`idiom_synthesis`）：阶段3已接受产物 → 完全相同代表区域分组 → 自动加载同区域上下文
   → 合成规划 → 代码组装
   → 质量/共享异味并行复审；异味针对当前合成代码独立重审且不进入质量分。
   输出为不含阶段3透传项的合成增量。阶段2只运行不调用 Agent 的适配合同测试，
