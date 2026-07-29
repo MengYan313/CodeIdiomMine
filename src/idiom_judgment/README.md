@@ -4,7 +4,8 @@
 `idiom_judgment`。它只处理单个仓库内的单个聚类簇，先执行确定性
 合同和低价值规则过滤，再由抽象规则筛出仅涉及高频、结构对齐、低语义元素的
 候选位置。编排层可按 `center_point_info` 自动读取并校验代表函数/区域上下文；
-语义/抽象 Agent 随后接收代表代码、完整簇成员、规则初判、全部提案和该上下文，
+语义/抽象 Agent 随后接收代表代码、按 C++ 词法 token 去重后的其他真实变体、
+原始成员数/变体数/文件数/源码位置数、规则初判和全部提案，
 显式决定 `abstract` 或 `keep`；之后与代码异味审查共同为确定性裁决提供证据，
 最后输出
 `accepted` 或 `rejected`。规则、语义和复用价值形成业务总分；异味不进入总分，
@@ -16,7 +17,7 @@
 记录为目录化通用习语；无法可靠对应时记录 `仓库特有习语`，在知识层归为仓库
 专属习语，不得强行套用相近标签。专属集合也包括可能通用但尚未进入当前目录的
 不常见习语。不是习语或技术失败时类型为 `not_applicable`。异味 Agent 也必须
-输出非空审查理由。Schema v7 把最终 `decision_reason`、结构化类型和各 Agent
+输出非空审查理由。Schema v8 把最终 `decision_reason`、结构化类型和各 Agent
 的 `agent_reasons` 一并保存；目录化通用结果可在仓库独立挖掘完成后按稳定类型
 编号聚合，专属结果保持项目作用域，二者并集构成全量联合视图。具体目录和三态
 合同见
@@ -28,8 +29,10 @@
 都保留代表代码不变，不会单独导致候选被拒绝；通过质量和异味门禁后，抽象模板与
 未抽象原代码都会作为阶段3的 `accepted` 产物进入阶段4。若整份语义/抽象响应
 解析失败，则原代码仍作为审计证据保留，但因语义与复用分安全降为0而拒绝。产物
-同时保存完整 `semantic_review_input`、`context_evidence`、抽象决策、批准集合和
-`abstraction_applied`。正式实验应同时传入 `--source-root` 与
+同时保存精简后的 `semantic_review_input`、完整 `member_codes`/`source_infos`、
+`cluster_statistics`、`context_evidence`、抽象决策、批准集合和
+`abstraction_applied`。代表上下文只在本地执行路径、范围和哈希门禁，不进入
+阶段3 LLM 请求。正式实验应同时传入 `--source-root` 与
 `--require-context`；路径、范围或 `source_sha256` 校验失败时当前簇零 LLM 调用
 并拒绝。兼容运行可以不启用严格门禁，但产物会明确记录上下文缺失原因。
 
@@ -45,7 +48,7 @@
 
 ```bash
 .venv/bin/python -m src.idiom_judgment.judge_clusters \
-  --input outputs/cpp/cli11/clusters.pkl \
+  --input outputs/cpp/cli11/clusters-merged.pkl \
   --output outputs/cpp/cli11/idiom-judgment.pkl \
   --report outputs/cpp/cli11/idiom-judgment-report.json \
   --rule-only
@@ -56,12 +59,17 @@
 
 ```bash
 .venv/bin/python -m src.idiom_judgment.judge_clusters \
-  --input outputs/cpp/cli11/clusters.pkl \
+  --input outputs/cpp/cli11/clusters-merged.pkl \
   --source-root repos/cli11 --require-context \
   --checkpoint outputs/cpp/cli11/idiom-judgment.sqlite3 \
   --output outputs/cpp/cli11/idiom-judgment.pkl \
   --report outputs/cpp/cli11/idiom-judgment-report.json
 ```
+
+批量正式运行的项目范围以
+`docs/research/cpp-dataset-selection.json` 中“保留”和“条件保留”为准。
+`cpp-httplib`、`entt` 和 `simdjson` 即使仍有历史 `clusters.pkl`，也不得进入
+正式 LLM 判断。
 
 产物 `run` 同时保存模型档位、提示词版本与 SHA-256、决策政策、校准状态、token
 用量及 checkpoint 信息；不保存密钥或端点。

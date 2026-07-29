@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Mapping, Sequence
 
+from ..parser.cpp_lex import deduplicate_lexical_variants
 from .idiom_taxonomy import (
     CATALOGED_IDIOM_KIND,
     NOT_APPLICABLE_IDIOM_KIND,
@@ -15,7 +16,7 @@ from .idiom_taxonomy import (
 from .smell_taxonomy import SmellFinding
 
 
-IDIOM_JUDGMENT_SCHEMA_VERSION = 7
+IDIOM_JUDGMENT_SCHEMA_VERSION = 8
 
 
 def _node_info(info: Any) -> Mapping[str, Any]:
@@ -29,7 +30,7 @@ def _node_info(info: Any) -> Mapping[str, Any]:
 
 
 def _member_code(info: Any) -> str:
-    return str(_node_info(info).get("code_snippet") or "").strip()
+    return str(_node_info(info).get("code_snippet") or "")
 
 
 def _source_file(info: Any) -> str:
@@ -37,6 +38,22 @@ def _source_file(info: Any) -> str:
         return str(info[1] or "")
     node = _node_info(info)
     return str(node.get("source_path") or "")
+
+
+def _source_location(info: Any) -> tuple[Any, ...]:
+    node = _node_info(info)
+    outer_extent = (
+        str(info[2] or "")
+        if isinstance(info, (list, tuple)) and len(info) >= 3
+        else ""
+    )
+    return (
+        _source_file(info),
+        outer_extent,
+        str(node.get("extent") or ""),
+        node.get("start_byte"),
+        node.get("end_byte"),
+    )
 
 
 @dataclass(frozen=True)
@@ -60,13 +77,13 @@ class ClusterCandidate:
         row: Mapping[str, Any],
     ) -> "ClusterCandidate":
         infos = list(row.get("infos") or [])
-        representative = str(row.get("center_point") or "").strip()
+        representative = str(row.get("center_point") or "")
         # `center_point + else_point` 是阶段2簇成员源码的直接合同，优先使用它
-        # 以保证语义/抽象 Agent 看见完整簇；`infos[*].code_snippet` 仅作旧产物
-        # 缺失该字段时的兼容回退。
-        codes = [representative] if representative else []
+        # 以保证完整成员可用于本地规则、审计和评价；LLM 只接收词法去重后的
+        # 代码变体。`infos[*].code_snippet` 仅作旧产物缺失源码字段时的回退。
+        codes = [representative] if representative.strip() else []
         codes.extend(
-            str(code).strip()
+            str(code)
             for code in (row.get("else_point") or [])
             if str(code).strip()
         )
@@ -94,6 +111,34 @@ class ClusterCandidate:
     @property
     def node_infos(self) -> List[Mapping[str, Any]]:
         return [_node_info(info) for info in self.source_infos]
+
+    @property
+    def lexical_variants(self) -> List[str]:
+        """返回除代表代码外、按 C++ 词法 token 去重的真实代码变体。"""
+
+        variants = deduplicate_lexical_variants(
+            [self.representative_code, *self.member_codes]
+        )
+        return (
+            variants[1:]
+            if self.representative_code.strip()
+            else variants
+        )
+
+    @property
+    def variant_count(self) -> int:
+        return len(deduplicate_lexical_variants(self.member_codes))
+
+    @property
+    def cluster_statistics(self) -> Dict[str, int]:
+        return {
+            "original_member_count": self.declared_cluster_size,
+            "variant_count": self.variant_count,
+            "file_count": len(set(self.source_files)),
+            "source_location_count": len(
+                {_source_location(info) for info in self.source_infos}
+            ),
+        }
 
 
 @dataclass(frozen=True)
@@ -207,6 +252,10 @@ class IdiomJudgmentResult:
             # 兼容既有阶段4/评价字段，但明确它是阶段3候选模板视图。
             "center_point": self.template_code,
             "representative_code": self.candidate.representative_code,
+            "member_codes": list(self.candidate.member_codes),
+            "cluster_statistics": dict(
+                self.candidate.cluster_statistics
+            ),
             "info": self.candidate.representative_info,
             "source_infos": list(self.candidate.source_infos),
             "cnt": self.rules.support_count,

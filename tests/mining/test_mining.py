@@ -5,6 +5,8 @@ from pathlib import Path
 import pandas as pd
 import torch
 
+from src.mining.cluster_merge import merge_repository_clusters
+from src.mining.cluster_result import CLUSTER_COLUMNS
 from src.mining.clustering import ClusteringProcessor
 from src.mining.dbscan_tuning import (
     DBSCANAutoTuner,
@@ -77,6 +79,108 @@ class _BudgetFakeEmbedder(_FakeEmbedder):
 
 
 class MiningHelperTests(unittest.TestCase):
+    def test_repository_cluster_merge_is_lossless_and_semantic_conservative(self):
+        centers = [
+            (
+                "int result = load(left); result += delta; "
+                "output = result; next = output; int cache = next;"
+            ),
+            (
+                "int result=load(left);result+=delta;output=result;"
+                "next=output;int cache=next;"
+            ),
+            (
+                "int result = load(left); result += delta; "
+                "output = result; next = output; int store = next;"
+            ),
+            (
+                "int result = read(left); result += delta; "
+                "output = result; next = output; int cache = next;"
+            ),
+        ]
+        member_sources = [
+            code
+            for center in centers
+            for code in (center, f"{{ {center} }}")
+        ]
+        infos = [
+            [
+                "sample",
+                f"src/file-{index}.cpp",
+                f"{index + 1}-0-{index + 1}-80",
+                {
+                    "start_byte": index * 100,
+                    "end_byte": index * 100 + len(code),
+                    "extent": f"{index + 1}-0-{index + 1}-80",
+                    "kind": "expression_statement",
+                    "code_snippet": code,
+                    "subtree_size": 30,
+                },
+            ]
+            for index, code in enumerate(member_sources)
+        ]
+        cluster_records = []
+        for label, center in enumerate(centers):
+            center_info = infos[label * 2]
+            other_info = infos[label * 2 + 1]
+            cluster_records.append(
+                {
+                    "label": label,
+                    "center_point": center,
+                    "else_point": [member_sources[label * 2 + 1]],
+                    "cluster_size": 2,
+                    "center_point_info": center_info,
+                    "infos": [center_info, other_info],
+                    "loc_label": f"sample-{center_info[1]}-{center_info[2]}",
+                }
+            )
+        clusters = pd.DataFrame.from_records(
+            cluster_records,
+            columns=CLUSTER_COLUMNS,
+        )
+        embeddings = pd.DataFrame(
+            [
+                {
+                    "pros_name": "sample",
+                    "pros_src": member_sources,
+                    "pros_emb": [
+                        torch.tensor([[1.0, 0.01 * index]])
+                        for index in range(len(member_sources))
+                    ],
+                    "pros_info": infos,
+                }
+            ]
+        )
+
+        merged, metadata = merge_repository_clusters(
+            project="sample",
+            clusters=clusters,
+            embeddings=embeddings,
+        )
+
+        self.assertEqual(merged.columns.tolist(), CLUSTER_COLUMNS)
+        self.assertEqual(len(merged), 2)
+        self.assertEqual(sum(merged["cluster_size"]), 8)
+        first = merged.iloc[0]
+        self.assertEqual(first["cluster_size"], 6)
+        self.assertIn(first["center_point"], member_sources[:6])
+        self.assertEqual(len(first["infos"]), 6)
+        self.assertEqual(
+            metadata["clusters"][0]["source_labels"],
+            [0, 1, 2],
+        )
+        self.assertEqual(
+            set(metadata["clusters"][0]["merge_reasons"]),
+            {
+                "lexical_center_equivalent",
+                "ast_shape_and_high_lexical_similarity",
+            },
+        )
+        self.assertEqual(
+            metadata["clusters"][1]["source_labels"],
+            [3],
+        )
+
     def test_extent_helpers(self):
         self.assertEqual(parse_extent("1-0-4-1"), (1, 0, 4, 1))
         self.assertTrue(is_within_extent("1-0-4-1", "2-2-3-4"))

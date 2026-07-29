@@ -1,4 +1,29 @@
 {
+  "classification_policy": {
+    "analysis_complexity": {
+      "indicators": [
+        "effective_line_count",
+        "selected_file_count",
+        "candidate_count"
+      ],
+      "name": "相对分析复杂度",
+      "prohibited_interpretation": "该层级不是圈复杂度、可维护性或项目质量标签，不参与项目去留、DBSCAN参数、LLM提示词或阈值选择。",
+      "score": "对三项阶段1指标分别计算正式23仓内升序平均秩百分位，再等权平均；分数越高表示本流水线的输入规模和候选处理负荷越高。",
+      "strata": "按综合分数升序确定近似等频三层；当前23仓为低8、中8、高7，分界相同时以 slug 保证确定性。"
+    },
+    "primary_domain": {
+      "assignment_basis": "按固定 commit 中项目核心生产用途人工指定一个互斥主领域；跨领域能力继续由 project_type 与 idiom_focus 保留，不因分类而丢失。",
+      "categories": [
+        "数据表示与泛型基础库",
+        "开发工具与工程基础设施",
+        "网络与分布式系统",
+        "应用与跨平台界面",
+        "存储与并发基础设施"
+      ],
+      "field": "primary_domain"
+    },
+    "scope": "仅对“保留”和“条件保留”的正式项目分类"
+  },
   "dataset_name": "CodeIdiomMine C++ 实验数据集",
   "generated_at": "2026-07-24",
   "parser": {
@@ -13,6 +38,23 @@
   },
   "projects": [
     {
+      "classification": {
+        "analysis_complexity": {
+          "indicator_percentiles": {
+            "candidate_count": 0.636364,
+            "effective_line_count": 0.681818,
+            "selected_file_count": 0.272727
+          },
+          "indicator_values": {
+            "candidate_count": 4755,
+            "effective_line_count": 36021,
+            "selected_file_count": 61
+          },
+          "score": 0.530303,
+          "tier": "中"
+        },
+        "primary_domain": "应用与跨平台界面"
+      },
       "github": {
         "archived": false,
         "created_at": "2021-05-06T18:40:21Z",
@@ -382,6 +424,23 @@
       "slug": "btop"
     },
     {
+      "classification": {
+        "analysis_complexity": {
+          "indicator_percentiles": {
+            "candidate_count": 0.863636,
+            "effective_line_count": 0.727273,
+            "selected_file_count": 0.772727
+          },
+          "indicator_values": {
+            "candidate_count": 8832,
+            "effective_line_count": 36829,
+            "selected_file_count": 248
+          },
+          "score": 0.787879,
+          "tier": "高"
+        },
+        "primary_domain": "开发工具与工程基础设施"
+      },
       "github": {
         "archived": false,
         "created_at": "2010-11-08T18:22:56Z",
@@ -770,6 +829,23 @@
       "slug": "catch2"
     },
     {
+      "classification": {
+        "analysis_complexity": {
+          "indicator_percentiles": {
+            "candidate_count": 0.454545,
+            "effective_line_count": 0.409091,
+            "selected_file_count": 0.681818
+          },
+          "indicator_values": {
+            "candidate_count": 3130,
+            "effective_line_count": 17510,
+            "selected_file_count": 135
+          },
+          "score": 0.515152,
+          "tier": "中"
+        },
+        "primary_domain": "数据表示与泛型基础库"
+      },
       "github": {
         "archived": false,
         "created_at": "2013-06-25T23:18:45Z",
@@ -1138,6 +1214,23 @@
       "slug": "cereal"
     },
     {
+      "classification": {
+        "analysis_complexity": {
+          "indicator_percentiles": {
+            "candidate_count": 0.136364,
+            "effective_line_count": 0.181818,
+            "selected_file_count": 0.136364
+          },
+          "indicator_values": {
+            "candidate_count": 1188,
+            "effective_line_count": 10515,
+            "selected_file_count": 38
+          },
+          "score": 0.151515,
+          "tier": "低"
+        },
+        "primary_domain": "开发工具与工程基础设施"
+      },
       "github": {
         "archived": false,
         "created_at": "2017-01-25T22:29:34Z",
@@ -1531,6 +1624,23 @@
       "slug": "cli11"
     },
     {
+      "classification": {
+        "analysis_complexity": {
+          "indicator_percentiles": {
+            "candidate_count": 0.0,
+            "effective_line_count": 0.045455,
+            "selected_file_count": 0.0
+          },
+          "indicator_values": {
+            "candidate_count": 654,
+            "effective_line_count": 3591,
+            "selected_file_count": 7
+          },
+          "score": 0.015152,
+          "tier": "低"
+        },
+        "primary_domain": "存储与并发基础设施"
+      },
       "github": {
         "archived": false,
         "created_at": "2014-11-06T05:29:05Z",
@@ -2272,16 +2382,34 @@
           "错误处理"
         ],
         "limitations": [
-          "单头文件结构使文件数不能代表实际规模。"
+          "阶段2的588个簇中582个为单文件簇，跨文件簇仅6个（1.02%）；每仓Top100强结构代理率仅1%。",
+          "固定源码与阶段1/2产物仅作为单头文件边界案例和筛选前证据保留。"
         ],
         "project_type": "单头文件 HTTP/HTTPS 库",
-        "rationale": "少文件但高有效代码量，可补充网络、回调和资源管理习语。",
+        "rationale": "阶段1纳入后完成阶段2聚类；因结果几乎完全局限于单文件，无法支撑论文主评价所需的跨文件复现，故不进入后续LLM与主结果统计。",
         "seed_project": false,
-        "status": "条件保留"
+        "status": "阶段2后排除"
       },
       "slug": "cpp-httplib"
     },
     {
+      "classification": {
+        "analysis_complexity": {
+          "indicator_percentiles": {
+            "candidate_count": 0.818182,
+            "effective_line_count": 0.863636,
+            "selected_file_count": 0.818182
+          },
+          "indicator_values": {
+            "candidate_count": 7310,
+            "effective_line_count": 45034,
+            "selected_file_count": 253
+          },
+          "score": 0.833333,
+          "tier": "高"
+        },
+        "primary_domain": "网络与分布式系统"
+      },
       "github": {
         "archived": false,
         "created_at": "2018-04-27T02:49:26Z",
@@ -3026,16 +3154,34 @@
           "泛型算法"
         ],
         "limitations": [
-          "头文件型项目。"
+          "942个簇中719个为源码完全重复簇（76.33%）；9,100个簇内成员中7,188个来自 single_include/（79.0%）。",
+          "固定源码与阶段1/2产物作为筛选前证据保留。"
         ],
         "project_type": "头文件型实体组件系统库",
-        "rationale": "模板密集且现代 C++ 特征丰富，可补充 ECS 与泛型设计习语。",
+        "rationale": "阶段1纳入后完成阶段2聚类；聚类主要复现同仓库的聚合分发副本，而不是独立源码位置中的稳定变化模式，故不进入后续LLM与主结果统计。",
         "seed_project": false,
-        "status": "保留"
+        "status": "阶段2后排除"
       },
       "slug": "entt"
     },
     {
+      "classification": {
+        "analysis_complexity": {
+          "indicator_percentiles": {
+            "candidate_count": 1.0,
+            "effective_line_count": 1.0,
+            "selected_file_count": 1.0
+          },
+          "indicator_values": {
+            "candidate_count": 97777,
+            "effective_line_count": 428842,
+            "selected_file_count": 3780
+          },
+          "score": 1.0,
+          "tier": "高"
+        },
+        "primary_domain": "网络与分布式系统"
+      },
       "github": {
         "archived": false,
         "created_at": "2016-08-08T15:07:24Z",
@@ -3439,6 +3585,23 @@
       "slug": "envoy"
     },
     {
+      "classification": {
+        "analysis_complexity": {
+          "indicator_percentiles": {
+            "candidate_count": 0.318182,
+            "effective_line_count": 0.363636,
+            "selected_file_count": 0.090909
+          },
+          "indicator_values": {
+            "candidate_count": 2837,
+            "effective_line_count": 13646,
+            "selected_file_count": 19
+          },
+          "score": 0.257576,
+          "tier": "低"
+        },
+        "primary_domain": "数据表示与泛型基础库"
+      },
       "github": {
         "archived": false,
         "created_at": "2012-12-07T16:26:46Z",
@@ -4128,6 +4291,23 @@
       "slug": "gsl"
     },
     {
+      "classification": {
+        "analysis_complexity": {
+          "indicator_percentiles": {
+            "candidate_count": 0.590909,
+            "effective_line_count": 0.772727,
+            "selected_file_count": 0.363636
+          },
+          "indicator_values": {
+            "candidate_count": 4674,
+            "effective_line_count": 38079,
+            "selected_file_count": 65
+          },
+          "score": 0.575758,
+          "tier": "中"
+        },
+        "primary_domain": "数据表示与泛型基础库"
+      },
       "github": {
         "archived": false,
         "created_at": "2013-07-04T08:47:49Z",
@@ -4541,6 +4721,23 @@
       "slug": "json"
     },
     {
+      "classification": {
+        "analysis_complexity": {
+          "indicator_percentiles": {
+            "candidate_count": 0.409091,
+            "effective_line_count": 0.227273,
+            "selected_file_count": 0.454545
+          },
+          "indicator_values": {
+            "candidate_count": 3112,
+            "effective_line_count": 12108,
+            "selected_file_count": 96
+          },
+          "score": 0.363636,
+          "tier": "中"
+        },
+        "primary_domain": "存储与并发基础设施"
+      },
       "github": {
         "archived": false,
         "created_at": "2014-08-27T21:17:52Z",
@@ -4901,6 +5098,23 @@
       "slug": "leveldb"
     },
     {
+      "classification": {
+        "analysis_complexity": {
+          "indicator_percentiles": {
+            "candidate_count": 0.772727,
+            "effective_line_count": 0.818182,
+            "selected_file_count": 0.863636
+          },
+          "indicator_values": {
+            "candidate_count": 6520,
+            "effective_line_count": 38888,
+            "selected_file_count": 289
+          },
+          "score": 0.818182,
+          "tier": "高"
+        },
+        "primary_domain": "网络与分布式系统"
+      },
       "github": {
         "archived": false,
         "created_at": "2009-07-29T09:56:41Z",
@@ -5282,6 +5496,23 @@
       "slug": "libzmq"
     },
     {
+      "classification": {
+        "analysis_complexity": {
+          "indicator_percentiles": {
+            "candidate_count": 0.090909,
+            "effective_line_count": 0.0,
+            "selected_file_count": 0.045455
+          },
+          "indicator_values": {
+            "candidate_count": 845,
+            "effective_line_count": 2911,
+            "selected_file_count": 9
+          },
+          "score": 0.045455,
+          "tier": "低"
+        },
+        "primary_domain": "数据表示与泛型基础库"
+      },
       "github": {
         "archived": false,
         "created_at": "2019-03-30T21:25:29Z",
@@ -5661,6 +5892,23 @@
       "slug": "magic_enum"
     },
     {
+      "classification": {
+        "analysis_complexity": {
+          "indicator_percentiles": {
+            "candidate_count": 0.227273,
+            "effective_line_count": 0.136364,
+            "selected_file_count": 0.318182
+          },
+          "indicator_values": {
+            "candidate_count": 2036,
+            "effective_line_count": 9657,
+            "selected_file_count": 64
+          },
+          "score": 0.227273,
+          "tier": "低"
+        },
+        "primary_domain": "网络与分布式系统"
+      },
       "github": {
         "archived": false,
         "created_at": "2011-01-09T09:41:02Z",
@@ -6025,6 +6273,23 @@
       "slug": "mosh"
     },
     {
+      "classification": {
+        "analysis_complexity": {
+          "indicator_percentiles": {
+            "candidate_count": 0.272727,
+            "effective_line_count": 0.272727,
+            "selected_file_count": 0.409091
+          },
+          "indicator_values": {
+            "candidate_count": 2505,
+            "effective_line_count": 12715,
+            "selected_file_count": 94
+          },
+          "score": 0.318182,
+          "tier": "低"
+        },
+        "primary_domain": "开发工具与工程基础设施"
+      },
       "github": {
         "archived": false,
         "created_at": "2011-02-06T19:07:12Z",
@@ -6387,6 +6652,23 @@
       "slug": "ninja"
     },
     {
+      "classification": {
+        "analysis_complexity": {
+          "indicator_percentiles": {
+            "candidate_count": 0.727273,
+            "effective_line_count": 0.5,
+            "selected_file_count": 0.727273
+          },
+          "indicator_values": {
+            "candidate_count": 5255,
+            "effective_line_count": 22330,
+            "selected_file_count": 221
+          },
+          "score": 0.651515,
+          "tier": "高"
+        },
+        "primary_domain": "应用与跨平台界面"
+      },
       "github": {
         "archived": false,
         "created_at": "2016-05-19T14:16:23Z",
@@ -6754,6 +7036,23 @@
       "slug": "polybar"
     },
     {
+      "classification": {
+        "analysis_complexity": {
+          "indicator_percentiles": {
+            "candidate_count": 0.909091,
+            "effective_line_count": 0.909091,
+            "selected_file_count": 0.909091
+          },
+          "indicator_values": {
+            "candidate_count": 15109,
+            "effective_line_count": 74241,
+            "selected_file_count": 526
+          },
+          "score": 0.909091,
+          "tier": "高"
+        },
+        "primary_domain": "应用与跨平台界面"
+      },
       "github": {
         "archived": false,
         "created_at": "2012-02-04T09:37:46Z",
@@ -7134,6 +7433,23 @@
       "slug": "qbittorrent"
     },
     {
+      "classification": {
+        "analysis_complexity": {
+          "indicator_percentiles": {
+            "candidate_count": 0.954545,
+            "effective_line_count": 0.954545,
+            "selected_file_count": 0.954545
+          },
+          "indicator_values": {
+            "candidate_count": 18659,
+            "effective_line_count": 93224,
+            "selected_file_count": 1078
+          },
+          "score": 0.954545,
+          "tier": "高"
+        },
+        "primary_domain": "应用与跨平台界面"
+      },
       "github": {
         "archived": false,
         "created_at": "2015-01-09T18:10:16Z",
@@ -7914,16 +8230,34 @@
           "平台分派"
         ],
         "limitations": [
-          "包含大规模平台专用与聚合源码，可靠 AST 字节覆盖率低于 0.5，使用时应结合逐文件诊断。"
+          "1,031个簇中956个为源码完全重复簇（92.73%）；11,554个簇内成员中9,697个来自 singleheader/（83.9%）；每仓Top100强结构代理率仅7%。",
+          "固定源码与阶段1/2产物作为筛选前证据保留。"
         ],
         "project_type": "高性能 JSON 解析库",
-        "rationale": "高性能库，可补充 SIMD、平台分派和低开销错误传播模式。",
+        "rationale": "阶段1纳入后完成阶段2聚类；聚类被聚合头文件、分发副本和依赖镜像的逐字重复主导，语义候选有效率过低，故不进入后续LLM与主结果统计。",
         "seed_project": false,
-        "status": "条件保留"
+        "status": "阶段2后排除"
       },
       "slug": "simdjson"
     },
     {
+      "classification": {
+        "analysis_complexity": {
+          "indicator_percentiles": {
+            "candidate_count": 0.5,
+            "effective_line_count": 0.454545,
+            "selected_file_count": 0.636364
+          },
+          "indicator_values": {
+            "candidate_count": 4017,
+            "effective_line_count": 21414,
+            "selected_file_count": 119
+          },
+          "score": 0.530303,
+          "tier": "中"
+        },
+        "primary_domain": "开发工具与工程基础设施"
+      },
       "github": {
         "archived": false,
         "created_at": "2014-11-01T01:28:53Z",
@@ -8287,6 +8621,23 @@
       "slug": "spdlog"
     },
     {
+      "classification": {
+        "analysis_complexity": {
+          "indicator_percentiles": {
+            "candidate_count": 0.545455,
+            "effective_line_count": 0.590909,
+            "selected_file_count": 0.590909
+          },
+          "indicator_values": {
+            "candidate_count": 4203,
+            "effective_line_count": 23330,
+            "selected_file_count": 106
+          },
+          "score": 0.575758,
+          "tier": "中"
+        },
+        "primary_domain": "存储与并发基础设施"
+      },
       "github": {
         "archived": false,
         "created_at": "2018-04-18T13:45:30Z",
@@ -8703,6 +9054,23 @@
       "slug": "taskflow"
     },
     {
+      "classification": {
+        "analysis_complexity": {
+          "indicator_percentiles": {
+            "candidate_count": 0.045455,
+            "effective_line_count": 0.545455,
+            "selected_file_count": 0.181818
+          },
+          "indicator_values": {
+            "candidate_count": 734,
+            "effective_line_count": 23281,
+            "selected_file_count": 44
+          },
+          "score": 0.257576,
+          "tier": "低"
+        },
+        "primary_domain": "数据表示与泛型基础库"
+      },
       "github": {
         "archived": false,
         "created_at": "2019-11-27T19:34:20Z",
@@ -9080,6 +9448,23 @@
       "slug": "tomlplusplus"
     },
     {
+      "classification": {
+        "analysis_complexity": {
+          "indicator_percentiles": {
+            "candidate_count": 0.181818,
+            "effective_line_count": 0.090909,
+            "selected_file_count": 0.227273
+          },
+          "indicator_values": {
+            "candidate_count": 1481,
+            "effective_line_count": 6310,
+            "selected_file_count": 53
+          },
+          "score": 0.166667,
+          "tier": "低"
+        },
+        "primary_domain": "网络与分布式系统"
+      },
       "github": {
         "archived": false,
         "created_at": "2016-03-21T04:39:40Z",
@@ -9446,6 +9831,23 @@
       "slug": "uwebsockets"
     },
     {
+      "classification": {
+        "analysis_complexity": {
+          "indicator_percentiles": {
+            "candidate_count": 0.363636,
+            "effective_line_count": 0.318182,
+            "selected_file_count": 0.5
+          },
+          "indicator_values": {
+            "candidate_count": 3033,
+            "effective_line_count": 12963,
+            "selected_file_count": 97
+          },
+          "score": 0.393939,
+          "tier": "中"
+        },
+        "primary_domain": "数据表示与泛型基础库"
+      },
       "github": {
         "archived": false,
         "created_at": "2015-03-30T02:52:32Z",
@@ -9824,6 +10226,23 @@
       "slug": "yaml-cpp"
     },
     {
+      "classification": {
+        "analysis_complexity": {
+          "indicator_percentiles": {
+            "candidate_count": 0.681818,
+            "effective_line_count": 0.636364,
+            "selected_file_count": 0.545455
+          },
+          "indicator_values": {
+            "candidate_count": 4943,
+            "effective_line_count": 29632,
+            "selected_file_count": 103
+          },
+          "score": 0.621212,
+          "tier": "中"
+        },
+        "primary_domain": "应用与跨平台界面"
+      },
       "github": {
         "archived": false,
         "created_at": "2014-04-07T01:37:37Z",
@@ -10198,43 +10617,130 @@
     }
   ],
   "schema_version": 1,
+  "screened_at": "2026-07-29",
+  "selection_policy": {
+    "candidate_criteria": [
+      "公开且许可可核验的真实生产项目",
+      "C++ 主体且核心源码可按统一入口读取",
+      "非归档并在元数据快照日前365天内有上游push",
+      "与已有候选在领域、规模或习语重点上形成互补"
+    ],
+    "excluded_status": "淘汰",
+    "formal_statuses": [
+      "保留",
+      "条件保留"
+    ],
+    "historical_status": "阶段2后排除",
+    "non_selection_signals": [
+      "star与fork不作为硬阈值",
+      "低AST覆盖率本身不作为淘汰理由",
+      "真实LLM结果和最终IC、ISP、F1不参与项目去留"
+    ],
+    "notes": "“保留”和“条件保留”构成23仓正式论文主数据集；“阶段2后排除”不进入后续LLM判断、合成或主结果统计，但保留固定源码和阶段1/2产物作为筛选前证据；“淘汰”不保留本地仓库。定量字段由 scripts/analyze_cpp_dataset.py 从固定本地仓库与解析产物重算。",
+    "probability_sample": false,
+    "sampling_method": "有明确约束的目的性最大差异抽样",
+    "stage1_eligibility": [
+      "固定完整commit和源码范围",
+      "统一扩展名、目录与文件排除规则",
+      "每个扫描文件都有零构建解析或诊断记录",
+      "路径、项目身份和产物可复算"
+    ],
+    "stage2_suitability": [
+      "冻结DBSCAN产物不被聚合发行副本或依赖镜像主导",
+      "聚类支持与跨文件复现足以支持后续LLM和主评价",
+      "定量代理必须结合具体代表簇语义复核"
+    ],
+    "standard_extensions": [
+      ".c",
+      ".cc",
+      ".cpp",
+      ".cxx",
+      ".c++",
+      ".h",
+      ".hh",
+      ".hpp",
+      ".hxx"
+    ]
+  },
   "source": {
     "candidate_search_limit": 35,
     "examined_candidate_count": 27,
-    "formal_project_count": 26,
+    "formal_project_count": 23,
     "github_search_snapshot": "outputs/dataset-experiment/github-search.json",
+    "historical_project_count": 3,
     "new_candidate_count": 24,
     "platform": "GitHub 公开仓库",
+    "removed_project_count": 1,
     "seed_project_count": 3,
     "selection_source": "docs/research/cpp-dataset-selection.json"
   },
   "statistics": {
     "candidates": {
-      "function": 80930,
-      "region": 41596,
-      "semantic_def_use": 9254,
-      "statement": 106065
+      "function": 67719,
+      "region": 36668,
+      "semantic_def_use": 8600,
+      "statement": 90622
+    },
+    "classification": {
+      "analysis_complexity_tiers": {
+        "中": 8,
+        "低": 8,
+        "高": 7
+      },
+      "primary_domain_by_analysis_complexity": {
+        "存储与并发基础设施": {
+          "中": 2,
+          "低": 1,
+          "高": 0
+        },
+        "应用与跨平台界面": {
+          "中": 2,
+          "低": 0,
+          "高": 3
+        },
+        "开发工具与工程基础设施": {
+          "中": 1,
+          "低": 2,
+          "高": 1
+        },
+        "数据表示与泛型基础库": {
+          "中": 3,
+          "低": 3,
+          "高": 0
+        },
+        "网络与分布式系统": {
+          "中": 0,
+          "低": 2,
+          "高": 3
+        }
+      },
+      "primary_domains": {
+        "存储与并发基础设施": 3,
+        "应用与跨平台界面": 5,
+        "开发工具与工程基础设施": 4,
+        "数据表示与泛型基础库": 6,
+        "网络与分布式系统": 5
+      }
     },
     "diversity": {
       "build_systems": {
         "Autotools": 2,
-        "Bazel": 7,
+        "Bazel": 6,
         "Buck": 1,
-        "CMake": 23,
+        "CMake": 20,
         "Make": 4,
-        "Meson": 6
+        "Meson": 5
       },
       "cpp_standards": {
-        "C++11": 11,
+        "C++11": 10,
         "C++14": 1,
-        "C++17": 11,
+        "C++17": 9,
         "C++20": 3
       },
       "idiom_focus": {
         "Qt 对象模型": 1,
-        "RAII": 11,
+        "RAII": 10,
         "SFINAE": 1,
-        "SIMD": 1,
         "STL 容器": 5,
         "事件循环": 1,
         "事件驱动": 1,
@@ -10243,7 +10749,7 @@
         "内存序": 1,
         "加密封装": 1,
         "原子操作": 1,
-        "回调": 5,
+        "回调": 4,
         "图算法": 1,
         "字符串处理": 1,
         "字符串视图": 1,
@@ -10253,9 +10759,8 @@
         "工程分层": 3,
         "工程模式": 1,
         "布局算法": 1,
-        "平台分派": 1,
         "平台抽象": 1,
-        "并发": 8,
+        "并发": 7,
         "异常处理": 5,
         "异步回调": 1,
         "异步网络": 1,
@@ -10265,23 +10770,22 @@
         "树遍历": 1,
         "格式化": 1,
         "模块化": 1,
-        "模板": 11,
-        "模板元编程": 3,
+        "模板": 10,
+        "模板元编程": 2,
         "泛型序列化": 2,
-        "泛型算法": 1,
         "流式接口": 1,
         "状态同步": 1,
         "状态机": 1,
-        "移动语义": 3,
+        "移动语义": 2,
         "策略对象": 1,
         "类型安全": 2,
-        "类型擦除": 3,
+        "类型擦除": 2,
         "类型特征": 2,
         "系统资源封装": 2,
         "缓存": 2,
         "编译期计算": 2,
         "网络": 1,
-        "网络 I/O": 3,
+        "网络 I/O": 2,
         "网络协议": 2,
         "自定义类型": 1,
         "自定义迭代器": 1,
@@ -10290,32 +10794,29 @@
         "访问器": 1,
         "跨平台接口": 1,
         "跨语言桥接": 1,
-        "迭代器": 4,
+        "迭代器": 2,
         "错误传播": 1,
-        "错误处理": 4,
-        "错误状态": 1,
-        "错误码": 1
+        "错误处理": 3,
+        "错误状态": 1
       },
       "licenses": {
-        "Apache-2.0": 5,
+        "Apache-2.0": 4,
         "BSD-2-Clause": 1,
         "BSD-3-Clause": 3,
         "BSL-1.0": 1,
         "GPL-2.0-or-later": 1,
         "GPL-3.0": 1,
-        "MIT": 13,
+        "MIT": 11,
         "MPL-2.0": 1
       },
       "project_types": {
         "YAML 解析与序列化库": 1,
-        "单头文件 HTTP/HTTPS 库": 1,
         "命令行系统监控应用": 1,
         "大型桌面网络应用": 1,
         "大型网络代理": 1,
         "头文件型 JSON 库": 1,
         "头文件型 TOML 库": 1,
         "头文件型命令行解析库": 1,
-        "头文件型实体组件系统库": 1,
         "头文件型序列化库": 1,
         "头文件型无锁并发队列": 1,
         "头文件型枚举反射库": 1,
@@ -10331,79 +10832,78 @@
         "移动网络终端": 1,
         "跨平台布局引擎": 1,
         "跨平台运行时的 C++ 子系统": 1,
-        "高性能 JSON 解析库": 1,
         "高性能异步网络库": 1
       }
     },
     "entities": {
-      "call": 418563,
-      "class": 10938,
-      "enum": 1575,
-      "function_definition": 102450,
-      "include": 51620,
-      "lambda": 5953,
-      "method_definition": 42227,
-      "namespace": 21712,
-      "struct": 11307,
-      "template": 71778,
-      "type": 36510
+      "call": 337695,
+      "class": 9589,
+      "enum": 1417,
+      "function_definition": 71986,
+      "include": 47223,
+      "lambda": 5410,
+      "method_definition": 29536,
+      "namespace": 16812,
+      "struct": 6903,
+      "template": 39785,
+      "type": 25579
     },
     "errors": {
-      "empty_function_output": 1566,
-      "preprocessor_or_macro": 611,
-      "syntax_or_recovery": 1881
+      "empty_function_output": 1399,
+      "preprocessor_or_macro": 391,
+      "syntax_or_recovery": 1857
     },
     "metadata_distribution": {
-      "active_within_365_days_count": 26,
+      "active_within_365_days_count": 23,
       "activity_age_days": {
-        "count": 26,
+        "count": 23,
         "max": 302,
-        "median": 3.0,
+        "median": 3,
         "min": 0,
-        "sum": 789
+        "sum": 779
       },
       "archived_project_count": 0,
       "forks": {
-        "count": 26,
+        "count": 23,
         "max": 25188,
-        "median": 1834.0,
+        "median": 1857,
         "min": 206,
-        "sum": 87057
+        "sum": 81967
       },
       "star_buckets": {
-        "10,000～24,999": 14,
+        "10,000～24,999": 11,
         "5,000～9,999": 2,
         "<5,000": 3,
         ">=25,000": 7
       },
       "stars": {
-        "count": 26,
+        "count": 23,
         "max": 126249,
-        "median": 15999.0,
+        "median": 15315,
         "min": 2107,
-        "sum": 598118
+        "sum": 544475
       }
     },
     "parser_comparison": {
       "baseline": {
         "candidates": {
-          "function": 110138,
-          "region": 54429,
-          "semantic_def_use": 12077,
-          "statement": 145395
+          "function": 95487,
+          "region": 48586,
+          "semantic_def_use": 11195,
+          "statement": 127807
         },
         "entities": {
-          "call": 552786,
-          "class": 14174,
-          "enum": 3129,
-          "function_definition": 138769,
-          "include": 65241,
-          "lambda": 7178,
-          "method_definition": 63612,
-          "namespace": 27420,
-          "struct": 26283,
-          "template": 111879,
-          "type": 78729
+          "call": 464530,
+          "class": 12780,
+          "enum": 2941,
+          "function_definition": 106748,
+          "include": 60268,
+          "lambda": 6494,
+          "method_definition": 49742,
+          "namespace": 22389,
+          "struct": 21576,
+          "template": 79205,
+          "type": 67240
         },
         "errors": {
           "affected_projects": {
@@ -10414,7 +10914,6 @@
               "cli11",
               "concurrentqueue",
               "drogon",
-              "entt",
               "envoy",
               "fmt",
               "json",
@@ -10426,7 +10925,6 @@
               "polybar",
               "qbittorrent",
               "react-native",
-              "simdjson",
               "spdlog",
               "taskflow",
               "tomlplusplus",
@@ -10440,9 +10938,7 @@
               "cereal",
               "cli11",
               "concurrentqueue",
-              "cpp-httplib",
               "drogon",
-              "entt",
               "envoy",
               "fmt",
               "json",
@@ -10454,7 +10950,6 @@
               "polybar",
               "qbittorrent",
               "react-native",
-              "simdjson",
               "spdlog",
               "taskflow",
               "tomlplusplus",
@@ -10472,7 +10967,6 @@
               "cli11",
               "concurrentqueue",
               "drogon",
-              "entt",
               "envoy",
               "fmt",
               "json",
@@ -10484,7 +10978,6 @@
               "polybar",
               "qbittorrent",
               "react-native",
-              "simdjson",
               "spdlog",
               "taskflow",
               "tomlplusplus",
@@ -10494,51 +10987,51 @@
             ]
           },
           "counts": {
-            "empty_function_output": 3063,
-            "preprocessor_or_macro": 1521,
+            "empty_function_output": 2903,
+            "preprocessor_or_macro": 1276,
             "symlink_file": 5,
-            "syntax_or_recovery": 2717
+            "syntax_or_recovery": 2674
           }
         },
         "totals": {
-          "anomalous_file_count": 4238,
-          "anomalous_file_rate": 0.3642145067033345,
-          "ast_coverage": 0.8213285236044203,
-          "candidate_count": 322039,
+          "anomalous_file_count": 3950,
+          "anomalous_file_rate": 0.35665914221218964,
+          "ast_coverage": 0.9083900313461486,
+          "candidate_count": 283075,
           "duplicate_relative_path_count": 5,
-          "effective_line_count": 1894674,
-          "error_count": 60005,
+          "effective_line_count": 1596497,
+          "error_count": 38653,
           "failed_file_count": 0,
           "file_success_rate": 1.0,
-          "missing_count": 26693,
-          "parsed_file_count": 11636,
+          "missing_count": 13335,
+          "parsed_file_count": 11075,
           "path_escape_count": 0,
-          "reliable_significant_byte_count": 66337486,
-          "selected_function_count": 139012,
-          "significant_byte_count": 80768516,
-          "source_file_count": 11636,
+          "reliable_significant_byte_count": 59440350,
+          "selected_function_count": 106970,
+          "significant_byte_count": 65434833,
+          "source_file_count": 11075,
           "symlink_file_count": 5
         }
       },
       "final": {
         "candidates": {
-          "function": 80930,
-          "region": 41596,
-          "semantic_def_use": 9254,
-          "statement": 106065
+          "function": 67719,
+          "region": 36668,
+          "semantic_def_use": 8600,
+          "statement": 90622
         },
         "entities": {
-          "call": 418563,
-          "class": 10938,
-          "enum": 1575,
-          "function_definition": 102450,
-          "include": 51620,
-          "lambda": 5953,
-          "method_definition": 42227,
-          "namespace": 21712,
-          "struct": 11307,
-          "template": 71778,
-          "type": 36510
+          "call": 337695,
+          "class": 9589,
+          "enum": 1417,
+          "function_definition": 71986,
+          "include": 47223,
+          "lambda": 5410,
+          "method_definition": 29536,
+          "namespace": 16812,
+          "struct": 6903,
+          "template": 39785,
+          "type": 25579
         },
         "errors": {
           "affected_projects": {
@@ -10549,7 +11042,6 @@
               "cli11",
               "concurrentqueue",
               "drogon",
-              "entt",
               "envoy",
               "fmt",
               "json",
@@ -10561,7 +11053,6 @@
               "polybar",
               "qbittorrent",
               "react-native",
-              "simdjson",
               "spdlog",
               "taskflow",
               "tomlplusplus",
@@ -10575,9 +11066,7 @@
               "cereal",
               "cli11",
               "concurrentqueue",
-              "cpp-httplib",
               "drogon",
-              "entt",
               "envoy",
               "fmt",
               "json",
@@ -10589,7 +11078,6 @@
               "polybar",
               "qbittorrent",
               "react-native",
-              "simdjson",
               "spdlog",
               "taskflow",
               "tomlplusplus",
@@ -10604,7 +11092,6 @@
               "cli11",
               "concurrentqueue",
               "drogon",
-              "entt",
               "envoy",
               "fmt",
               "json",
@@ -10616,7 +11103,6 @@
               "polybar",
               "qbittorrent",
               "react-native",
-              "simdjson",
               "spdlog",
               "taskflow",
               "tomlplusplus",
@@ -10626,57 +11112,57 @@
             ]
           },
           "counts": {
-            "empty_function_output": 1566,
-            "preprocessor_or_macro": 611,
-            "syntax_or_recovery": 1881
+            "empty_function_output": 1399,
+            "preprocessor_or_macro": 391,
+            "syntax_or_recovery": 1857
           }
         },
         "totals": {
-          "anomalous_file_count": 2492,
-          "anomalous_file_rate": 0.31385390428211585,
-          "ast_coverage": 0.7851671919080465,
-          "candidate_count": 237845,
+          "anomalous_file_count": 2248,
+          "anomalous_file_rate": 0.2995336442371752,
+          "ast_coverage": 0.9108641364319137,
+          "candidate_count": 203609,
           "duplicate_relative_path_count": 0,
-          "effective_line_count": 1290508,
-          "error_count": 39777,
+          "effective_line_count": 1013071,
+          "error_count": 18712,
           "failed_file_count": 0,
           "file_success_rate": 1.0,
-          "missing_count": 18185,
-          "parsed_file_count": 7940,
+          "missing_count": 4900,
+          "parsed_file_count": 7505,
           "path_escape_count": 0,
-          "reliable_significant_byte_count": 44471613,
-          "selected_function_count": 102574,
-          "significant_byte_count": 56639673,
-          "source_file_count": 7940,
+          "reliable_significant_byte_count": 38223417,
+          "selected_function_count": 72090,
+          "significant_byte_count": 41963906,
+          "source_file_count": 7505,
           "symlink_file_count": 0
         }
       }
     },
     "scale_distribution": {
       "effective_line_buckets": {
-        "10,000～99,999": 20,
+        "10,000～99,999": 18,
         "2,000～9,999": 4,
-        ">=100,000": 2
+        ">=100,000": 1
       },
       "effective_lines": {
-        "count": 26,
+        "count": 23,
         "max": 428842,
-        "median": 22805.5,
+        "median": 22330,
         "min": 2911,
-        "sum": 1290508
+        "sum": 1013071
       },
       "source_file_buckets": {
-        "100～999": 11,
+        "100～999": 9,
         "10～99": 10,
-        "<10": 3,
+        "<10": 2,
         ">=1,000": 2
       },
       "source_files": {
-        "count": 26,
+        "count": 23,
         "max": 3780,
-        "median": 100.0,
-        "min": 3,
-        "sum": 7940
+        "median": 97,
+        "min": 7,
+        "sum": 7505
       }
     },
     "selection": {
@@ -10684,26 +11170,27 @@
       "new_candidate_count": 24,
       "seed_project_count": 3,
       "status_counts": {
-        "保留": 17,
-        "条件保留": 9,
-        "淘汰": 1
+        "保留": 16,
+        "条件保留": 7,
+        "淘汰": 1,
+        "阶段2后排除": 3
       }
     },
     "totals": {
-      "ast_coverage": 0.7851671919080465,
-      "candidate_count": 237845,
-      "effective_line_count": 1290508,
-      "error_count": 39777,
+      "ast_coverage": 0.9108641364319137,
+      "candidate_count": 203609,
+      "effective_line_count": 1013071,
+      "error_count": 18712,
       "failed_file_count": 0,
       "file_success_rate": 1.0,
-      "missing_count": 18185,
-      "parsed_file_count": 7940,
-      "project_count": 26,
-      "reliable_significant_byte_count": 44471613,
+      "missing_count": 4900,
+      "parsed_file_count": 7505,
+      "project_count": 23,
+      "reliable_significant_byte_count": 38223417,
       "seed_project_count": 3,
-      "selected_function_count": 102574,
-      "significant_byte_count": 56639673,
-      "source_file_count": 7940
+      "selected_function_count": 72090,
+      "significant_byte_count": 41963906,
+      "source_file_count": 7505
     }
   },
   "statistics_path": "docs/research/cpp-dataset-statistics.json"

@@ -67,6 +67,14 @@ PARSER_SOURCE_PATHS = (
     Path("src/parser/semantic_slicer.py"),
 )
 FORMAL_STATUSES = frozenset({"保留", "条件保留"})
+HISTORICAL_STATUS = "阶段2后排除"
+REMOVED_STATUS = "淘汰"
+ANALYSIS_COMPLEXITY_TIERS = ("低", "中", "高")
+ANALYSIS_COMPLEXITY_INDICATORS = (
+    "effective_line_count",
+    "selected_file_count",
+    "candidate_count",
+)
 BUILD_FILE_SYSTEMS = {
     "BUILD": "Bazel",
     "BUILD.bazel": "Bazel",
@@ -919,6 +927,95 @@ def _numeric_distribution(values: list[int]) -> dict[str, Any]:
     }
 
 
+def _average_rank_percentiles(values: Mapping[str, int]) -> dict[str, float]:
+    ordered = sorted(values.items(), key=lambda item: (item[1], item[0]))
+    denominator = max(len(ordered) - 1, 1)
+    percentiles: dict[str, float] = {}
+    start = 0
+    while start < len(ordered):
+        end = start + 1
+        while end < len(ordered) and ordered[end][1] == ordered[start][1]:
+            end += 1
+        percentile = ((start + end - 1) / 2) / denominator
+        for slug, _ in ordered[start:end]:
+            percentiles[slug] = percentile
+        start = end
+    return percentiles
+
+
+def _apply_dataset_classification(
+    projects: list[dict[str, Any]],
+    policy: Mapping[str, Any],
+) -> None:
+    formal = [
+        project
+        for project in projects
+        if project["selection"]["status"] in FORMAL_STATUSES
+    ]
+    allowed_domains = set(policy["primary_domain"]["categories"])
+    actual_domains = {
+        project["classification"]["primary_domain"] for project in formal
+    }
+    if actual_domains != allowed_domains:
+        raise ValueError("正式项目主领域与分类政策不一致")
+    if tuple(policy["analysis_complexity"]["indicators"]) != (
+        ANALYSIS_COMPLEXITY_INDICATORS
+    ):
+        raise ValueError("分析复杂度指标与分类政策不一致")
+
+    indicator_values = {
+        "effective_line_count": {
+            project["slug"]: int(
+                project["parse"]["final"]["source"]["effective_line_count"]
+            )
+            for project in formal
+        },
+        "selected_file_count": {
+            project["slug"]: int(
+                project["parse"]["final"]["source"]["selected_file_count"]
+            )
+            for project in formal
+        },
+        "candidate_count": {
+            project["slug"]: sum(
+                project["parse"]["final"]["candidates"].values()
+            )
+            for project in formal
+        },
+    }
+    percentiles = {
+        indicator: _average_rank_percentiles(values)
+        for indicator, values in indicator_values.items()
+    }
+    scores = {
+        project["slug"]: statistics.fmean(
+            values[project["slug"]] for values in percentiles.values()
+        )
+        for project in formal
+    }
+    ordered_slugs = sorted(scores, key=lambda slug: (scores[slug], slug))
+    tier_by_slug = {
+        slug: ANALYSIS_COMPLEXITY_TIERS[
+            min(index * len(ANALYSIS_COMPLEXITY_TIERS) // len(formal), 2)
+        ]
+        for index, slug in enumerate(ordered_slugs)
+    }
+    for project in formal:
+        slug = project["slug"]
+        project["classification"]["analysis_complexity"] = {
+            "tier": tier_by_slug[slug],
+            "score": round(scores[slug], 6),
+            "indicator_values": {
+                indicator: values[slug]
+                for indicator, values in indicator_values.items()
+            },
+            "indicator_percentiles": {
+                indicator: round(values[slug], 6)
+                for indicator, values in percentiles.items()
+            },
+        }
+
+
 def _formal_statistics(
     projects: list[dict[str, Any]],
     *,
@@ -933,6 +1030,9 @@ def _formal_statistics(
     licenses: Counter[str] = Counter()
     build_systems: Counter[str] = Counter()
     idiom_focus: Counter[str] = Counter()
+    primary_domains: Counter[str] = Counter()
+    complexity_tiers: Counter[str] = Counter()
+    domain_by_complexity: dict[str, Counter[str]] = defaultdict(Counter)
     scale_buckets: Counter[str] = Counter()
     file_buckets: Counter[str] = Counter()
     star_buckets: Counter[str] = Counter()
@@ -979,6 +1079,12 @@ def _formal_statistics(
         licenses[project["license"]["spdx"]] += 1
         build_systems.update(selection["build_systems"])
         idiom_focus.update(selection["idiom_focus"])
+        classification = project["classification"]
+        primary_domain = classification["primary_domain"]
+        complexity_tier = classification["analysis_complexity"]["tier"]
+        primary_domains[primary_domain] += 1
+        complexity_tiers[complexity_tier] += 1
+        domain_by_complexity[primary_domain][complexity_tier] += 1
         github = project["github"]
         star_count = int(github["stars_at_retrieval"])
         fork_count = int(github["forks_at_retrieval"])
@@ -1055,6 +1161,20 @@ def _formal_statistics(
             "build_systems": dict(sorted(build_systems.items())),
             "idiom_focus": dict(sorted(idiom_focus.items())),
         },
+        "classification": {
+            "primary_domains": dict(sorted(primary_domains.items())),
+            "analysis_complexity_tiers": {
+                tier: complexity_tiers[tier]
+                for tier in ANALYSIS_COMPLEXITY_TIERS
+            },
+            "primary_domain_by_analysis_complexity": {
+                domain: {
+                    tier: counts[tier]
+                    for tier in ANALYSIS_COMPLEXITY_TIERS
+                }
+                for domain, counts in sorted(domain_by_complexity.items())
+            },
+        },
         "metadata_distribution": {
             "stars": _numeric_distribution(stars),
             "forks": _numeric_distribution(forks),
@@ -1090,10 +1210,37 @@ def build_manifest(
     statistics_output_path: Path,
 ) -> dict[str, Any]:
     selection_payload = json.loads(selection_path.read_text(encoding="utf-8"))
+    previous_projects = {}
+    if output_path.exists():
+        previous_manifest = json.loads(
+            output_path.read_text(encoding="utf-8")
+        )
+        previous_projects = {
+            project["slug"]: project
+            for project in previous_manifest["projects"]
+        }
     project_entries: list[dict[str, Any]] = []
     for annotation in selection_payload["projects"]:
         slug = annotation["slug"]
         repository = repositories_root / slug
+        selection = {
+            key: value
+            for key, value in annotation.items()
+            if key
+            not in {
+                "slug",
+                "github_full_name",
+                "license_spdx",
+                "primary_domain",
+                "sparse_paths",
+            }
+        }
+        if annotation["status"] == REMOVED_STATUS and not repository.exists():
+            project = previous_projects[slug]
+            project["selection"] = selection
+            project.pop("classification", None)
+            project_entries.append(project)
+            continue
         commit = _git_output(repository, "rev-parse", "HEAD")
         github_metadata = _load_github_metadata(
             slug=slug,
@@ -1182,17 +1329,16 @@ def build_manifest(
                     "spdx": annotation["license_spdx"],
                     "root_file_evidence": _license_evidence(repository),
                 },
-                "selection": {
-                    key: value
-                    for key, value in annotation.items()
-                    if key
-                    not in {
-                        "slug",
-                        "github_full_name",
-                        "license_spdx",
-                        "sparse_paths",
+                "selection": selection,
+                **(
+                    {
+                        "classification": {
+                            "primary_domain": annotation["primary_domain"]
+                        }
                     }
-                },
+                    if annotation["status"] in FORMAL_STATUSES
+                    else {}
+                ),
                 "scope": {
                     "included_extensions": sorted(DATASET_EXTENSIONS),
                     "included_roots": sparse_paths or ["."],
@@ -1250,6 +1396,8 @@ def build_manifest(
         )
 
     project_entries.sort(key=lambda value: value["slug"])
+    classification_policy = selection_payload["classification_policy"]
+    _apply_dataset_classification(project_entries, classification_policy)
     statistics = _formal_statistics(
         project_entries,
         reference_date=selection_payload["retrieved_at"],
@@ -1277,12 +1425,18 @@ def build_manifest(
         "schema_version": 1,
         "generated_from": output_path.as_posix(),
         "selection_source": selection_path.as_posix(),
+        "screened_at": selection_payload.get("screened_at"),
+        "selection_policy": selection_payload["selection_policy"],
+        "classification_policy": classification_policy,
         **statistics,
     }
     manifest = {
         "schema_version": 1,
         "dataset_name": "CodeIdiomMine C++ 实验数据集",
         "generated_at": selection_payload["retrieved_at"],
+        "screened_at": selection_payload.get("screened_at"),
+        "selection_policy": selection_payload["selection_policy"],
+        "classification_policy": classification_policy,
         "source": {
             "platform": "GitHub 公开仓库",
             "candidate_search_limit": 35,
@@ -1296,6 +1450,14 @@ def build_manifest(
                 for value in project_entries
             ),
             "formal_project_count": statistics["totals"]["project_count"],
+            "historical_project_count": sum(
+                value["selection"]["status"] == HISTORICAL_STATUS
+                for value in project_entries
+            ),
+            "removed_project_count": sum(
+                value["selection"]["status"] == REMOVED_STATUS
+                for value in project_entries
+            ),
             "selection_source": selection_path.as_posix(),
             "github_search_snapshot": search_path.as_posix(),
         },
@@ -1349,6 +1511,98 @@ def validate_manifest(manifest_path: Path) -> dict[str, Any]:
         for project in manifest["projects"]
         if project["selection"]["status"] in FORMAL_STATUSES
     ]
+    historical_projects = [
+        project
+        for project in manifest["projects"]
+        if project["selection"]["status"] == HISTORICAL_STATUS
+    ]
+    removed_projects = [
+        project
+        for project in manifest["projects"]
+        if project["selection"]["status"] == REMOVED_STATUS
+    ]
+    policy = manifest["selection_policy"]
+    if frozenset(policy["formal_statuses"]) != FORMAL_STATUSES:
+        errors.append("正式项目状态策略与校验器不一致")
+    if policy["historical_status"] != HISTORICAL_STATUS:
+        errors.append("历史项目状态策略与校验器不一致")
+    if policy["excluded_status"] != REMOVED_STATUS:
+        errors.append("淘汰项目状态策略与校验器不一致")
+    if manifest["source"]["formal_project_count"] != len(formal_projects):
+        errors.append("清单正式项目数与项目状态不一致")
+    if manifest["source"]["historical_project_count"] != len(
+        historical_projects
+    ):
+        errors.append("清单历史项目数与项目状态不一致")
+    if manifest["source"]["removed_project_count"] != len(removed_projects):
+        errors.append("清单淘汰项目数与项目状态不一致")
+    if manifest["statistics"]["totals"]["project_count"] != len(
+        formal_projects
+    ):
+        errors.append("正式统计项目数与项目状态不一致")
+    classification_inputs = [
+        {
+            "slug": project["slug"],
+            "selection": {"status": project["selection"]["status"]},
+            "classification": {
+                "primary_domain": project["classification"]["primary_domain"]
+            },
+            "parse": {
+                "final": {
+                    "source": project["parse"]["final"]["source"],
+                    "candidates": project["parse"]["final"]["candidates"],
+                }
+            },
+        }
+        for project in formal_projects
+    ]
+    _apply_dataset_classification(
+        classification_inputs,
+        manifest["classification_policy"],
+    )
+    expected_classification = {
+        project["slug"]: project["classification"]
+        for project in classification_inputs
+    }
+    for project in formal_projects:
+        if project["classification"] != expected_classification[
+            project["slug"]
+        ]:
+            errors.append(f"{project['slug']}: 数据集分类不可复算")
+    if any("classification" in project for project in historical_projects):
+        errors.append("阶段2后排除项目不应进入正式分类")
+    classification_statistics = manifest["statistics"]["classification"]
+    domain_counts = Counter(
+        project["classification"]["primary_domain"]
+        for project in formal_projects
+    )
+    tier_counts = Counter(
+        project["classification"]["analysis_complexity"]["tier"]
+        for project in formal_projects
+    )
+    if classification_statistics["primary_domains"] != dict(
+        sorted(domain_counts.items())
+    ):
+        errors.append("主领域汇总与逐项目分类不一致")
+    if classification_statistics["analysis_complexity_tiers"] != {
+        tier: tier_counts[tier] for tier in ANALYSIS_COMPLEXITY_TIERS
+    }:
+        errors.append("分析复杂度汇总与逐项目分类不一致")
+    domain_by_tier: dict[str, Counter[str]] = defaultdict(Counter)
+    for project in formal_projects:
+        classification = project["classification"]
+        domain_by_tier[classification["primary_domain"]][
+            classification["analysis_complexity"]["tier"]
+        ] += 1
+    if classification_statistics[
+        "primary_domain_by_analysis_complexity"
+    ] != {
+        domain: {
+            tier: counts[tier] for tier in ANALYSIS_COMPLEXITY_TIERS
+        }
+        for domain, counts in sorted(domain_by_tier.items())
+    }:
+        errors.append("主领域与分析复杂度交叉汇总不一致")
     slugs = [project["slug"] for project in manifest["projects"]]
     if len(slugs) != len(set(slugs)):
         errors.append("项目 slug 不唯一")
@@ -1357,12 +1611,16 @@ def validate_manifest(manifest_path: Path) -> dict[str, Any]:
     for project in manifest["projects"]:
         slug = project["slug"]
         repository = Path(project["revision"]["local_path"])
-        if project["selection"]["status"] not in FORMAL_STATUSES:
+        status = project["selection"]["status"]
+        if status == REMOVED_STATUS:
             if repository.exists():
                 errors.append(f"{slug}: 已淘汰仓库仍存在于本地")
             continue
+        if status not in FORMAL_STATUSES and status != HISTORICAL_STATUS:
+            errors.append(f"{slug}: 未知筛选状态 {status}")
+            continue
         if not repository.is_dir():
-            errors.append(f"{slug}: 缺少正式数据集仓库")
+            errors.append(f"{slug}: 缺少应保留的本地仓库")
             continue
         if _git_output(repository, "rev-parse", "HEAD") != project[
             "revision"
@@ -1427,7 +1685,10 @@ def validate_manifest(manifest_path: Path) -> dict[str, Any]:
     result = {
         "manifest": manifest_path.as_posix(),
         "formal_project_count": len(formal_projects),
-        "checked_project_count": len(formal_projects),
+        "historical_project_count": len(historical_projects),
+        "removed_project_count": len(removed_projects),
+        "checked_project_count": len(formal_projects)
+        + len(historical_projects),
         "excluded_project_count": len(manifest["projects"]) - len(formal_projects),
         "error_count": len(errors),
         "errors": errors,

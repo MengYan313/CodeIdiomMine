@@ -51,6 +51,9 @@ def _candidate(codes, *, files=None, kinds=None):
                 "kind": kinds[index],
                 "ast_num": 4,
                 "subtree_size": 12,
+                "start_byte": index * 100,
+                "end_byte": index * 100 + len(code),
+                "extent": f"{index + 1}-0-{index + 1}-80",
             },
         ]
         for index, code in enumerate(codes)
@@ -219,7 +222,7 @@ class IdiomJudgmentTests(unittest.TestCase):
             self.assertEqual(report["run"]["resumed_record_count"], 1)
             self.assertEqual(report["summary"]["pending_llm_count"], 1)
 
-    def test_verified_context_is_sent_to_both_stage3_agents(self):
+    def test_verified_context_gates_stage3_without_entering_llm_prompts(self):
         class ContextClient:
             def __init__(self):
                 self.prompts = []
@@ -316,7 +319,13 @@ class IdiomJudgmentTests(unittest.TestCase):
             self.assertTrue(result.context_evidence["verified"])
             self.assertEqual(len(client.prompts), 2)
             self.assertTrue(
-                all("void f()" in prompt for prompt in client.prompts)
+                all("void f()" not in prompt for prompt in client.prompts)
+            )
+            self.assertTrue(
+                all(
+                    base.representative_code in prompt
+                    for prompt in client.prompts
+                )
             )
 
             no_call_client = ContextClient()
@@ -383,6 +392,31 @@ class IdiomJudgmentTests(unittest.TestCase):
         self.assertEqual(
             candidate.member_codes,
             ["consume(alpha);", "consume(beta);", "consume(gamma);"],
+        )
+
+    def test_cluster_candidate_builds_lexically_deduplicated_llm_view(self):
+        candidate = _candidate(
+            [
+                'emit("a b");',
+                'emit ( "a b" ) ; // formatting-only',
+                'emit("a c");',
+                'send("a b");',
+            ],
+            files=["a.cpp", "a.cpp", "b.cpp", "b.cpp"],
+        )
+
+        self.assertEqual(
+            candidate.lexical_variants,
+            ['emit("a c");', 'send("a b");'],
+        )
+        self.assertEqual(
+            candidate.cluster_statistics,
+            {
+                "original_member_count": 4,
+                "variant_count": 3,
+                "file_count": 2,
+                "source_location_count": 4,
+            },
         )
 
     def test_artifact_builder_rejects_third_runtime_status(self):
@@ -580,15 +614,30 @@ class IdiomJudgmentTests(unittest.TestCase):
         semantic_prompt = next(
             prompt
             for prompt in client.prompts
-            if "完整簇成员（共 3 个）" in prompt
+            if "去重后的其他代码变体（共 2 个）" in prompt
         )
-        for code in candidate.member_codes:
+        self.assertIn(candidate.representative_code, semantic_prompt)
+        for code in candidate.lexical_variants:
             self.assertIn(code, semantic_prompt)
+        self.assertIn('"original_member_count": 3', semantic_prompt)
         self.assertIn('"eligible_for_llm": true', semantic_prompt)
         self.assertEqual(
-            result.semantic_review_input["cluster_members"],
-            candidate.member_codes,
+            result.semantic_review_input["code_variants"],
+            candidate.lexical_variants,
         )
+        self.assertNotIn("cluster_members", result.semantic_review_input)
+        self.assertNotIn("context_code", result.semantic_review_input)
+        self.assertEqual(
+            result.smell_review_input["related_examples"],
+            candidate.lexical_variants,
+        )
+        self.assertEqual(
+            result.smell_review_input["deterministic_evidence"],
+            candidate.cluster_statistics,
+        )
+        record = result.to_record()
+        self.assertEqual(record["member_codes"], candidate.member_codes)
+        self.assertEqual(record["source_infos"], candidate.source_infos)
 
         keep_client = FakeClient()
         keep_client.abstraction_decision = "keep"

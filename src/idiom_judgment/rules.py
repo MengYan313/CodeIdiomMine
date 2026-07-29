@@ -6,6 +6,7 @@ import math
 import re
 from typing import Any, Mapping
 
+from ..parser.cpp_lex import lexical_tokens
 from .schema import ClusterCandidate, RuleAssessment
 
 
@@ -23,7 +24,7 @@ def _normalize_source(source: str) -> str:
 
 def _bounded_score(candidate: ClusterCandidate) -> float:
     support = max(0, len(candidate.member_codes))
-    unique_sources = len({_normalize_source(code) for code in candidate.member_codes})
+    unique_sources = candidate.variant_count
     unique_files = len(set(candidate.source_files))
     subtree_sizes = [
         float(info.get("subtree_size", 0) or 0)
@@ -50,19 +51,21 @@ def evaluate_cluster_rules(candidate: ClusterCandidate) -> RuleAssessment:
     hard_failures: list[str] = []
     warnings: list[str] = []
     support_count = len(candidate.source_infos) or len(candidate.member_codes)
-    normalized = [
-        _normalize_source(code)
+    member_sources = [
+        code
         for code in candidate.member_codes
-        if _normalize_source(code)
+        if lexical_tokens(code)
     ]
-    unique_source_count = len(set(normalized))
+    unique_source_count = len(
+        {lexical_tokens(code) for code in member_sources}
+    )
     unique_file_count = len(set(candidate.source_files))
 
     if candidate.declared_cluster_size < 2 or support_count < 2:
         hard_failures.append("cluster_support_below_two")
     if not candidate.representative_code:
         hard_failures.append("empty_representative")
-    if not normalized:
+    if not member_sources:
         hard_failures.append("empty_members")
     if (
         candidate.source_infos
@@ -78,10 +81,13 @@ def evaluate_cluster_rules(candidate: ClusterCandidate) -> RuleAssessment:
     if projects and projects != {candidate.project}:
         hard_failures.append("mixed_repository_evidence")
 
-    if normalized and all(_TRIVIAL_CODE.fullmatch(code) for code in normalized):
+    if member_sources and all(
+        _TRIVIAL_CODE.fullmatch(_normalize_source(code))
+        for code in member_sources
+    ):
         hard_failures.append("trivial_control_only")
 
-    exact_duplicate = unique_source_count == 1 and bool(normalized)
+    exact_duplicate = unique_source_count == 1 and bool(member_sources)
     cross_file = unique_file_count >= 2
     if exact_duplicate:
         warnings.append("exact_source_duplicate")

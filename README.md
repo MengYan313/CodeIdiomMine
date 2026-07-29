@@ -13,7 +13,7 @@
 
 </div>
 
-当前版本：**Sol 6.1**。
+当前版本：**Sol 6.2**。
 
 CodeIdiomMine 研究如何从独立 C++ 仓库中识别具有稳定语义与复用价值的细粒度代码模式。方法以零构建静态分析建立候选表示，经语义嵌入与密度聚类形成候选簇，再执行多重可信门控和关联闭环融合。
 
@@ -22,8 +22,8 @@ CodeIdiomMine 研究如何从独立 C++ 仓库中识别具有稳定语义与复�
 | 阶段 | 代码入口 | 方法内容 | 主要产物 |
 | --- | --- | --- | --- |
 | **阶段一 · 数据与习语表示构建** | [`src/parser/`](src/parser/README.md) | 对 C++ 源码执行零构建静态分析，构建 AST、源码映射和语句/区域/函数多粒度候选，并生成满足模型预算的片段表示 | `dataset.pkl`、`dataset.audit.json`、`fragments.pkl` |
-| **阶段二 · 代码语义嵌入与密度聚类** | [`src/mining/`](src/mining/README.md) | 使用 UniXcoder 编码候选语义，通过 DBSCAN 与冻结的领域目标调参生成仓库内候选簇 | `embeddings.pkl`、`clusters.pkl`、调参报告 |
-| **阶段三 · 多重可信门控** | [`src/idiom_judgment/`](src/idiom_judgment/README.md) | 对单簇执行合同/低价值过滤、受约束抽象、完整簇语义与复用价值评估、开放类型定型及独立异味门禁 | `idiom-judgment.pkl` 中的可信门控结果 |
+| **阶段二 · 代码语义嵌入与密度聚类** | [`src/mining/`](src/mining/README.md) | 使用 UniXcoder 编码候选语义，通过 DBSCAN 与冻结的领域目标调参生成仓库内候选簇，再执行仓库内保守归并 | `embeddings.pkl`、`clusters.pkl`、`clusters-merged.pkl`、报告 |
+| **阶段三 · 多重可信门控** | [`src/idiom_judgment/`](src/idiom_judgment/README.md) | 对单簇执行合同/低价值过滤、受约束抽象、精简簇视图语义与复用价值评估、开放类型定型及独立异味门禁 | `idiom-judgment.pkl` 中的可信门控结果 |
 | **阶段四 · 关联闭环融合** | [`src/idiom_synthesis/`](src/idiom_synthesis/README.md) | 对同一代表区域内的多个已接受习语执行关系规划、代码组装、当前结果复核、重新分类与异味重审 | `idiom-synthesis.pkl` 闭环融合增量 |
 
 ```mermaid
@@ -73,9 +73,15 @@ cp .env.example .env
   --output outputs/cpp/cli11/clusters.pkl \
   --report outputs/cpp/cli11/dbscan-tuning.json
 
+.venv/bin/python -m src.mining.cluster_merge \
+  --clusters outputs/cpp/cli11/clusters.pkl \
+  --embeddings outputs/cpp/cli11/embeddings.pkl \
+  --output outputs/cpp/cli11/clusters-merged.pkl \
+  --report outputs/cpp/cli11/cluster-merge-report.json
+
 # 阶段三：多重可信门控
 .venv/bin/python -m src.idiom_judgment.judge_clusters \
-  --input outputs/cpp/cli11/clusters.pkl \
+  --input outputs/cpp/cli11/clusters-merged.pkl \
   --source-root repos/cli11 --require-context \
   --checkpoint outputs/cpp/cli11/idiom-judgment.sqlite3 \
   --output outputs/cpp/cli11/idiom-judgment.pkl \
@@ -105,5 +111,5 @@ cp .env.example .env
 | --- | --- |
 | 主流程 | [Parser](src/parser/README.md) · [嵌入与聚类](src/mining/README.md) · [多重可信门控（代码包 `idiom_judgment`）](src/idiom_judgment/README.md) · [关联闭环融合（代码包 `idiom_synthesis`）](src/idiom_synthesis/README.md) · [评价与 baseline](src/evaluation/README.md) |
 | 知识与 Agent | [习语类型目录](docs/guides/idiom-taxonomy.md) · [Agent 架构](docs/guides/agent-system.md) · [Agent 公共基础设施](src/agents/README.md) · [LLM 基础设施](src/llm/README.md) |
-| 工程与研究 | [CIMAS-CPP 研究方法](docs/research/01_C++代码习语挖掘研究稿.md) · [输入仓库约定](repos/README.md) · [仓库架构](docs/guides/repository-architecture.md) · [测试指南](docs/guides/testing.md) · [公共基础设施](src/common/README.md) · [产物工具](src/utils/README.md) |
+| 工程与研究 | [CIMAS-CPP 研究方法](docs/research/01_C++代码习语挖掘研究稿.md) · [数据集分类与选取](docs/research/cpp-dataset-classification.md) · [输入仓库约定](repos/README.md) · [仓库架构](docs/guides/repository-architecture.md) · [测试指南](docs/guides/testing.md) · [公共基础设施](src/common/README.md) · [产物工具](src/utils/README.md) |
 | 全部资料 | [文档索引](docs/README.md) |

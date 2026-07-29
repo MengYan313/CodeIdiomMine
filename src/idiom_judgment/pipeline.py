@@ -274,33 +274,23 @@ class IdiomJudgmentPipeline:
 
         proposal_data = [asdict(proposal) for proposal in proposals]
         rule_data = asdict(rules)
-        smell_examples = [
-            code
-            for code in candidate.member_codes
-            if code != candidate.representative_code
-        ][:5]
+        code_variants = candidate.lexical_variants
+        cluster_statistics = candidate.cluster_statistics
         semantic_request = SemanticReviewRequest(
             project=candidate.project,
             cluster_id=candidate.cluster_id,
             representative_code=candidate.representative_code,
-            cluster_members=list(candidate.member_codes),
+            code_variants=code_variants,
+            cluster_statistics=cluster_statistics,
             rule_evidence=rule_data,
             abstraction_proposals=proposal_data,
-            context_code=context_code,
         )
         smell_request = SmellReviewRequest(
             project=candidate.project,
             candidate_id=f"cluster:{candidate.cluster_id}",
             candidate_code=candidate.representative_code,
-            related_examples=(
-                [context_code, *smell_examples]
-                if context_code
-                else smell_examples
-            )[:5],
-            deterministic_evidence={
-                "rules": rule_data,
-                "context_evidence": context_evidence,
-            },
+            related_examples=code_variants,
+            deterministic_evidence=cluster_statistics,
         )
         semantic_result, smell_result = await asyncio.gather(
             self.runtime.send_message(

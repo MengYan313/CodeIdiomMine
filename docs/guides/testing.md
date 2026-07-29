@@ -21,8 +21,8 @@
 ```
 
 测试覆盖 C++ Adapter、预处理续行遮蔽、扫描与 AST 提取、Parser token 预算与
-超长函数降级、embedding 合同、DBSCAN 自动调参、DBSCAN/HDBSCAN Schema、
-多重可信门控、完整簇语义抽象决策、抽象拒绝后原样保留、二态评分裁决、
+超长函数降级、正式数据集领域/复杂度分类复算、embedding 合同、DBSCAN 自动调参、DBSCAN/HDBSCAN Schema、
+多重可信门控、精简簇视图语义抽象决策、抽象拒绝后原样保留、二态评分裁决、
 阶段2合同适配与阶段3正式合成输入、自动代表区域上下文、
 通用习语/仓库特有习语开放分类、Agent 非空理由链、
 共享异味分类/独立门禁/事后审计、合成确定性门限、评价辅助函数、LLM
@@ -37,7 +37,10 @@
   --manifest docs/research/cpp-dataset-manifest.json
 ```
 
-它验证正式项目数量、固定 commit、四列 pickle Schema、项目身份、仓库相对路径安全与唯一性，以及审计文件数/函数数和独立分析结果的一致性。
+它验证 23 个正式项目和 3 个历史项目的固定 commit、四列 pickle Schema、
+项目身份、仓库相对路径安全与唯一性，以及审计文件数/函数数和独立分析结果的
+一致性；同时复算正式项目的主领域、相对分析复杂度和汇总分布，并确认已淘汰的
+GSL 本地路径不存在。
 
 ## 3. 导入和帮助入口
 
@@ -136,6 +139,12 @@ HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
   --output outputs/smoke/cpp/clusters.pkl \
   --report outputs/smoke/cpp/dbscan-tuning.json
 
+.venv/bin/python -m src.mining.cluster_merge \
+  --clusters outputs/smoke/cpp/clusters.pkl \
+  --embeddings outputs/smoke/cpp/embeddings.pkl \
+  --output outputs/smoke/cpp/clusters-merged.pkl \
+  --report outputs/smoke/cpp/cluster-merge-report.json
+
 .venv/bin/python -m src.mining.hdbscan_clustering \
   --input outputs/smoke/cpp/embeddings.pkl \
   --output outputs/smoke/cpp/clusters-hdbscan.pkl \
@@ -150,13 +159,20 @@ HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
 中心选择。DBSCAN 历史 `--optimize` 会执行 50 次贝叶斯优化调用，不属于
 低成本冒烟检查。不得根据最终 IC、ISP、F1 或人工标签反向修改聚类参数。
 
+归并冒烟还应检查输入输出成员数一致、输出继续使用七列 Schema、来源 label 与
+理由完整、代表代码属于合并后的真实成员，以及调用名、类型、运算符、字面量、
+控制条件、返回值或非局部标识不同时保持分离。测试和正式运行都应写入新派生路径，
+不得覆盖冻结 DBSCAN 产物。
+
 嵌入默认按 8 段批量推理，并按源码长度临时分组以减少 padding；结果会写回原始下标，仍保持每段 `(1, hidden_size)` CPU tensor、候选顺序和 pickle schema。内存受限时可减小 `--batch-size`，对照单段路径时可设为 `1`。tokenizer 使用 `truncation=False`；超限、模型名不一致或预算不一致必须失败，不能在此阶段重新切分。
 
 quality-v2 的区域、语句和 Def-Use 选择发生在 Parser 片段构建阶段；历史数据集
 对照在 `src.parser.fragment_builder` 使用 `--candidate-profile legacy`。
 embedding 的同名参数只校验产物 profile，不重新选择候选。运行完整嵌入前必须先
-检查 Parser token 审计。当前冻结的 26 仓正式语料共有 233,912 个 model-ready
-候选；历史三个仓库快照的 96,039 条只用于旧基线复核，不得与正式产物混用。
+检查 Parser token 审计。筛选前 26 仓阶段2语料共有 233,912 个 model-ready
+候选；聚类质量筛选后的 23 仓正式语料共有 200,047 个。`cpp-httplib`、`entt`
+和 `simdjson` 的产物只用于筛选复核或边界案例，不得进入阶段3/4与正式主结果。
+更早的三个仓库快照共 96,039 条，只用于旧基线复核，也不得与正式产物混用。
 
 ## 6. 可读产物导出
 
@@ -189,21 +205,22 @@ PKL 是阶段间的规范格式；不要用原样 CSV 替换嵌套 AST、tensor 
   tests.agents.test_prompt_contracts -v
 ```
 
-它检查确定性单簇规则、完整簇与规则证据进入语义 Prompt、只抽象规则筛出的高频
+它检查 C++ 词法等价、仓库内保守簇归并与重算真实代表、确定性单簇规则、代表代码/
+词法去重变体/四项统计进入语义 Prompt、完整成员只留在产物、只抽象规则筛出的高频
 局部换名、LLM `keep` 后保持原代码、判断/合成二态评分、阶段2合同适配与阶段3
 正式输入、同区域分组、自动上下文与零调用失败、共享异味分类、独立过滤门禁、
 分层事后审计与逐类别指标、跨区域禁止分组、合成增量产物、新增调用拒绝、
 候选上限零调用拒绝、SQLite checkpoint 配置一致性续跑、
 阶段2非执行分支的严格阈值、`contract_only_not_executed` 空 artifact 和零
-LLM调用、受控目录与仓库特有分类的确定性标准化、Schema v7 理由传播，
+LLM调用、受控目录与仓库特有分类的确定性标准化、阶段3 Schema v8 理由传播，
 以及所有 Agent 的中文提示词和完整 Schema。故障注入用例还验证：
 
 - 请求异常时最多重试1次，成功恢复后 `logical_attempts=2`；
 - 每次逻辑尝试只修复 JSON 1次，两次逻辑尝试耗尽时单 Agent 最多4次端点请求；
 - 阶段3一个并行 Agent 失败不会取消另一个分支，当前簇安全拒绝；
 - 阶段4规划失败后不调用组装和两个复审 Agent，当前组跳过而非中断整批；
-- 阶段3严格上下文门禁失败时两个 Agent 均不运行；成功时语义和异味 Agent 都收到
-  经哈希验证的代表函数/区域；
+- 阶段3严格上下文门禁失败时两个 Agent 均不运行；成功时经哈希验证的代表函数/
+  区域只写入本地审计证据，不进入两个 Agent 的提示词；
 - 阶段4同区域候选超过上限时保留整组证据而不静默截断，四个 Agent 均不运行；
 - `is_idiom=false`、未知目录编号、矛盾分类、非有限置信度或空判断理由都不能
   进入已接受产物；
@@ -214,7 +231,7 @@ LLM调用、受控目录与仓库特有分类的确定性标准化、Schema v7 �
 
 ```bash
 .venv/bin/python -m src.idiom_judgment.judge_clusters \
-  --input outputs/cpp/cli11/clusters.pkl \
+  --input outputs/cpp/cli11/clusters-merged.pkl \
   --output outputs/cpp/cli11/idiom-judgment-rule-only.pkl \
   --report outputs/cpp/cli11/idiom-judgment-rule-only.json \
   --rule-only --limit 20
@@ -225,7 +242,7 @@ LLM调用、受控目录与仓库特有分类的确定性标准化、Schema v7 �
 
 ```bash
 .venv/bin/python -m src.idiom_judgment.judge_clusters \
-  --input outputs/cpp/cli11/clusters.pkl \
+  --input outputs/cpp/cli11/clusters-merged.pkl \
   --source-root repos/cli11 --require-context \
   --checkpoint outputs/cpp/cli11/idiom-judgment.sqlite3 \
   --output outputs/cpp/cli11/idiom-judgment.pkl \

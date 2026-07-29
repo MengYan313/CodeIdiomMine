@@ -1,11 +1,15 @@
 {
   "schema_version": 1,
   "retrieved_at": "2026-07-24",
+  "screened_at": "2026-07-29",
   "selection_policy": {
+    "sampling_method": "有明确约束的目的性最大差异抽样",
+    "probability_sample": false,
     "formal_statuses": [
       "保留",
       "条件保留"
     ],
+    "historical_status": "阶段2后排除",
     "excluded_status": "淘汰",
     "standard_extensions": [
       ".c",
@@ -18,7 +22,54 @@
       ".hpp",
       ".hxx"
     ],
-    "notes": "定量字段由 scripts/analyze_cpp_dataset.py 从固定本地仓库与解析产物重算；本文件只维护需要人工判断的项目属性与筛选结论。"
+    "candidate_criteria": [
+      "公开且许可可核验的真实生产项目",
+      "C++ 主体且核心源码可按统一入口读取",
+      "非归档并在元数据快照日前365天内有上游push",
+      "与已有候选在领域、规模或习语重点上形成互补"
+    ],
+    "stage1_eligibility": [
+      "固定完整commit和源码范围",
+      "统一扩展名、目录与文件排除规则",
+      "每个扫描文件都有零构建解析或诊断记录",
+      "路径、项目身份和产物可复算"
+    ],
+    "stage2_suitability": [
+      "冻结DBSCAN产物不被聚合发行副本或依赖镜像主导",
+      "聚类支持与跨文件复现足以支持后续LLM和主评价",
+      "定量代理必须结合具体代表簇语义复核"
+    ],
+    "non_selection_signals": [
+      "star与fork不作为硬阈值",
+      "低AST覆盖率本身不作为淘汰理由",
+      "真实LLM结果和最终IC、ISP、F1不参与项目去留"
+    ],
+    "notes": "“保留”和“条件保留”构成23仓正式论文主数据集；“阶段2后排除”不进入后续LLM判断、合成或主结果统计，但保留固定源码和阶段1/2产物作为筛选前证据；“淘汰”不保留本地仓库。定量字段由 scripts/analyze_cpp_dataset.py 从固定本地仓库与解析产物重算。"
+  },
+  "classification_policy": {
+    "scope": "仅对“保留”和“条件保留”的正式项目分类",
+    "primary_domain": {
+      "field": "primary_domain",
+      "assignment_basis": "按固定 commit 中项目核心生产用途人工指定一个互斥主领域；跨领域能力继续由 project_type 与 idiom_focus 保留，不因分类而丢失。",
+      "categories": [
+        "数据表示与泛型基础库",
+        "开发工具与工程基础设施",
+        "网络与分布式系统",
+        "应用与跨平台界面",
+        "存储与并发基础设施"
+      ]
+    },
+    "analysis_complexity": {
+      "name": "相对分析复杂度",
+      "indicators": [
+        "effective_line_count",
+        "selected_file_count",
+        "candidate_count"
+      ],
+      "score": "对三项阶段1指标分别计算正式23仓内升序平均秩百分位，再等权平均；分数越高表示本流水线的输入规模和候选处理负荷越高。",
+      "strata": "按综合分数升序确定近似等频三层；当前23仓为低8、中8、高7，分界相同时以 slug 保证确定性。",
+      "prohibited_interpretation": "该层级不是圈复杂度、可维护性或项目质量标签，不参与项目去留、DBSCAN参数、LLM提示词或阈值选择。"
+    }
   },
   "projects": [
     {
@@ -27,6 +78,7 @@
       "status": "保留",
       "seed_project": false,
       "project_type": "命令行系统监控应用",
+      "primary_domain": "应用与跨平台界面",
       "cpp_standard": "C++20",
       "build_systems": ["CMake", "Make"],
       "license_spdx": "Apache-2.0",
@@ -40,6 +92,7 @@
       "status": "条件保留",
       "seed_project": false,
       "project_type": "测试框架",
+      "primary_domain": "开发工具与工程基础设施",
       "cpp_standard": "C++14",
       "build_systems": ["CMake", "Meson", "Bazel"],
       "license_spdx": "BSL-1.0",
@@ -53,6 +106,7 @@
       "status": "保留",
       "seed_project": false,
       "project_type": "头文件型序列化库",
+      "primary_domain": "数据表示与泛型基础库",
       "cpp_standard": "C++11",
       "build_systems": ["CMake"],
       "license_spdx": "BSD-3-Clause",
@@ -66,6 +120,7 @@
       "status": "保留",
       "seed_project": false,
       "project_type": "头文件型命令行解析库",
+      "primary_domain": "开发工具与工程基础设施",
       "cpp_standard": "C++11",
       "build_systems": ["CMake", "Meson", "Bazel"],
       "license_spdx": "BSD-3-Clause",
@@ -79,6 +134,7 @@
       "status": "条件保留",
       "seed_project": false,
       "project_type": "头文件型无锁并发队列",
+      "primary_domain": "存储与并发基础设施",
       "cpp_standard": "C++11",
       "build_systems": ["CMake", "Make"],
       "license_spdx": "BSD-2-Clause",
@@ -89,15 +145,18 @@
     {
       "slug": "cpp-httplib",
       "github_full_name": "yhirose/cpp-httplib",
-      "status": "条件保留",
+      "status": "阶段2后排除",
       "seed_project": false,
       "project_type": "单头文件 HTTP/HTTPS 库",
       "cpp_standard": "C++11",
       "build_systems": ["CMake", "Meson"],
       "license_spdx": "MIT",
       "idiom_focus": ["网络 I/O", "RAII", "回调", "并发", "错误处理"],
-      "rationale": "少文件但高有效代码量，可补充网络、回调和资源管理习语。",
-      "limitations": ["单头文件结构使文件数不能代表实际规模。"]
+      "rationale": "阶段1纳入后完成阶段2聚类；因结果几乎完全局限于单文件，无法支撑论文主评价所需的跨文件复现，故不进入后续LLM与主结果统计。",
+      "limitations": [
+        "阶段2的588个簇中582个为单文件簇，跨文件簇仅6个（1.02%）；每仓Top100强结构代理率仅1%。",
+        "固定源码与阶段1/2产物仅作为单头文件边界案例和筛选前证据保留。"
+      ]
     },
     {
       "slug": "drogon",
@@ -105,6 +164,7 @@
       "status": "保留",
       "seed_project": false,
       "project_type": "异步 Web 框架",
+      "primary_domain": "网络与分布式系统",
       "cpp_standard": "C++17",
       "build_systems": ["CMake"],
       "license_spdx": "MIT",
@@ -115,15 +175,18 @@
     {
       "slug": "entt",
       "github_full_name": "skypjack/entt",
-      "status": "保留",
+      "status": "阶段2后排除",
       "seed_project": false,
       "project_type": "头文件型实体组件系统库",
       "cpp_standard": "C++17",
       "build_systems": ["CMake", "Bazel"],
       "license_spdx": "MIT",
       "idiom_focus": ["模板元编程", "类型擦除", "迭代器", "移动语义", "泛型算法"],
-      "rationale": "模板密集且现代 C++ 特征丰富，可补充 ECS 与泛型设计习语。",
-      "limitations": ["头文件型项目。"]
+      "rationale": "阶段1纳入后完成阶段2聚类；聚类主要复现同仓库的聚合分发副本，而不是独立源码位置中的稳定变化模式，故不进入后续LLM与主结果统计。",
+      "limitations": [
+        "942个簇中719个为源码完全重复簇（76.33%）；9,100个簇内成员中7,188个来自 single_include/（79.0%）。",
+        "固定源码与阶段1/2产物作为筛选前证据保留。"
+      ]
     },
     {
       "slug": "envoy",
@@ -131,6 +194,7 @@
       "status": "条件保留",
       "seed_project": true,
       "project_type": "大型网络代理",
+      "primary_domain": "网络与分布式系统",
       "cpp_standard": "C++17",
       "build_systems": ["Bazel"],
       "license_spdx": "Apache-2.0",
@@ -145,6 +209,7 @@
       "status": "保留",
       "seed_project": false,
       "project_type": "格式化基础库",
+      "primary_domain": "数据表示与泛型基础库",
       "cpp_standard": "C++11",
       "build_systems": ["CMake"],
       "license_spdx": "MIT",
@@ -171,6 +236,7 @@
       "status": "条件保留",
       "seed_project": false,
       "project_type": "头文件型 JSON 库",
+      "primary_domain": "数据表示与泛型基础库",
       "cpp_standard": "C++11",
       "build_systems": ["CMake", "Meson", "Make", "Bazel"],
       "license_spdx": "MIT",
@@ -184,6 +250,7 @@
       "status": "保留",
       "seed_project": false,
       "project_type": "嵌入式键值存储库",
+      "primary_domain": "存储与并发基础设施",
       "cpp_standard": "C++11",
       "build_systems": ["CMake"],
       "license_spdx": "BSD-3-Clause",
@@ -197,6 +264,7 @@
       "status": "保留",
       "seed_project": false,
       "project_type": "消息通信库",
+      "primary_domain": "网络与分布式系统",
       "cpp_standard": "C++11",
       "build_systems": ["CMake", "Autotools"],
       "license_spdx": "MPL-2.0",
@@ -210,6 +278,7 @@
       "status": "条件保留",
       "seed_project": false,
       "project_type": "头文件型枚举反射库",
+      "primary_domain": "数据表示与泛型基础库",
       "cpp_standard": "C++17",
       "build_systems": ["CMake", "Meson", "Bazel"],
       "license_spdx": "MIT",
@@ -223,6 +292,7 @@
       "status": "保留",
       "seed_project": false,
       "project_type": "移动网络终端",
+      "primary_domain": "网络与分布式系统",
       "cpp_standard": "C++11",
       "build_systems": ["Autotools"],
       "license_spdx": "GPL-3.0",
@@ -236,6 +306,7 @@
       "status": "保留",
       "seed_project": false,
       "project_type": "构建系统命令行工具",
+      "primary_domain": "开发工具与工程基础设施",
       "cpp_standard": "C++17",
       "build_systems": ["CMake"],
       "license_spdx": "Apache-2.0",
@@ -249,6 +320,7 @@
       "status": "保留",
       "seed_project": false,
       "project_type": "桌面状态栏应用",
+      "primary_domain": "应用与跨平台界面",
       "cpp_standard": "C++17",
       "build_systems": ["CMake"],
       "license_spdx": "MIT",
@@ -262,6 +334,7 @@
       "status": "保留",
       "seed_project": true,
       "project_type": "大型桌面网络应用",
+      "primary_domain": "应用与跨平台界面",
       "cpp_standard": "C++17",
       "build_systems": ["CMake"],
       "license_spdx": "GPL-2.0-or-later",
@@ -275,6 +348,7 @@
       "status": "条件保留",
       "seed_project": true,
       "project_type": "跨平台运行时的 C++ 子系统",
+      "primary_domain": "应用与跨平台界面",
       "cpp_standard": "C++20",
       "build_systems": ["CMake", "Buck"],
       "license_spdx": "MIT",
@@ -286,15 +360,18 @@
     {
       "slug": "simdjson",
       "github_full_name": "simdjson/simdjson",
-      "status": "条件保留",
+      "status": "阶段2后排除",
       "seed_project": false,
       "project_type": "高性能 JSON 解析库",
       "cpp_standard": "C++17",
       "build_systems": ["CMake"],
       "license_spdx": "Apache-2.0",
       "idiom_focus": ["SIMD", "模板", "错误码", "迭代器", "平台分派"],
-      "rationale": "高性能库，可补充 SIMD、平台分派和低开销错误传播模式。",
-      "limitations": ["包含大规模平台专用与聚合源码，可靠 AST 字节覆盖率低于 0.5，使用时应结合逐文件诊断。"]
+      "rationale": "阶段1纳入后完成阶段2聚类；聚类被聚合头文件、分发副本和依赖镜像的逐字重复主导，语义候选有效率过低，故不进入后续LLM与主结果统计。",
+      "limitations": [
+        "1,031个簇中956个为源码完全重复簇（92.73%）；11,554个簇内成员中9,697个来自 singleheader/（83.9%）；每仓Top100强结构代理率仅7%。",
+        "固定源码与阶段1/2产物作为筛选前证据保留。"
+      ]
     },
     {
       "slug": "spdlog",
@@ -302,6 +379,7 @@
       "status": "保留",
       "seed_project": false,
       "project_type": "日志基础库",
+      "primary_domain": "开发工具与工程基础设施",
       "cpp_standard": "C++11",
       "build_systems": ["CMake"],
       "license_spdx": "MIT",
@@ -315,6 +393,7 @@
       "status": "保留",
       "seed_project": false,
       "project_type": "并行任务图编程库",
+      "primary_domain": "存储与并发基础设施",
       "cpp_standard": "C++17",
       "build_systems": ["CMake"],
       "license_spdx": "MIT",
@@ -328,6 +407,7 @@
       "status": "保留",
       "seed_project": false,
       "project_type": "头文件型 TOML 库",
+      "primary_domain": "数据表示与泛型基础库",
       "cpp_standard": "C++17",
       "build_systems": ["CMake", "Meson"],
       "license_spdx": "MIT",
@@ -341,6 +421,7 @@
       "status": "保留",
       "seed_project": false,
       "project_type": "高性能异步网络库",
+      "primary_domain": "网络与分布式系统",
       "cpp_standard": "C++17",
       "build_systems": ["Make"],
       "license_spdx": "Apache-2.0",
@@ -354,6 +435,7 @@
       "status": "保留",
       "seed_project": false,
       "project_type": "YAML 解析与序列化库",
+      "primary_domain": "数据表示与泛型基础库",
       "cpp_standard": "C++11",
       "build_systems": ["CMake", "Bazel"],
       "license_spdx": "MIT",
@@ -367,6 +449,7 @@
       "status": "条件保留",
       "seed_project": false,
       "project_type": "跨平台布局引擎",
+      "primary_domain": "应用与跨平台界面",
       "cpp_standard": "C++20",
       "build_systems": ["CMake"],
       "license_spdx": "MIT",

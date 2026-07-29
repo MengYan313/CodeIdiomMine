@@ -3,7 +3,7 @@
 论文方法将阶段3命名为“多重可信门控”，将阶段4命名为“关联闭环融合”。当前
 正式 Agent 流程按功能职责拆为两个沿用简洁工程命名的领域包：
 
-- `src/idiom_judgment/`：实现多重可信门控，处理单个 DBSCAN 聚类簇；
+- `src/idiom_judgment/`：实现多重可信门控，处理单个仓库内归并后聚类簇；
 - `src/idiom_synthesis/`：实现关联闭环融合，处理同一区域内多个相关习语。
 
 `src/agents/` 只保留当前流程实际复用的 `BaseRoutedAgent`、结构化调用基类和
@@ -13,12 +13,12 @@
 ## 一、总体数据流
 
 ```text
-阶段2 clusters.pkl
+阶段2 clusters-merged.pkl
    ├─→ idiom_judgment
    │     规则/合同过滤
    │       → 可抽象位置规则提案
-   │       → 自动读取并验证代表函数/区域上下文
-   │       → 完整簇 + 规则证据 + 提案 + 上下文
+   │       → 自动读取并验证代表函数/区域上下文，只作本地门禁
+   │       → 代表代码 + 词法去重变体 + 四项统计 + 规则/提案
    │       → 语义/抽象 Agent：abstract 或 keep ─┐
    │       → 代码异味 Agent ───────┤
    │       → 业务评分与质量门禁 ──┘
@@ -77,9 +77,13 @@
 格式字符串不会仅因变化而抽象。相同局部实体的定义和使用共享同一占位符。
 规则只产生 `AbstractionProposal`，不修改代码。随后语义/抽象 Agent 接收：
 
-- 代表代码和同一簇的全部成员代码；
+- 代表代码和按 C++ 词法 token 去重后的其他真实代码变体；
+- 原始成员数、变体数、文件数和源码位置数；
 - 完整规则初判和警告；
 - 所有规则抽象提案、候选位置、取值、支持数与覆盖率。
+
+完整成员代码和 `source_infos` 仍由本地规则、支持度、审计、评价和实例归类使用，
+但不进入阶段3 LLM 请求。
 
 Agent 必须显式返回 `abstract` 或 `keep`。`abstract` 时只能批准输入中的
 `proposal_id`，确定性代码再应用批准集合与规则提案的交集；`keep`、规则无提案
@@ -87,13 +91,14 @@ Agent 必须显式返回 `abstract` 或 `keep`。`abstract` 时只能批准输�
 质量和异味门禁通过，未抽象代码与成功抽象模板都会进入阶段4。
 
 正式运行还应从 `center_point_info` 自动读取代表函数/区域，校验仓库身份、相对
-路径、范围和整文件 `source_sha256`。该上下文同时进入语义/抽象与异味请求；
-`--require-context` 下任何校验失败都零调用拒绝当前簇。非严格兼容运行不会把
-缺失上下文伪装为已验证，`context_evidence.failure_kind` 会保留原因。
+路径、范围和整文件 `source_sha256`。该上下文只形成本地门禁和
+`context_evidence`，不进入阶段3语义/抽象或异味请求；`--require-context`
+下任何校验失败都零调用拒绝当前簇。非严格兼容运行不会把缺失上下文伪装为已验证，
+`context_evidence.failure_kind` 会保留原因。
 
 ### 2.3 两个专项 Agent、类型分类与裁决
 
-语义/抽象 Agent 在同一次完整簇审查中判断稳定意图、完整性、复用价值、前置条件
+语义/抽象 Agent 在同一次精简簇审查中判断稳定意图、完整性、复用价值、前置条件
 和规则候选抽象安全性，并分别输出 `is_idiom`、非空理由、业务分与独立抽象决策。
 通过习语有效性判断时，它还把候选分类为受控目录中的目录化通用习语，或在无法
 可靠对应时分类为仓库专属习语（运行时标签为 `仓库特有习语`）；不能为了获得
@@ -114,8 +119,9 @@ Agent 必须显式返回 `abstract` 或 `keep`。`abstract` 时只能批准输�
   `smell_gate` 直接覆盖业务结论为 `rejected`；
 - `--rule-only` 只生成规则与抽象提案，状态为 `pending_llm`，不能冒充已接受习语。
 
-Schema v7 保存标准化 `idiom_classification`、各 Agent 的 `agent_reasons` 和汇总
-后的 `decision_reason`。目录、三态分类和无效载荷回退见
+Schema v8 保存完整成员、四项簇统计、精简 LLM 输入、标准化
+`idiom_classification`、各 Agent 的 `agent_reasons` 和汇总后的
+`decision_reason`。目录、三态分类和无效载荷回退见
 [C++习语类型目录与开放分类合同](idiom-taxonomy.md)。
 目录化通用结果可在各仓库独立完成流水线后按 `taxonomy_version + catalog_id`
 汇总；仓库专属结果保留项目和阶段内记录作用域；全量分析使用二者并集，但不消除
@@ -225,7 +231,7 @@ Agent 的端点请求上限为4。有效业务结果中的 `keep`、低分、无
 | Runtime 路由异常 | 映射为对应 Agent 的技术失败结果 | 拒绝当前簇，不抛弃另一并行分支 |
 | 未预料的单簇编排异常 | 写入 `unexpected_orchestration_error` | `skip_cluster`，命令继续后续簇 |
 
-正常的抽象 `keep` 只保留原代码，不触发失败回退。阶段3 artifact Schema v7 在
+正常的抽象 `keep` 只保留原代码，不触发失败回退。阶段3 artifact Schema v8 在
 每条记录的 `agent_trace` 保存 `status`、`logical_attempts`、`failure_kind` 和
 `failure_action`，并保存 `idiom_classification`、`agent_reasons` 和
 `decision_reason`；汇总中的 `technical_failure_count` 按含技术失败的记录计数。

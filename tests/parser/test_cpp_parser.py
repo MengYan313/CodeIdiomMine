@@ -9,11 +9,30 @@ from src.parser.ast_parser import ASTParser
 from src.parser.audit import audit_parser
 from src.parser.candidates import QUALITY_PROFILE, select_candidates
 from src.parser.cpp_adapter import CPP_ADAPTER
+from src.parser.cpp_lex import lexically_equivalent
 from src.parser.file_scanner import FileScanner
 from src.parser.repo2data import parse_repository
 
 
 class CppParserTests(unittest.TestCase):
+    def test_cpp_lexical_equivalence_ignores_layout_but_preserves_semantics(self):
+        original = 'if (ready) { emit("a b", \'x\'); return value + 1; }'
+        reformatted = (
+            'if(ready){/* layout-only comment */emit("a b",\'x\');'
+            "return value+1;}"
+        )
+
+        self.assertTrue(lexically_equivalent(original, reformatted))
+        for changed in (
+            'if (ready) { send("a b", \'x\'); return value + 1; }',
+            'if (ready) { emit("a c", \'x\'); return value + 1; }',
+            'if (ready) { emit("a b", \'y\'); return value + 1; }',
+            'if (valid) { emit("a b", \'x\'); return value + 1; }',
+            'if (ready) { emit("a b", \'x\'); return value - 1; }',
+            'if (ready) { emit("a b", \'x\'); return other + 1; }',
+        ):
+            self.assertFalse(lexically_equivalent(original, changed))
+
     def test_cpp_adapter_masks_directives_without_changing_coordinates(self):
         source = (
             b"#define WRAP(value) \\\n"

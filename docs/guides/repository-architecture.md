@@ -90,6 +90,7 @@ repos/<project>/...
   -> outputs/cpp/<project>/clusters.pkl             # DBSCAN 正式聚类出口
        \-> outputs/cpp/<project>/dbscan-tuning.json # 无监督参数选择证据
        \-> outputs/cpp/<project>/readables/...
+  -> outputs/cpp/<project>/clusters-merged.pkl      # 仓库内保守归并，阶段3输入
   -> outputs/cpp/<project>/idiom-judgment.pkl     # 多重可信门控，阶段3
   -> results/cpp/<project>/idiom-synthesis.pkl    # 关联闭环融合，阶段4
   -> results/cpp/<project>/eval.json
@@ -100,11 +101,16 @@ repos/<project>/...
 - `fragments.pkl`：Parser 片段 Schema v1；保存目标 tokenizer、token 预算、`quality-v2` 原文片段、既有 `fragment_info` 映射结构、超限拒绝清单和降级统计。embedding 的规范输入是该产物。
 - `embeddings.pkl`：DataFrame 列为 `pros_name`、`pros_src`、`pros_emb`、`pros_info`；嵌入以 CPU `torch.Tensor` 保存。
 - `clusters.pkl`：`list[{pros_name, clusters}]`；簇表包含 `label`、`center_point`、`else_point`、`cluster_size`、`center_point_info`、`infos`、`loc_label`。正式产物使用 DBSCAN；HDBSCAN 对照产物可以附加 `clustering_metadata`，但不改变上述下游必需字段。
+- `clusters-merged.pkl`：冻结 DBSCAN 之后、阶段3之前的单仓派生产物。中心代码
+  词法等价时直接归并；AST同构且高相似的候选只有在全部差异均为已声明局部变量
+  一致换名时才归并。完整成员和 `infos` 不变，并用归并后全部原始 embedding
+  重算质心与真实代表。簇表继续使用相同七列 Schema，来源 label 和归并理由写入
+  顶层 `clustering_metadata.postprocessing`。
 - `dbscan-tuning.json`：保存目标函数改进的贝叶斯搜索空间、warm-start 观测、
   无监督可行性条件、三指标目标权重和最终 incumbent；标准 GP 代理模型与 EI
   采集函数不作改动。选择器不读取仓库身份、人工标签或最终评价指标；该 JSON
   是选择证据，不替代阶段间 pickle。
-- `idiom-judgment.pkl`：Schema v7。正式结果按 `accepted`、`rejected` 分区，离线预检另有 `pending_llm`；每条记录保存规则证据、抽象提案、含完整簇成员和经路径/范围/哈希验证代表上下文的 `semantic_review_input`、独立 `context_evidence`、LLM `is_idiom` 与 `abstract/keep` 决策、实际批准集合与 `abstraction_applied`、目录化通用习语或仓库专属习语的 `idiom_classification`、语义/类型/异味 `agent_reasons`、最终 `decision_reason`、语义/复用价值业务 `scorecard`、完整 `smell_review_input`、结构化异味 findings 与独立 `smell_gate`、各 Agent 尝试/失败/回退的 `agent_trace`，以及 `center_point`、`info`、`source_infos`、`cnt`、`avg_ast_num`、`avg_subtree_size` 和 `loc_label` 兼容投影。
+- `idiom-judgment.pkl`：Schema v8。正式结果按 `accepted`、`rejected` 分区，离线预检另有 `pending_llm`；每条记录保存完整 `member_codes`/`source_infos`、四项 `cluster_statistics`、规则证据、抽象提案、只含代表代码和词法去重变体的精简 `semantic_review_input`、独立 `context_evidence`、LLM `is_idiom` 与 `abstract/keep` 决策、实际批准集合与 `abstraction_applied`、目录化通用习语或仓库专属习语的 `idiom_classification`、语义/类型/异味 `agent_reasons`、最终 `decision_reason`、语义/复用价值业务 `scorecard`、精简 `smell_review_input`、结构化异味 findings 与独立 `smell_gate`、各 Agent 尝试/失败/回退的 `agent_trace`，以及 `center_point`、`info`、`cnt`、`avg_ast_num`、`avg_subtree_size` 和 `loc_label` 兼容投影。经路径/范围/哈希验证的代表上下文只用于本地门禁和审计，不进入阶段3 LLM 请求。
 - `idiom-synthesis.pkl`：Schema v7，语义固定为 `synthesis_delta`。正式读取习语判断的 `accepted` 记录并以顶层 `source_judgments` 携带其判断理由和类型，只把代表 `project + source_path + source_extent` 完全一致的候选组成一组；缺少可验证代表区域时不使用历史 `loc_label` 猜测分组。产物只保存合成尝试和成功增量，不复制未合成、未选择或合成失败的阶段3习语；它们继续由阶段3产物持有。每次尝试保存自动同区域 `context_evidence`、合成计划、组装来源、针对合成结果重新执行的 `is_idiom` 与 `idiom_classification`、规划/组装/质量/类型/异味 `agent_reasons`、最终 `decision_reason`、质量复审业务 `scorecard`、当前合成代码的 `smell_review_input`/分类 findings/独立 `smell_gate`、Tree-sitter 语法与新增调用门禁、各 Agent 尝试/失败/跳过的 `agent_trace`、全部 `source_infos`、`merge_rounds` 和 `synthesis_trace`。阶段2 `clusters.pkl` 只验证适配和严格阈值逻辑，程序化调用生成 `contract_only_not_executed` 空 artifact，不进入正式 CLI 或实验执行。
 - `eval.json`：正式默认在每个仓库完成全仓发现后，对来源文件做确定性的参考/测量分区，并在测量分区上计算 `IC_macro`、`IC_micro`、最终 `IC=(IC_macro+IC_micro)/2`、集合复现率 `ISP` 及使用最终 IC 的 `F1`；另报告习语种类数、平均聚类簇大小、平均跨文件支持数和 `AvgAST`，并保留必要分子分母。兼容字段 `training_*`、`test_*` 只表示参考/测量分区。留一项目模式只作历史兼容，聚类模拟模式只作公式验证。
 

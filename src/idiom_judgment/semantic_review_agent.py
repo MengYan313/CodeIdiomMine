@@ -34,7 +34,8 @@ _SYSTEM_MESSAGE = build_json_system_prompt(
     success_criteria=(
         "区分高频代码与具有稳定意图、完整边界和复用价值的代码习语。",
         "semantic_score 衡量意图稳定性与完整性，reuse_score 衡量复用价值，范围均为 0–100。",
-        "审查完整簇成员、规则初步证据和全部抽象提案，而不是只根据代表代码判断。",
+        "审查代表代码、按 C++ 词法 token 去重的代码变体和支持度统计。",
+        "规则初步证据和抽象提案只用于约束裁决，不得把它们当作额外源码实例。",
         "abstraction_decision 为 abstract 时，approved_abstraction_ids 至少包含一个输入提案中确实不影响意图、约束、API 与控制语义的编号。",
         "不应抽象或规则没有提案时返回 keep；keep 只拒绝抽象，不代表拒绝该习语。",
         "明确给出 intent 和可由输入证据支持的 preconditions。",
@@ -70,7 +71,7 @@ _SYSTEM_MESSAGE = build_json_system_prompt(
         "证据不足或依赖未提供的项目约定时降低 semantic_score 与 reuse_score。",
     ),
 )
-SEMANTIC_REVIEW_PROMPT_VERSION = 2
+SEMANTIC_REVIEW_PROMPT_VERSION = 3
 SEMANTIC_REVIEW_PROMPT_SHA256 = hashlib.sha256(
     _SYSTEM_MESSAGE.encode("utf-8")
 ).hexdigest()
@@ -126,10 +127,10 @@ class SemanticReviewRequest:
     project: str
     cluster_id: str
     representative_code: str
-    cluster_members: List[str]
+    code_variants: List[str]
+    cluster_statistics: dict
     rule_evidence: dict
     abstraction_proposals: List[dict]
-    context_code: str = ""
 
 
 @dataclass
@@ -166,9 +167,9 @@ class SemanticReviewAgent(JsonLLMAgent):
         message: SemanticReviewRequest,
         ctx: MessageContext,
     ) -> SemanticReviewResult:
-        members = "\n\n".join(
-            f"### 簇成员 {index + 1}\n```cpp\n{code}\n```"
-            for index, code in enumerate(message.cluster_members)
+        variants = "\n\n".join(
+            f"### 代码变体 {index + 1}\n```cpp\n{code}\n```"
+            for index, code in enumerate(message.code_variants)
         )
         prompt = f"""请审查以下同仓库单个聚类簇。
 
@@ -180,19 +181,17 @@ class SemanticReviewAgent(JsonLLMAgent):
 {message.representative_code}
 ```
 
-## 完整簇成员（共 {len(message.cluster_members)} 个）
-{members or "（簇成员缺失）"}
+## 去重后的其他代码变体（共 {len(message.code_variants)} 个）
+{variants or "（无其他词法变体）"}
+
+## 簇统计
+{json.dumps(message.cluster_statistics, ensure_ascii=False, sort_keys=True)}
 
 ## 确定性规则证据
 {json.dumps(message.rule_evidence, ensure_ascii=False, sort_keys=True)}
 
 ## 保守抽象提案
 {json.dumps(message.abstraction_proposals, ensure_ascii=False, sort_keys=True)}
-
-## 自动填充且通过来源哈希验证的代表函数/区域上下文
-```cpp
-{message.context_code or "（未提供经验证的源码上下文）"}
-```
 
 若规则提案为空，或任何提案会损害稳定语义，请返回 keep。只有确实属于高频、
 无意义局部差异的提案才可返回 abstract 并列入 approved_abstraction_ids。"""

@@ -20,12 +20,15 @@
 - [本地开发基线](guides/local-baseline.md)：已验证环境、实际产物、错误证据和延期事项。
 - [可信门控与闭环融合 Agent 架构](guides/agent-system.md)：多重可信门控、关联闭环融合、确定性门禁和 Agent 失败恢复矩阵。
 - [可信门控与闭环融合开发契约](guides/agent-contracts.md)：修改规则、抽象、重试、回退或 Agent 时必须保持的行为约束。
-- [C++习语类型目录与开放分类合同](guides/idiom-taxonomy.md)：目录化通用习语、仓库专属习语、全量联合视图、分类理由和 Schema v7 审计字段。
+- [C++习语类型目录与开放分类合同](guides/idiom-taxonomy.md)：目录化通用习语、仓库专属习语、全量联合视图、分类理由和阶段3 Schema v8审计字段。
 - [C++代码异味审查与事后审计](guides/code-smell-review.md)：共享分类表、独立过滤门禁、人工标签与逐类别准确性指标。
 
 ## 研究文档
 
-- [C++ 实验数据集现状报告](research/cpp-dataset-status-report.md)：26 个正式项目的构成、统计、范围、复算方法与局限。
+- [C++ 实验数据集现状报告](research/cpp-dataset-status-report.md)：23 个正式项目的构成、统计、范围、复算方法与局限。
+- [C++ 实验数据集分类与选取方法](research/cpp-dataset-classification.md)：23 个正式项目的主领域、相对分析复杂度、选取合理性与后续分层实验口径。
+- [C++ 聚类质量筛选报告](research/cpp-clustering-quality-screening.md)：从阶段2的26仓产物筛选正式23仓的依据、语义复核和指标变化。
+- [C++ 阶段2簇归并验证报告](research/cpp-cluster-merge-report.md)：23仓冻结产物上的仓库内保守归并、语义复核与前后指标。
 - [C++ 实验数据集逐项目排查报告](research/cpp-dataset-project-audit.md)：27 个候选的固定版本、许可、规模、解析质量与筛选结论。
 - [C++ 实验数据集结构化清单](research/cpp-dataset-manifest.json)：完整 commit、许可文件证据、复现命令、基线/最终指标与产物位置。
 - [C++ 实验数据集统计](research/cpp-dataset-statistics.json)：从实际固定源码和解析产物重算的正式汇总。

@@ -30,7 +30,7 @@ _SYSTEM_MESSAGE = build_json_system_prompt(
         "质量打分或接受/拒绝裁决。"
     ),
     success_criteria=(
-        "同时审查候选代码、相关代码或上下文与确定性证据，只报告输入中可定位的风险。",
+        "同时审查候选代码、相关代码证据与确定性证据，只报告输入中可定位的风险。",
         "每条 finding 使用一个固定 category，并分别记录 severity、confidence、evidence、impact 和 remediation。",
         "severity 表示风险一旦成立的影响，只能为 low、medium、high 或 critical；confidence 表示当前输入证据置信度，范围0–100。",
         f"固定分类表如下：\n{_TAXONOMY_TEXT}",
@@ -50,7 +50,7 @@ _SYSTEM_MESSAGE = build_json_system_prompt(
     ),
     stop_rules=("没有可定位异味时 findings 返回空数组，并简要说明未发现可见异味。",),
 )
-SMELL_REVIEW_PROMPT_VERSION = 2
+SMELL_REVIEW_PROMPT_VERSION = 3
 SMELL_REVIEW_PROMPT_SHA256 = hashlib.sha256(
     _SYSTEM_MESSAGE.encode("utf-8")
 ).hexdigest()
@@ -197,8 +197,8 @@ class SmellReviewAgent(JsonLLMAgent):
         ctx: MessageContext,
     ) -> SmellReviewResult:
         examples = "\n\n".join(
-            f"### 相关代码或上下文 {index + 1}\n```cpp\n{code}\n```"
-            for index, code in enumerate(message.related_examples[:5])
+            f"### 相关代码证据 {index + 1}\n```cpp\n{code}\n```"
+            for index, code in enumerate(message.related_examples)
         )
         prompt = f"""请独立审查以下候选习语的代码异味和复用风险。
 
@@ -210,8 +210,8 @@ class SmellReviewAgent(JsonLLMAgent):
 {message.candidate_code}
 ```
 
-## 相关代码或上下文
-{examples or "（无额外代码或上下文）"}
+## 相关代码证据
+{examples or "（无额外代码证据）"}
 
 ## 确定性证据
 {json.dumps(message.deterministic_evidence, ensure_ascii=False, sort_keys=True)}"""
