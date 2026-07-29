@@ -122,8 +122,8 @@ class IdiomAssemblyAgent(JsonLLMAgent):
                 call_attempts=trace.attempts,
                 failure_kind=trace.failure_kind,
             )
-        used_context = bool(data.get("used_context"))
-        reason = str(data.get("reason") or "").strip()
+        used_context = data["used_context"]
+        reason = data["reason"].strip()
         if not reason:
             return IdiomAssemblyResult(
                 merged_code="",
@@ -135,14 +135,11 @@ class IdiomAssemblyAgent(JsonLLMAgent):
                 failure_kind="invalid_domain_payload",
             )
         return IdiomAssemblyResult(
-            merged_code=str(data.get("merged_code") or "").strip(),
+            merged_code=data["merged_code"].strip(),
             used_context=used_context,
-            added_from_context=[
-                str(value)
-                for value in (data.get("added_from_context") or [])
-            ]
-            if used_context
-            else [],
+            added_from_context=(
+                data["added_from_context"] if used_context else []
+            ),
             reason=reason,
             call_status=trace.status,
             call_attempts=trace.attempts,

@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from dataclasses import dataclass
-from typing import List, Mapping
+from typing import List
 
 from autogen_core import MessageContext, message_handler
 from autogen_ext.models.openai import OpenAIChatCompletionClient
@@ -123,42 +124,27 @@ class SmellReviewResult:
 SMELL_REVIEW_AGENT_TYPE = "idiom_smell_review"
 
 
-def _confidence(value: object) -> float:
-    try:
-        return max(0.0, min(100.0, float(value)))
-    except (TypeError, ValueError):
-        return 0.0
-
-
 def _normalize_findings(
-    values: object,
+    values: List[dict],
 ) -> tuple[List[SmellFinding], bool]:
-    if not isinstance(values, list):
-        return [], True
     findings: List[SmellFinding] = []
     seen = set()
     invalid_payload = False
     for value in values:
-        if not isinstance(value, Mapping):
-            invalid_payload = True
-            continue
-        category = str(value.get("category") or "")
-        severity = str(value.get("severity") or "")
-        evidence = str(value.get("evidence") or "").strip()
-        impact = str(value.get("impact") or "").strip()
-        remediation = str(value.get("remediation") or "").strip()
-        try:
-            confidence = float(value.get("confidence"))
-        except (TypeError, ValueError):
-            confidence = -1.0
+        category = value["category"]
+        severity = value["severity"]
+        confidence = float(value["confidence"])
+        evidence = value["evidence"].strip()
+        impact = value["impact"].strip()
+        remediation = value["remediation"].strip()
         if (
             category not in SMELL_CATEGORY_BY_ID
             or severity not in SEVERITY_BASE_RISK
+            or not math.isfinite(confidence)
+            or not 0 <= confidence <= 100
             or not evidence
             or not impact
             or not remediation
-            or confidence < 0
-            or confidence > 100
         ):
             invalid_payload = True
             continue
@@ -170,7 +156,7 @@ def _normalize_findings(
             SmellFinding(
                 category=category,
                 severity=severity,
-                confidence=_confidence(confidence),
+                confidence=confidence,
                 evidence=evidence,
                 impact=impact,
                 remediation=remediation,
@@ -229,8 +215,8 @@ class SmellReviewAgent(JsonLLMAgent):
                 call_attempts=trace.attempts,
                 failure_kind=trace.failure_kind,
             )
-        findings, invalid_payload = _normalize_findings(data.get("findings"))
-        reason = str(data.get("reason") or "").strip()
+        findings, invalid_payload = _normalize_findings(data["findings"])
+        reason = data["reason"].strip()
         if invalid_payload or not reason:
             return SmellReviewResult(
                 analysis_status="failed",

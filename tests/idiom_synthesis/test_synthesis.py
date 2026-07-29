@@ -47,6 +47,13 @@ def _info(project, path, extent, code, *, source_sha256=""):
 
 
 class IdiomSynthesisTests(unittest.TestCase):
+    def test_group_limit_rejects_invalid_configuration(self):
+        with self.assertRaisesRegex(
+            ValueError,
+            "max_group_candidates 必须至少为 2",
+        ):
+            IdiomSynthesisPipeline(max_group_candidates=1)
+
     def test_loads_stage2_and_judgment_inputs(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
@@ -696,19 +703,6 @@ class IdiomSynthesisTests(unittest.TestCase):
         result = SynthesisResult(
             project="sample",
             status="manual_review",
-            selected=[],
-            merged_code="",
-            context_evidence={},
-            plan={},
-            assembly={},
-            review={},
-            smell={},
-            smell_gate={},
-            smell_review_input={},
-            agent_trace={},
-            scorecard={},
-            deterministic_checks={},
-            decision_reason="",
         )
         with self.assertRaisesRegex(
             ValueError,

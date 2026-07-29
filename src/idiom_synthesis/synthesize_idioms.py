@@ -29,11 +29,8 @@ logger = get_logger(__name__)
 
 
 def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
     with path.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+        return hashlib.file_digest(stream, "sha256").hexdigest()
 
 
 def _orchestration_failure_result(
@@ -53,12 +50,6 @@ def _orchestration_failure_result(
                 candidate.candidate_id for candidate in group
             ],
         },
-        plan={},
-        assembly={},
-        review={},
-        smell={},
-        smell_gate={},
-        smell_review_input={},
         agent_trace={
             "orchestration": {
                 "status": "failed",
@@ -67,8 +58,6 @@ def _orchestration_failure_result(
                 "failure_action": "skip_group",
             }
         },
-        scorecard={},
-        deterministic_checks={},
         decision_reason="候选组编排发生未预料异常，已跳过该组并继续运行。",
     )
 

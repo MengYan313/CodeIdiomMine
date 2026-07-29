@@ -30,11 +30,8 @@ logger = get_logger(__name__)
 
 
 def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
     with path.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+        return hashlib.file_digest(stream, "sha256").hexdigest()
 
 
 def _orchestration_failure_result(
@@ -187,7 +184,6 @@ async def judge_clusters(
 
     results = [results_by_position[position] for position in range(len(rows))]
     artifact = build_judgment_artifact(project, results, rule_only=rule_only)
-    artifact["artifact_type"] = "idiom_judgment"
     artifact["input"] = {
         "clusters_path": str(Path(input_path)),
         "clusters_sha256": input_digest,

@@ -211,11 +211,8 @@ def _canonical_digest(payload: Mapping[str, Any]) -> str:
 
 
 def _sha256_path(path: Path) -> str:
-    digest = hashlib.sha256()
     with path.open("rb") as file:
-        for chunk in iter(lambda: file.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+        return hashlib.file_digest(file, "sha256").hexdigest()
 
 
 def _parser_source_digest() -> str:

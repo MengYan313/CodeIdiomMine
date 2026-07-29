@@ -9,7 +9,12 @@ from typing import Optional, Sequence
 from autogen_core import SingleThreadedAgentRuntime
 from autogen_ext.models.openai import OpenAIChatCompletionClient
 
-from ..agents._base import create_model_client
+from ..agents._base import (
+    agent_trace,
+    create_model_client,
+    dispatch_with_fallback,
+    not_run_trace,
+)
 from ..agents.base import default_agent_id, register_agent
 from ..idiom_judgment.smell_review_agent import (
     SMELL_REVIEW_AGENT_TYPE,
@@ -58,26 +63,18 @@ from .schema import SynthesisResult, IdiomCandidate
 
 SYNTHESIS_ACCEPTANCE_SCORE = 70.0
 STAGE2_SYNTHESIS_ACCEPTANCE_SCORE = 80.0
+_SYNTHESIS_AGENT_STAGES = (
+    "planning",
+    "assembly",
+    "quality_review",
+    "smell_review",
+)
 
 
-def _agent_trace(result: object, failure_action: str) -> dict[str, object]:
-    status = str(getattr(result, "call_status", "failed"))
+def _not_run_traces(reason: str) -> dict[str, dict[str, object]]:
     return {
-        "status": status,
-        "logical_attempts": int(getattr(result, "call_attempts", 0) or 0),
-        "failure_kind": str(getattr(result, "failure_kind", "") or ""),
-        "failure_action": (
-            failure_action if status == "failed" else "continue"
-        ),
-    }
-
-
-def _not_run_trace(reason: str) -> dict[str, object]:
-    return {
-        "status": "not_run",
-        "logical_attempts": 0,
-        "failure_kind": reason,
-        "failure_action": "skip_agent",
+        stage: not_run_trace(reason)
+        for stage in _SYNTHESIS_AGENT_STAGES
     }
 
 
@@ -159,9 +156,10 @@ class IdiomSynthesisPipeline:
         self.model = model
         self.model_client = model_client
         self._owns_model_client = model_client is None
-        self.max_group_candidates = max(2, int(max_group_candidates))
+        if max_group_candidates < 2:
+            raise ValueError("max_group_candidates 必须至少为 2")
+        self.max_group_candidates = max_group_candidates
         self.runtime: Optional[SingleThreadedAgentRuntime] = None
-        self._initialized = False
 
     def run_contract(self) -> dict[str, object]:
         return {
@@ -214,33 +212,33 @@ class IdiomSynthesisPipeline:
         }
 
     async def initialize(self) -> None:
-        if self._initialized:
+        if self.runtime is not None:
             return
         if self.model_client is None:
             self.model_client = create_model_client(self.model)
-        self.runtime = SingleThreadedAgentRuntime()
+        runtime = SingleThreadedAgentRuntime()
         await register_agent(
-            self.runtime,
+            runtime,
             "synthesis_planning",
             lambda: SynthesisPlanningAgent(self.model_client),
         )
         await register_agent(
-            self.runtime,
+            runtime,
             "synthesis_assembly",
             lambda: IdiomAssemblyAgent(self.model_client),
         )
         await register_agent(
-            self.runtime,
+            runtime,
             "synthesis_review",
             lambda: SynthesisReviewAgent(self.model_client),
         )
         await register_agent(
-            self.runtime,
+            runtime,
             SMELL_REVIEW_AGENT_TYPE,
             lambda: SmellReviewAgent(self.model_client),
         )
-        self.runtime.start()
-        self._initialized = True
+        runtime.start()
+        self.runtime = runtime
 
     @staticmethod
     def _candidate_payload(candidate: IdiomCandidate) -> dict:
@@ -289,28 +287,8 @@ class IdiomSynthesisPipeline:
                 project=project,
                 status="rejected",
                 selected=list(candidates),
-                merged_code="",
                 context_evidence=context_evidence,
-                plan={},
-                assembly={},
-                review={},
-                smell={},
-                smell_gate={},
-                smell_review_input={},
-                agent_trace={
-                    "planning": _not_run_trace(
-                        "candidate_limit_exceeded"
-                    ),
-                    "assembly": _not_run_trace(
-                        "candidate_limit_exceeded"
-                    ),
-                    "quality_review": _not_run_trace(
-                        "candidate_limit_exceeded"
-                    ),
-                    "smell_review": _not_run_trace(
-                        "candidate_limit_exceeded"
-                    ),
-                },
+                agent_trace=_not_run_traces("candidate_limit_exceeded"),
                 scorecard=build_synthesis_scorecard(
                     contains_stage2_input=any(
                         candidate.input_stage == 2
@@ -347,25 +325,8 @@ class IdiomSynthesisPipeline:
             return SynthesisResult(
                 project=project,
                 status="rejected",
-                selected=[],
-                merged_code="",
                 context_evidence=context_evidence,
-                plan={},
-                assembly={},
-                review={},
-                smell={},
-                smell_gate={},
-                smell_review_input={},
-                agent_trace={
-                    "planning": _not_run_trace("context_gate_rejected"),
-                    "assembly": _not_run_trace("context_gate_rejected"),
-                    "quality_review": _not_run_trace(
-                        "context_gate_rejected"
-                    ),
-                    "smell_review": _not_run_trace(
-                        "context_gate_rejected"
-                    ),
-                },
+                agent_trace=_not_run_traces("context_gate_rejected"),
                 scorecard=build_synthesis_scorecard(
                     contains_stage2_input=contains_stage2_input,
                     quality_score=0.0,
@@ -374,24 +335,22 @@ class IdiomSynthesisPipeline:
                 decision_reason="未能自动加载并验证候选所在代表源码区域。",
             )
 
-        if not self._initialized:
-            await self.initialize()
+        await self.initialize()
         assert self.runtime is not None
 
         payload = [
             self._candidate_payload(candidate)
             for candidate in group_candidates
         ]
-        try:
-            plan_result = await self.runtime.send_message(
+        plan_result = await dispatch_with_fallback(
+            self.runtime.send_message(
                 SynthesisPlanningRequest(
                     candidates=payload,
                     context_code=available_context,
                 ),
                 recipient=default_agent_id("synthesis_planning"),
-            )
-        except Exception:
-            plan_result = SynthesisPlanningResult(
+            ),
+            SynthesisPlanningResult(
                 should_synthesize=False,
                 selected_indices=[],
                 synthesis_goal="",
@@ -401,30 +360,25 @@ class IdiomSynthesisPipeline:
                 call_status="failed",
                 call_attempts=0,
                 failure_kind="runtime_dispatch_error",
-            )
+            ),
+        )
         plan_data = asdict(plan_result)
         if not plan_result.should_synthesize:
             plan_failed = plan_result.call_status == "failed"
             return SynthesisResult(
                 project=project,
                 status="rejected",
-                selected=[],
-                merged_code="",
                 context_evidence=context_evidence,
                 plan=plan_data,
-                assembly={},
-                review={},
-                smell={},
-                smell_gate={},
-                smell_review_input={},
                 agent_trace={
-                    "planning": _agent_trace(
+                    "planning": agent_trace(
                         plan_result,
                         "skip_group",
                     ),
-                    "assembly": _not_run_trace("planning_stopped"),
-                    "quality_review": _not_run_trace("planning_stopped"),
-                    "smell_review": _not_run_trace("planning_stopped"),
+                    **{
+                        stage: not_run_trace("planning_stopped")
+                        for stage in _SYNTHESIS_AGENT_STAGES[1:]
+                    },
                 },
                 scorecard=build_synthesis_scorecard(
                     contains_stage2_input=contains_stage2_input,
@@ -442,8 +396,8 @@ class IdiomSynthesisPipeline:
             group_candidates[index]
             for index in plan_result.selected_indices
         ]
-        try:
-            assembly_result = await self.runtime.send_message(
+        assembly_result = await dispatch_with_fallback(
+            self.runtime.send_message(
                 IdiomAssemblyRequest(
                     selected_codes=[
                         candidate.code for candidate in selected
@@ -452,9 +406,8 @@ class IdiomSynthesisPipeline:
                     context_code=available_context,
                 ),
                 recipient=default_agent_id("synthesis_assembly"),
-            )
-        except Exception:
-            assembly_result = IdiomAssemblyResult(
+            ),
+            IdiomAssemblyResult(
                 merged_code="",
                 used_context=False,
                 added_from_context=[],
@@ -462,7 +415,8 @@ class IdiomSynthesisPipeline:
                 call_status="failed",
                 call_attempts=0,
                 failure_kind="runtime_dispatch_error",
-            )
+            ),
+        )
         assembly_data = asdict(assembly_result)
         merged = assembly_result.merged_code
         allowed_context = available_context
@@ -503,20 +457,16 @@ class IdiomSynthesisPipeline:
                 context_evidence=context_evidence,
                 plan=plan_data,
                 assembly=assembly_data,
-                review={},
-                smell={},
-                smell_gate={},
-                smell_review_input={},
                 agent_trace={
-                    "planning": _agent_trace(plan_result, "skip_group"),
-                    "assembly": _agent_trace(
+                    "planning": agent_trace(plan_result, "skip_group"),
+                    "assembly": agent_trace(
                         assembly_result,
                         "skip_downstream_and_reject_group",
                     ),
-                    "quality_review": _not_run_trace(
+                    "quality_review": not_run_trace(
                         "assembly_or_deterministic_gate_rejected"
                     ),
-                    "smell_review": _not_run_trace(
+                    "smell_review": not_run_trace(
                         "assembly_or_deterministic_gate_rejected"
                     ),
                 },
@@ -553,57 +503,54 @@ class IdiomSynthesisPipeline:
         )
 
         review_result, smell_result = await asyncio.gather(
-            self.runtime.send_message(
-                SynthesisReviewRequest(
-                    source_idioms=[
-                        self._candidate_payload(candidate)
-                        for candidate in selected
-                    ],
-                    plan=plan_data,
-                    merged_code=merged,
-                    context_code=allowed_context,
-                    assembly_evidence=assembly_data,
+            dispatch_with_fallback(
+                self.runtime.send_message(
+                    SynthesisReviewRequest(
+                        source_idioms=[
+                            self._candidate_payload(candidate)
+                            for candidate in selected
+                        ],
+                        plan=plan_data,
+                        merged_code=merged,
+                        context_code=allowed_context,
+                        assembly_evidence=assembly_data,
+                    ),
+                    recipient=default_agent_id("synthesis_review"),
                 ),
-                recipient=default_agent_id("synthesis_review"),
+                SynthesisReviewResult(
+                    is_idiom=False,
+                    quality_score=0.0,
+                    improves_quality=False,
+                    preserves_intents=False,
+                    unsupported_additions=[],
+                    issues=["质量复审 Agent Runtime 路由失败"],
+                    idiom_classification=empty_idiom_classification(
+                        "Runtime 路由失败，未执行合成习语类型判断。"
+                    ),
+                    reason="不能自动确认合成质量，采用安全拒绝。",
+                    call_status="failed",
+                    call_attempts=0,
+                    failure_kind="runtime_dispatch_error",
+                ),
             ),
-            self.runtime.send_message(
-                smell_request,
-                recipient=default_agent_id(SMELL_REVIEW_AGENT_TYPE),
+            dispatch_with_fallback(
+                self.runtime.send_message(
+                    smell_request,
+                    recipient=default_agent_id(SMELL_REVIEW_AGENT_TYPE),
+                ),
+                SmellReviewResult(
+                    analysis_status="failed",
+                    risk_score=100.0,
+                    max_severity="none",
+                    categories=[],
+                    findings=[],
+                    reason="代码异味 Agent Runtime 路由失败，采用安全拒绝。",
+                    call_status="failed",
+                    call_attempts=0,
+                    failure_kind="runtime_dispatch_error",
+                ),
             ),
-            return_exceptions=True,
         )
-        if isinstance(review_result, asyncio.CancelledError):
-            raise review_result
-        if isinstance(review_result, BaseException):
-            review_result = SynthesisReviewResult(
-                is_idiom=False,
-                quality_score=0.0,
-                improves_quality=False,
-                preserves_intents=False,
-                unsupported_additions=[],
-                issues=["质量复审 Agent Runtime 路由失败"],
-                idiom_classification=empty_idiom_classification(
-                    "Runtime 路由失败，未执行合成习语类型判断。"
-                ),
-                reason="不能自动确认合成质量，采用安全拒绝。",
-                call_status="failed",
-                call_attempts=0,
-                failure_kind="runtime_dispatch_error",
-            )
-        if isinstance(smell_result, asyncio.CancelledError):
-            raise smell_result
-        if isinstance(smell_result, BaseException):
-            smell_result = SmellReviewResult(
-                analysis_status="failed",
-                risk_score=100.0,
-                max_severity="none",
-                categories=[],
-                findings=[],
-                reason="代码异味 Agent Runtime 路由失败，采用安全拒绝。",
-                call_status="failed",
-                call_attempts=0,
-                failure_kind="runtime_dispatch_error",
-            )
         review_data = asdict(review_result)
         smell_data = asdict(smell_result)
         selected_contains_stage2 = any(
@@ -659,16 +606,16 @@ class IdiomSynthesisPipeline:
             smell_gate=smell_gate,
             smell_review_input=asdict(smell_request),
             agent_trace={
-                "planning": _agent_trace(plan_result, "skip_group"),
-                "assembly": _agent_trace(
+                "planning": agent_trace(plan_result, "skip_group"),
+                "assembly": agent_trace(
                     assembly_result,
                     "skip_downstream_and_reject_group",
                 ),
-                "quality_review": _agent_trace(
+                "quality_review": agent_trace(
                     review_result,
                     "reject_group",
                 ),
-                "smell_review": _agent_trace(
+                "smell_review": agent_trace(
                     smell_result,
                     "reject_group",
                 ),
@@ -680,12 +627,11 @@ class IdiomSynthesisPipeline:
 
     async def shutdown(self) -> None:
         try:
-            if self.runtime is not None and self._initialized:
+            if self.runtime is not None:
                 await self.runtime.stop()
                 await self.runtime.close()
         finally:
+            self.runtime = None
             if self.model_client is not None and self._owns_model_client:
                 await self.model_client.close()
-            self.runtime = None
-            self.model_client = None
-            self._initialized = False
+                self.model_client = None

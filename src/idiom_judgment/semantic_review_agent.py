@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from dataclasses import dataclass
 from typing import List
 
@@ -115,11 +116,8 @@ _RESPONSE_SCHEMA = {
 }
 
 
-def _score(value: object) -> float:
-    try:
-        return max(0.0, min(100.0, float(value)))
-    except (TypeError, ValueError):
-        return 0.0
+def _score(value: float) -> float:
+    return max(0.0, min(100.0, value)) if math.isfinite(value) else 0.0
 
 
 @dataclass
@@ -216,17 +214,17 @@ class SemanticReviewAgent(JsonLLMAgent):
                 failure_kind=trace.failure_kind,
             )
         allowed = {
-            str(proposal.get("proposal_id"))
+            proposal["proposal_id"]
             for proposal in message.abstraction_proposals
         }
         approved_ids = sorted(
             {
-                str(value)
-                for value in (data.get("approved_abstraction_ids") or [])
-                if str(value) in allowed
+                proposal_id
+                for proposal_id in data["approved_abstraction_ids"]
+                if proposal_id in allowed
             }
         )
-        decision = str(data.get("abstraction_decision") or "keep")
+        decision = data["abstraction_decision"]
         if (
             decision != "abstract"
             or not message.abstraction_proposals
@@ -234,24 +232,21 @@ class SemanticReviewAgent(JsonLLMAgent):
         ):
             decision = "keep"
             approved_ids = []
-        is_idiom = bool(data.get("is_idiom"))
+        is_idiom = data["is_idiom"]
         classification, invalid_classification = (
             normalize_idiom_classification(
-                data.get("idiom_classification"),
+                data["idiom_classification"],
                 is_idiom=is_idiom,
             )
         )
-        reason = str(data.get("reason") or "").strip()
+        reason = data["reason"].strip()
         if invalid_classification or not reason:
             return SemanticReviewResult(
                 is_idiom=False,
                 semantic_score=0.0,
                 reuse_score=0.0,
-                intent=str(data.get("intent") or ""),
-                preconditions=[
-                    str(value)
-                    for value in (data.get("preconditions") or [])
-                ],
+                intent=data["intent"],
+                preconditions=data["preconditions"],
                 abstraction_decision="keep",
                 approved_abstraction_ids=[],
                 abstraction_reason=(
@@ -268,15 +263,13 @@ class SemanticReviewAgent(JsonLLMAgent):
             )
         return SemanticReviewResult(
             is_idiom=is_idiom,
-            semantic_score=_score(data.get("semantic_score")),
-            reuse_score=_score(data.get("reuse_score")),
-            intent=str(data.get("intent") or ""),
-            preconditions=[
-                str(value) for value in (data.get("preconditions") or [])
-            ],
+            semantic_score=_score(data["semantic_score"]),
+            reuse_score=_score(data["reuse_score"]),
+            intent=data["intent"],
+            preconditions=data["preconditions"],
             abstraction_decision=decision,
             approved_abstraction_ids=approved_ids,
-            abstraction_reason=str(data.get("abstraction_reason") or ""),
+            abstraction_reason=data["abstraction_reason"],
             idiom_classification=classification,
             reason=reason,
             call_status=trace.status,

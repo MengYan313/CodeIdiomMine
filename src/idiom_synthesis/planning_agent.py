@@ -127,20 +127,17 @@ class SynthesisPlanningAgent(JsonLLMAgent):
                 call_attempts=trace.attempts,
                 failure_kind=trace.failure_kind,
             )
-        raw_indices = data.get("selected_indices") or []
         indices = sorted(
             {
-                int(value)
-                for value in raw_indices
-                if isinstance(value, int)
-                and not isinstance(value, bool)
-                and 0 <= value < len(message.candidates)
+                index
+                for index in data["selected_indices"]
+                if 0 <= index < len(message.candidates)
             }
         )
-        should_synthesize = bool(data.get("should_synthesize")) and len(indices) >= 2
+        should_synthesize = data["should_synthesize"] and len(indices) >= 2
         if not should_synthesize:
             indices = []
-        reason = str(data.get("reason") or "").strip()
+        reason = data["reason"].strip()
         if not reason:
             return SynthesisPlanningResult(
                 should_synthesize=False,
@@ -156,12 +153,9 @@ class SynthesisPlanningAgent(JsonLLMAgent):
         return SynthesisPlanningResult(
             should_synthesize=should_synthesize,
             selected_indices=indices,
-            synthesis_goal=str(data.get("synthesis_goal") or ""),
-            ordering_constraints=[
-                str(value)
-                for value in (data.get("ordering_constraints") or [])
-            ],
-            expected_improvement=str(data.get("expected_improvement") or ""),
+            synthesis_goal=data["synthesis_goal"],
+            ordering_constraints=data["ordering_constraints"],
+            expected_improvement=data["expected_improvement"],
             reason=reason,
             call_status=trace.status,
             call_attempts=trace.attempts,

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from typing import Any, Dict, Mapping, Optional
+from typing import Any, Awaitable, Dict, Mapping, Optional, TypeVar
 
 from autogen_ext.models.openai import OpenAIChatCompletionClient
 
@@ -17,6 +17,8 @@ DEFAULT_JSON_AGENT_MAX_ATTEMPTS = 2
 DEFAULT_JSON_AGENT_RETRY_DELAY_SECONDS = 0.25
 DEFAULT_JSON_AGENT_TIMEOUT_SECONDS = 120.0
 
+T = TypeVar("T")
+
 
 @dataclass(frozen=True)
 class JsonCallTrace:
@@ -25,6 +27,44 @@ class JsonCallTrace:
     status: str
     attempts: int
     failure_kind: str = ""
+
+
+def agent_trace(result: Any, failure_action: str) -> dict[str, object]:
+    """把领域 Agent 结果映射为统一的可审计调用轨迹。"""
+
+    return {
+        "status": result.call_status,
+        "logical_attempts": result.call_attempts,
+        "failure_kind": result.failure_kind,
+        "failure_action": (
+            failure_action
+            if result.call_status == "failed"
+            else "continue"
+        ),
+    }
+
+
+def not_run_trace(reason: str) -> dict[str, object]:
+    """记录因上游门禁而未执行的 Agent。"""
+
+    return {
+        "status": "not_run",
+        "logical_attempts": 0,
+        "failure_kind": reason,
+        "failure_action": "skip_agent",
+    }
+
+
+async def dispatch_with_fallback(
+    call: Awaitable[T],
+    fallback: T,
+) -> T:
+    """隔离单次 Runtime 路由异常，同时让取消和进程中断继续传播。"""
+
+    try:
+        return await call
+    except Exception:
+        return fallback
 
 
 def create_model_client(model: Optional[str] = None) -> OpenAIChatCompletionClient:
@@ -41,24 +81,12 @@ class JsonLLMAgent(BaseRoutedAgent):
         system_message: str,
         model_client: OpenAIChatCompletionClient,
         response_schema: Mapping[str, Any],
-        *,
-        max_attempts: int = DEFAULT_JSON_AGENT_MAX_ATTEMPTS,
-        retry_delay_seconds: float = DEFAULT_JSON_AGENT_RETRY_DELAY_SECONDS,
-        request_timeout_seconds: float = DEFAULT_JSON_AGENT_TIMEOUT_SECONDS,
     ):
         super().__init__(agent_name)
-        if int(max_attempts) < 1:
-            raise ValueError("max_attempts 必须至少为 1")
         self._model_client = model_client
         self._system_message = system_message
         self._response_schema = response_schema
         self._agent_name = agent_name
-        self._max_attempts = int(max_attempts)
-        self._retry_delay_seconds = max(0.0, float(retry_delay_seconds))
-        self._request_timeout_seconds = max(
-            1.0,
-            float(request_timeout_seconds),
-        )
         self._last_call_trace = JsonCallTrace(
             status="not_started",
             attempts=0,
@@ -80,7 +108,7 @@ class JsonLLMAgent(BaseRoutedAgent):
         """
 
         failure_kind = ""
-        for attempt in range(1, self._max_attempts + 1):
+        for attempt in range(1, DEFAULT_JSON_AGENT_MAX_ATTEMPTS + 1):
             try:
                 data = await asyncio.wait_for(
                     complete_json_object(
@@ -90,7 +118,7 @@ class JsonLLMAgent(BaseRoutedAgent):
                         self._response_schema,
                         logger=self._log,
                     ),
-                    timeout=self._request_timeout_seconds,
+                    timeout=DEFAULT_JSON_AGENT_TIMEOUT_SECONDS,
                 )
             except JsonOutputError:
                 failure_kind = "json_invalid_after_repair"
@@ -109,7 +137,7 @@ class JsonLLMAgent(BaseRoutedAgent):
                 )
                 return data
 
-            if attempt < self._max_attempts:
+            if attempt < DEFAULT_JSON_AGENT_MAX_ATTEMPTS:
                 self._log.warning(
                     "Agent %s 第 %d 次逻辑尝试失败，将执行最后一次有界重试；"
                     "failure_kind=%s",
@@ -117,18 +145,19 @@ class JsonLLMAgent(BaseRoutedAgent):
                     attempt,
                     failure_kind,
                 )
-                if self._retry_delay_seconds > 0:
-                    await asyncio.sleep(self._retry_delay_seconds)
+                await asyncio.sleep(
+                    DEFAULT_JSON_AGENT_RETRY_DELAY_SECONDS
+                )
 
         self._last_call_trace = JsonCallTrace(
             status="failed",
-            attempts=self._max_attempts,
+            attempts=DEFAULT_JSON_AGENT_MAX_ATTEMPTS,
             failure_kind=failure_kind or "unknown_failure",
         )
         self._log.error(
             "Agent %s 在 %d 次逻辑尝试后失败；failure_kind=%s",
             self._agent_name,
-            self._max_attempts,
+            DEFAULT_JSON_AGENT_MAX_ATTEMPTS,
             self._last_call_trace.failure_kind,
         )
         return None

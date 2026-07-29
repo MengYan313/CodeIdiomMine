@@ -1,8 +1,9 @@
+import asyncio
 import os
 import unittest
 from unittest.mock import patch
 
-from src.agents._base import create_model_client
+from src.agents._base import create_model_client, dispatch_with_fallback
 from src.llm.config import load_project_env
 
 
@@ -24,6 +25,20 @@ class AgentModelClientTests(unittest.TestCase):
         kwargs = client_class.call_args.kwargs
         self.assertEqual(kwargs["model"], "gpt-5.6-luna")
         self.assertEqual(kwargs["model_info"]["family"], "gpt-5")
+
+    def test_runtime_dispatch_failure_uses_explicit_fallback(self):
+        async def fail():
+            raise RuntimeError("route failed")
+
+        result = asyncio.run(dispatch_with_fallback(fail(), "fallback"))
+        self.assertEqual(result, "fallback")
+
+    def test_runtime_dispatch_does_not_swallow_cancellation(self):
+        async def cancel():
+            raise asyncio.CancelledError
+
+        with self.assertRaises(asyncio.CancelledError):
+            asyncio.run(dispatch_with_fallback(cancel(), "fallback"))
 
 
 if __name__ == "__main__":

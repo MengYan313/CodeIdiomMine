@@ -58,19 +58,19 @@ class IdiomCandidate:
 class SynthesisResult:
     project: str
     status: str
-    selected: List[IdiomCandidate]
-    merged_code: str
-    context_evidence: Dict[str, Any]
-    plan: Dict[str, Any]
-    assembly: Dict[str, Any]
-    review: Dict[str, Any]
-    smell: Dict[str, Any]
-    smell_gate: Dict[str, Any]
-    smell_review_input: Dict[str, Any]
-    agent_trace: Dict[str, Any]
-    scorecard: Dict[str, Any]
-    deterministic_checks: Dict[str, Any]
-    decision_reason: str
+    selected: List[IdiomCandidate] = field(default_factory=list)
+    merged_code: str = ""
+    context_evidence: Dict[str, Any] = field(default_factory=dict)
+    plan: Dict[str, Any] = field(default_factory=dict)
+    assembly: Dict[str, Any] = field(default_factory=dict)
+    review: Dict[str, Any] = field(default_factory=dict)
+    smell: Dict[str, Any] = field(default_factory=dict)
+    smell_gate: Dict[str, Any] = field(default_factory=dict)
+    smell_review_input: Dict[str, Any] = field(default_factory=dict)
+    agent_trace: Dict[str, Any] = field(default_factory=dict)
+    scorecard: Dict[str, Any] = field(default_factory=dict)
+    deterministic_checks: Dict[str, Any] = field(default_factory=dict)
+    decision_reason: str = ""
 
     def to_record(self) -> Dict[str, Any]:
         infos: List[Any] = []

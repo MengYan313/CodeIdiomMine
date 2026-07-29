@@ -9,7 +9,12 @@ from typing import Optional
 from autogen_core import SingleThreadedAgentRuntime
 from autogen_ext.models.openai import OpenAIChatCompletionClient
 
-from ..agents._base import create_model_client
+from ..agents._base import (
+    agent_trace,
+    create_model_client,
+    dispatch_with_fallback,
+    not_run_trace,
+)
 from ..agents.base import default_agent_id, register_agent
 from .abstraction import (
     AbstractionPolicy,
@@ -49,26 +54,13 @@ from .smell_taxonomy import build_smell_gate
 
 
 JUDGMENT_ACCEPTANCE_SCORE = 70.0
+_JUDGMENT_AGENT_STAGES = ("semantic_review", "smell_review")
 
 
-def _agent_trace(result: object, failure_action: str) -> dict[str, object]:
-    status = str(getattr(result, "call_status", "failed"))
+def _not_run_traces(reason: str) -> dict[str, dict[str, object]]:
     return {
-        "status": status,
-        "logical_attempts": int(getattr(result, "call_attempts", 0) or 0),
-        "failure_kind": str(getattr(result, "failure_kind", "") or ""),
-        "failure_action": (
-            failure_action if status == "failed" else "continue"
-        ),
-    }
-
-
-def _not_run_trace(reason: str) -> dict[str, object]:
-    return {
-        "status": "not_run",
-        "logical_attempts": 0,
-        "failure_kind": reason,
-        "failure_action": "skip_agent",
+        stage: not_run_trace(reason)
+        for stage in _JUDGMENT_AGENT_STAGES
     }
 
 
@@ -143,9 +135,8 @@ class IdiomJudgmentPipeline:
         self._owns_model_client = model_client is None
         self.abstraction_policy = abstraction_policy or AbstractionPolicy()
         self.source_root = source_root
-        self.require_context = bool(require_context)
+        self.require_context = require_context
         self.runtime: Optional[SingleThreadedAgentRuntime] = None
-        self._initialized = False
 
     def run_contract(self) -> dict[str, object]:
         return {
@@ -190,23 +181,23 @@ class IdiomJudgmentPipeline:
         }
 
     async def initialize(self) -> None:
-        if self._initialized:
+        if self.runtime is not None:
             return
         if self.model_client is None:
             self.model_client = create_model_client(self.model)
-        self.runtime = SingleThreadedAgentRuntime()
+        runtime = SingleThreadedAgentRuntime()
         await register_agent(
-            self.runtime,
+            runtime,
             "idiom_semantic_review",
             lambda: SemanticReviewAgent(self.model_client),
         )
         await register_agent(
-            self.runtime,
+            runtime,
             SMELL_REVIEW_AGENT_TYPE,
             lambda: SmellReviewAgent(self.model_client),
         )
-        self.runtime.start()
-        self._initialized = True
+        runtime.start()
+        self.runtime = runtime
 
     async def evaluate(
         self,
@@ -223,10 +214,7 @@ class IdiomJudgmentPipeline:
                 proposals=proposals,
                 status="rejected",
                 template_code=candidate.representative_code,
-                agent_trace={
-                    "semantic_review": _not_run_trace("rule_gate_rejected"),
-                    "smell_review": _not_run_trace("rule_gate_rejected"),
-                },
+                agent_trace=_not_run_traces("rule_gate_rejected"),
                 decision_reason="；".join(rules.hard_failures),
             )
         if rule_only:
@@ -236,10 +224,7 @@ class IdiomJudgmentPipeline:
                 proposals=proposals,
                 status="pending_llm",
                 template_code=candidate.representative_code,
-                agent_trace={
-                    "semantic_review": _not_run_trace("rule_only"),
-                    "smell_review": _not_run_trace("rule_only"),
-                },
+                agent_trace=_not_run_traces("rule_only"),
                 decision_reason="规则检查通过，尚未执行语义和异味审查。",
             )
         context_code, context_evidence = load_verified_source_context(
@@ -256,20 +241,12 @@ class IdiomJudgmentPipeline:
                 status="rejected",
                 template_code=candidate.representative_code,
                 context_evidence=context_evidence,
-                agent_trace={
-                    "semantic_review": _not_run_trace(
-                        "context_gate_rejected"
-                    ),
-                    "smell_review": _not_run_trace(
-                        "context_gate_rejected"
-                    ),
-                },
+                agent_trace=_not_run_traces("context_gate_rejected"),
                 decision_reason=(
                     "未能自动加载并验证代表函数/区域上下文，严格上下文门禁拒绝。"
                 ),
             )
-        if not self._initialized:
-            await self.initialize()
+        await self.initialize()
         assert self.runtime is not None
 
         proposal_data = [asdict(proposal) for proposal in proposals]
@@ -293,50 +270,47 @@ class IdiomJudgmentPipeline:
             deterministic_evidence=cluster_statistics,
         )
         semantic_result, smell_result = await asyncio.gather(
-            self.runtime.send_message(
-                semantic_request,
-                recipient=default_agent_id("idiom_semantic_review"),
-            ),
-            self.runtime.send_message(
-                smell_request,
-                recipient=default_agent_id(SMELL_REVIEW_AGENT_TYPE),
-            ),
-            return_exceptions=True,
-        )
-        if isinstance(semantic_result, asyncio.CancelledError):
-            raise semantic_result
-        if isinstance(semantic_result, BaseException):
-            semantic_result = SemanticReviewResult(
-                is_idiom=False,
-                semantic_score=0.0,
-                reuse_score=0.0,
-                intent="",
-                preconditions=[],
-                abstraction_decision="keep",
-                approved_abstraction_ids=[],
-                abstraction_reason="Runtime 路由失败，保持代表代码不变。",
-                idiom_classification=empty_idiom_classification(
-                    "Runtime 路由失败，未执行习语类型判断。"
+            dispatch_with_fallback(
+                self.runtime.send_message(
+                    semantic_request,
+                    recipient=default_agent_id("idiom_semantic_review"),
                 ),
-                reason="语义/抽象 Agent 未能完成，采用安全拒绝。",
-                call_status="failed",
-                call_attempts=0,
-                failure_kind="runtime_dispatch_error",
-            )
-        if isinstance(smell_result, asyncio.CancelledError):
-            raise smell_result
-        if isinstance(smell_result, BaseException):
-            smell_result = SmellReviewResult(
-                analysis_status="failed",
-                risk_score=100.0,
-                max_severity="none",
-                categories=[],
-                findings=[],
-                reason="代码异味 Agent Runtime 路由失败，采用安全拒绝。",
-                call_status="failed",
-                call_attempts=0,
-                failure_kind="runtime_dispatch_error",
-            )
+                SemanticReviewResult(
+                    is_idiom=False,
+                    semantic_score=0.0,
+                    reuse_score=0.0,
+                    intent="",
+                    preconditions=[],
+                    abstraction_decision="keep",
+                    approved_abstraction_ids=[],
+                    abstraction_reason="Runtime 路由失败，保持代表代码不变。",
+                    idiom_classification=empty_idiom_classification(
+                        "Runtime 路由失败，未执行习语类型判断。"
+                    ),
+                    reason="语义/抽象 Agent 未能完成，采用安全拒绝。",
+                    call_status="failed",
+                    call_attempts=0,
+                    failure_kind="runtime_dispatch_error",
+                ),
+            ),
+            dispatch_with_fallback(
+                self.runtime.send_message(
+                    smell_request,
+                    recipient=default_agent_id(SMELL_REVIEW_AGENT_TYPE),
+                ),
+                SmellReviewResult(
+                    analysis_status="failed",
+                    risk_score=100.0,
+                    max_severity="none",
+                    categories=[],
+                    findings=[],
+                    reason="代码异味 Agent Runtime 路由失败，采用安全拒绝。",
+                    call_status="failed",
+                    call_attempts=0,
+                    failure_kind="runtime_dispatch_error",
+                ),
+            ),
+        )
         semantic = SemanticAssessment(
             is_idiom=semantic_result.is_idiom,
             semantic_score=semantic_result.semantic_score,
@@ -422,11 +396,11 @@ class IdiomJudgmentPipeline:
             smell_gate=smell_gate,
             smell_review_input=asdict(smell_request),
             agent_trace={
-                "semantic_review": _agent_trace(
+                "semantic_review": agent_trace(
                     semantic_result,
                     "reject_cluster",
                 ),
-                "smell_review": _agent_trace(
+                "smell_review": agent_trace(
                     smell_result,
                     "reject_cluster",
                 ),
@@ -437,12 +411,11 @@ class IdiomJudgmentPipeline:
 
     async def shutdown(self) -> None:
         try:
-            if self.runtime is not None and self._initialized:
+            if self.runtime is not None:
                 await self.runtime.stop()
                 await self.runtime.close()
         finally:
+            self.runtime = None
             if self.model_client is not None and self._owns_model_client:
                 await self.model_client.close()
-            self.runtime = None
-            self.model_client = None
-            self._initialized = False
+                self.model_client = None

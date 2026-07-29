@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from dataclasses import dataclass
 from typing import List
 
@@ -176,18 +177,16 @@ class SynthesisReviewAgent(JsonLLMAgent):
                 call_attempts=trace.attempts,
                 failure_kind=trace.failure_kind,
             )
-        try:
-            score = max(0.0, min(100.0, float(data.get("quality_score", 0))))
-        except (TypeError, ValueError):
-            score = 0.0
-        is_idiom = bool(data.get("is_idiom"))
+        score = data["quality_score"]
+        score = max(0.0, min(100.0, score)) if math.isfinite(score) else 0.0
+        is_idiom = data["is_idiom"]
         classification, invalid_classification = (
             normalize_idiom_classification(
-                data.get("idiom_classification"),
+                data["idiom_classification"],
                 is_idiom=is_idiom,
             )
         )
-        reason = str(data.get("reason") or "").strip()
+        reason = data["reason"].strip()
         if invalid_classification or not reason:
             return SynthesisReviewResult(
                 is_idiom=False,
@@ -207,13 +206,10 @@ class SynthesisReviewAgent(JsonLLMAgent):
         return SynthesisReviewResult(
             is_idiom=is_idiom,
             quality_score=score,
-            improves_quality=bool(data.get("improves_quality")),
-            preserves_intents=bool(data.get("preserves_intents")),
-            unsupported_additions=[
-                str(value)
-                for value in (data.get("unsupported_additions") or [])
-            ],
-            issues=[str(value) for value in (data.get("issues") or [])],
+            improves_quality=data["improves_quality"],
+            preserves_intents=data["preserves_intents"],
+            unsupported_additions=data["unsupported_additions"],
+            issues=data["issues"],
             idiom_classification=classification,
             reason=reason,
             call_status=trace.status,
