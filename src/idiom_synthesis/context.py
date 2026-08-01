@@ -33,7 +33,7 @@ _CALL_KEYWORDS = {
     "switch",
     "while",
 }
-SYNTHESIS_CONTEXT_MODE = "automatic_verified_representative_extent"
+SYNTHESIS_CONTEXT_MODE = "automatic_verified_member_cooccurrence_extent"
 
 
 def load_group_context_with_evidence(
@@ -43,7 +43,7 @@ def load_group_context_with_evidence(
     max_lines: int = 300,
     max_chars: int = 12000,
 ) -> tuple[str, dict[str, object]]:
-    """只读取完全相同的代表源码范围，并返回可审计的身份与哈希证据。"""
+    """读取成员共同出现的源码范围，并返回可审计的身份与哈希证据。"""
 
     evidence: dict[str, object] = {
         "mode": SYNTHESIS_CONTEXT_MODE,
@@ -62,36 +62,41 @@ def load_group_context_with_evidence(
     first = candidates[0]
     expected_identity = representative_source_identity(
         first.project,
-        first.representative_info,
+        first.context_info,
     )
     if expected_identity is None:
         evidence["failure_kind"] = "invalid_representative_source_identity"
         return "", evidence
-    expected_hash = representative_source_sha256(first.representative_info)
+    expected_hash = representative_source_sha256(first.context_info)
     if not expected_hash:
         evidence["failure_kind"] = "source_hash_missing"
         return "", evidence
 
+    matched_occurrences: list[dict[str, object]] = []
     for candidate in candidates:
-        if (
-            representative_source_identity(
-                candidate.project,
-                candidate.representative_info,
+        for info in candidate.region_source_infos:
+            if (
+                representative_source_identity(candidate.project, info)
+                != expected_identity
+            ):
+                evidence["failure_kind"] = "member_region_mismatch"
+                return "", evidence
+            if representative_source_sha256(info) != expected_hash:
+                evidence["failure_kind"] = "member_source_hash_mismatch"
+                return "", evidence
+            node = info[3]
+            matched_occurrences.append(
+                {
+                    "candidate_id": candidate.candidate_id,
+                    "candidate_extent": str(node.get("extent") or ""),
+                    "start_byte": node.get("start_byte"),
+                    "end_byte": node.get("end_byte"),
+                }
             )
-            != expected_identity
-        ):
-            evidence["failure_kind"] = "representative_region_mismatch"
-            return "", evidence
-        if (
-            representative_source_sha256(candidate.representative_info)
-            != expected_hash
-        ):
-            evidence["failure_kind"] = "representative_source_hash_mismatch"
-            return "", evidence
 
     context, verified = load_verified_source_context(
         project=first.project,
-        representative_info=first.representative_info,
+        representative_info=first.context_info,
         source_root=source_root,
         max_lines=max_lines,
         max_chars=max_chars,
@@ -102,6 +107,7 @@ def load_group_context_with_evidence(
     evidence["candidate_ids"] = [
         candidate.candidate_id for candidate in candidates
     ]
+    evidence["matched_occurrences"] = matched_occurrences
     return context, evidence
 
 

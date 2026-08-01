@@ -56,6 +56,28 @@ class PromptContractTests(unittest.TestCase):
             self.assertIn("repository_specific", prompt)
             self.assertIn("raii", prompt)
 
+    def test_synthesis_planning_uses_bounded_plan_array(self):
+        schema = synthesis_planning_agent._RESPONSE_SCHEMA
+        self.assertEqual(set(schema["required"]), {"plans", "reason"})
+        plans = schema["properties"]["plans"]
+        self.assertEqual(
+            plans["maxItems"],
+            synthesis_planning_agent.DEFAULT_MAX_PLANS_PER_REGION,
+        )
+        plan_schema = plans["items"]
+        self.assertEqual(
+            set(plan_schema["required"]),
+            {
+                "selected_indices",
+                "relation_kind",
+                "synthesis_goal",
+                "ordering_constraints",
+                "expected_improvement",
+                "reason",
+            },
+        )
+        self.assertNotIn("should_synthesize", schema["properties"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -12,7 +12,7 @@ from ..idiom_judgment.idiom_taxonomy import (
     empty_idiom_classification,
 )
 
-IDIOM_SYNTHESIS_SCHEMA_VERSION = 7
+IDIOM_SYNTHESIS_SCHEMA_VERSION = 9
 SYNTHESIS_ARTIFACT_SEMANTICS = "synthesis_delta"
 
 
@@ -21,6 +21,24 @@ def _node_info(info: Any) -> Mapping[str, Any]:
         node = info[3]
         return node if isinstance(node, Mapping) else {}
     return info if isinstance(info, Mapping) else {}
+
+
+def _source_identity(info: Any) -> tuple[str, str, str] | None:
+    if not isinstance(info, (list, tuple)) or len(info) < 4:
+        return None
+    project, source_path, source_extent, _ = info[:4]
+    if not project or not source_path or not source_extent:
+        return None
+    return str(project), str(source_path), str(source_extent)
+
+
+def _occurrence_sort_key(info: Any) -> tuple[int, int, str]:
+    node = _node_info(info)
+    return (
+        int(node.get("start_byte", 0) or 0),
+        int(node.get("end_byte", 0) or 0),
+        str(node.get("extent") or ""),
+    )
 
 
 @dataclass(frozen=True)
@@ -33,6 +51,8 @@ class IdiomCandidate:
     representative_info: Any
     support_count: int
     input_stage: int
+    region_info: Any = None
+    matched_source_infos: List[Any] = field(default_factory=list)
     intent: str = ""
     judgment_status: str = ""
     judgment_reason: str = ""
@@ -42,16 +62,61 @@ class IdiomCandidate:
     judgment_evidence: Dict[str, Any] = field(default_factory=dict)
 
     @property
-    def context_key(self) -> str:
-        info = self.representative_info
-        if isinstance(info, (list, tuple)) and len(info) >= 3:
-            source_path = str(info[1] or "").strip()
-            source_extent = str(info[2] or "").strip()
-            if source_path and source_extent:
-                return f"{self.project}:{source_path}:{source_extent}"
+    def context_info(self) -> Any:
+        return self.region_info or self.representative_info
+
+    @property
+    def context_key(self) -> tuple[str, str, str]:
+        identity = _source_identity(self.context_info)
+        if identity is not None and identity[0] == self.project:
+            return identity
         # loc_label 是历史显示字段，不能证明两个候选来自同一源码区域。缺少
-        # 代表文件或范围时为每个候选生成独立键，使其无法误入阶段4合成组。
-        return f"{self.project}:unlocated:{self.candidate_id}"
+        # 区域成员或代表范围时为每个候选生成独立键，使其无法误入阶段4合成组。
+        return self.project, "", f"unlocated:{self.candidate_id}"
+
+    @property
+    def region_source_infos(self) -> List[Any]:
+        if self.matched_source_infos:
+            return sorted(self.matched_source_infos, key=_occurrence_sort_key)
+        matching = [
+            info
+            for info in self.source_infos
+            if _source_identity(info) == self.context_key
+        ]
+        if matching:
+            return sorted(matching, key=_occurrence_sort_key)
+        return [self.context_info] if self.context_info is not None else []
+
+    @property
+    def first_source_byte(self) -> int:
+        infos = self.region_source_infos
+        if not infos:
+            return 0
+        return _occurrence_sort_key(infos[0])[0]
+
+    def occurrence_records(self) -> List[Dict[str, Any]]:
+        records: List[Dict[str, Any]] = []
+        for info in self.region_source_infos:
+            identity = _source_identity(info)
+            if identity is None:
+                continue
+            node = _node_info(info)
+            records.append(
+                {
+                    "candidate_id": self.candidate_id,
+                    "project": identity[0],
+                    "source_path": identity[1],
+                    "function_extent": identity[2],
+                    "candidate_extent": str(node.get("extent") or ""),
+                    "start_byte": node.get("start_byte"),
+                    "end_byte": node.get("end_byte"),
+                    "source_sha256": str(
+                        node.get("source_sha256") or ""
+                    ),
+                    "local_code": str(node.get("code_snippet") or ""),
+                }
+            )
+        return records
 
 
 @dataclass
@@ -61,6 +126,7 @@ class SynthesisResult:
     selected: List[IdiomCandidate] = field(default_factory=list)
     merged_code: str = ""
     context_evidence: Dict[str, Any] = field(default_factory=dict)
+    region_planning: Dict[str, Any] = field(default_factory=dict)
     plan: Dict[str, Any] = field(default_factory=dict)
     assembly: Dict[str, Any] = field(default_factory=dict)
     review: Dict[str, Any] = field(default_factory=dict)
@@ -74,12 +140,14 @@ class SynthesisResult:
 
     def to_record(self) -> Dict[str, Any]:
         infos: List[Any] = []
+        matched_infos: List[Any] = []
         cnt = 0
         ast_total = 0.0
         ast_weight = 0
         subtree_total = 0.0
         subtree_weight = 0
         for candidate in self.selected:
+            matched_infos.extend(candidate.region_source_infos)
             if candidate.source_infos:
                 infos.extend(candidate.source_infos)
             elif candidate.representative_info is not None:
@@ -106,7 +174,11 @@ class SynthesisResult:
                 )
             )
         agent_reasons = {
-            "planning": str(self.plan.get("reason") or ""),
+            "planning": str(
+                self.plan.get("reason")
+                or self.region_planning.get("overall_reason")
+                or ""
+            ),
             "assembly": str(self.assembly.get("reason") or ""),
             "quality_review": str(self.review.get("reason") or ""),
             "idiom_classification": str(
@@ -127,6 +199,28 @@ class SynthesisResult:
             }
             for candidate in self.selected
         ]
+        matched_occurrences = [
+            occurrence
+            for candidate in self.selected
+            for occurrence in candidate.occurrence_records()
+        ]
+        source_order_candidate_ids = [
+            candidate.candidate_id
+            for candidate in sorted(
+                self.selected,
+                key=lambda candidate: (
+                    candidate.first_source_byte,
+                    candidate.candidate_id,
+                ),
+            )
+        ]
+        region_identity = dict(
+            self.context_evidence.get("source_identity") or {}
+        )
+        if self.context_evidence.get("source_sha256"):
+            region_identity["source_sha256"] = self.context_evidence[
+                "source_sha256"
+            ]
         return {
             "idiom_synthesis_schema_version": IDIOM_SYNTHESIS_SCHEMA_VERSION,
             "project": self.project,
@@ -142,14 +236,29 @@ class SynthesisResult:
             ),
             "loc_label": loc_labels[0] if len(loc_labels) == 1 else "",
             "source_loc_labels": loc_labels,
-            "info": infos[0] if infos else None,
+            "info": matched_infos[0] if matched_infos else (
+                infos[0] if infos else None
+            ),
             "source_infos": infos,
+            "matched_source_infos": matched_infos,
+            "matched_occurrences": matched_occurrences,
+            "region_identity": region_identity,
+            "source_order_candidate_ids": source_order_candidate_ids,
+            "cooccurrence_evidence": {
+                "grouping": "member_source_region_cooccurrence",
+                "selected_candidate_count": len(self.selected),
+                "matched_occurrence_count": len(matched_occurrences),
+            },
             "cnt": cnt,
             "avg_ast_num": ast_total / ast_weight if ast_weight else 0.0,
             "avg_subtree_size": (
                 subtree_total / subtree_weight if subtree_weight else 0.0
             ),
             "context_evidence": self.context_evidence,
+            "region_planning": self.region_planning,
+            "combination_key": str(
+                self.plan.get("combination_key") or ""
+            ),
             "synthesis_plan": self.plan,
             "assembly": self.assembly,
             "review": self.review,
@@ -165,9 +274,15 @@ class SynthesisResult:
             "merge_rounds": 1,
             "synthesis_trace": [
                 {
+                    "combination_key": str(
+                        self.plan.get("combination_key") or ""
+                    ),
                     "selected_candidate_ids": [
                         candidate.candidate_id for candidate in self.selected
                     ],
+                    "relation_kind": str(
+                        self.plan.get("relation_kind") or ""
+                    ),
                     "status": self.status,
                     "reason": self.decision_reason,
                 }
@@ -183,6 +298,7 @@ def build_synthesis_artifact(
     input_candidate_count: int | None = None,
     related_group_count: int | None = None,
     grouped_candidate_count: int | None = None,
+    region_candidate_membership_count: int | None = None,
 ) -> Dict[str, Any]:
     records = [result.to_record() for result in results]
     unsupported_statuses = sorted(
@@ -199,6 +315,12 @@ def build_synthesis_artifact(
         )
     accepted = [record for record in records if record["status"] == "accepted"]
     rejected = [record for record in records if record["status"] == "rejected"]
+    regions = {
+        str(planning["region_key"]): planning
+        for record in records
+        if (planning := record.get("region_planning"))
+        and planning.get("region_key")
+    }
     classification_kind_counts = {
         CATALOGED_IDIOM_KIND: 0,
         REPOSITORY_SPECIFIC_IDIOM_KIND: 0,
@@ -243,6 +365,31 @@ def build_synthesis_artifact(
                 int(grouped_candidate_count)
                 if grouped_candidate_count is not None
                 else None
+            ),
+            "region_candidate_membership_count": (
+                int(region_candidate_membership_count)
+                if region_candidate_membership_count is not None
+                else None
+            ),
+            "planning_call_count": sum(
+                bool(planning.get("planning_called"))
+                for planning in regions.values()
+            ),
+            "valid_unique_plan_count": sum(
+                int(
+                    (
+                        planning.get("validation") or {}
+                    ).get("valid_unique_plan_count", 0)
+                )
+                for planning in regions.values()
+            ),
+            "rejected_planning_plan_count": sum(
+                int(
+                    (
+                        planning.get("validation") or {}
+                    ).get("rejected_plan_count", 0)
+                )
+                for planning in regions.values()
             ),
             "passthrough_candidate_count": 0,
             "accepted_classification_kind_counts": (

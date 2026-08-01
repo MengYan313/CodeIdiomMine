@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 from dataclasses import asdict
 from typing import Optional, Sequence
 
@@ -16,6 +18,7 @@ from ..agents._base import (
     not_run_trace,
 )
 from ..agents.base import default_agent_id, register_agent
+from ..common.logging import get_logger
 from ..idiom_judgment.smell_review_agent import (
     SMELL_REVIEW_AGENT_TYPE,
     SMELL_REVIEW_PROMPT_SHA256,
@@ -45,8 +48,10 @@ from .context import (
     unsupported_call_targets,
 )
 from .planning_agent import (
+    DEFAULT_MAX_PLANS_PER_REGION,
     SYNTHESIS_PLANNING_PROMPT_SHA256,
     SYNTHESIS_PLANNING_PROMPT_VERSION,
+    SynthesisPlan,
     SynthesisPlanningAgent,
     SynthesisPlanningRequest,
     SynthesisPlanningResult,
@@ -69,12 +74,116 @@ _SYNTHESIS_AGENT_STAGES = (
     "quality_review",
     "smell_review",
 )
+logger = get_logger(__name__)
 
 
 def _not_run_traces(reason: str) -> dict[str, dict[str, object]]:
     return {
         stage: not_run_trace(reason)
         for stage in _SYNTHESIS_AGENT_STAGES
+    }
+
+
+def _stable_key(kind: str, value: object) -> str:
+    encoded = json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return f"{kind}:{hashlib.sha256(encoded).hexdigest()}"
+
+
+def normalize_synthesis_plans(
+    plans: Sequence[SynthesisPlan],
+    candidates: Sequence[IdiomCandidate],
+    *,
+    max_plans_per_region: int,
+) -> tuple[list[dict[str, object]], dict[str, object]]:
+    """规范化计划索引，以候选集合生成稳定键并拒绝非法或重复计划。"""
+
+    rejected: list[dict[str, object]] = []
+    if len(plans) > max_plans_per_region:
+        return [], {
+            "raw_plan_count": len(plans),
+            "valid_unique_plan_count": 0,
+            "rejected_plan_count": len(plans),
+            "limit_exceeded": True,
+            "rejected_plans": [
+                {
+                    "position": -1,
+                    "reason": "规划响应超过显式计划上限，未截断也未执行。",
+                }
+            ],
+        }
+
+    region_key = _stable_key("region", candidates[0].context_key)
+    seen: set[tuple[int, ...]] = set()
+    normalized: list[dict[str, object]] = []
+    for position, plan in enumerate(plans):
+        indices = sorted(set(plan.selected_indices))
+        reason = ""
+        if any(index < 0 or index >= len(candidates) for index in indices):
+            reason = "selected_indices 含越界索引。"
+        elif len(indices) < 2:
+            reason = "计划必须包含至少两个不同候选。"
+        elif not all(
+            (
+                plan.relation_kind.strip(),
+                plan.synthesis_goal.strip(),
+                plan.expected_improvement.strip(),
+                plan.reason.strip(),
+            )
+        ):
+            reason = "计划的关系、目标、预期增益或理由为空。"
+        constraints = [
+            value.strip()
+            for value in plan.ordering_constraints
+            if value.strip()
+        ]
+        if not reason and not constraints:
+            reason = "计划的 ordering_constraints 为空。"
+        key = tuple(indices)
+        if not reason and key in seen:
+            reason = "候选集合与先前计划重复。"
+        if reason:
+            rejected.append(
+                {
+                    "position": position,
+                    "selected_indices": indices,
+                    "reason": reason,
+                }
+            )
+            continue
+
+        seen.add(key)
+        candidate_ids = [candidates[index].candidate_id for index in indices]
+        normalized.append(
+            {
+                "selected_indices": indices,
+                "selected_candidate_ids": candidate_ids,
+                "relation_kind": plan.relation_kind.strip(),
+                "synthesis_goal": plan.synthesis_goal.strip(),
+                "ordering_constraints": constraints,
+                "expected_improvement": (
+                    plan.expected_improvement.strip()
+                ),
+                "reason": plan.reason.strip(),
+                "combination_key": _stable_key(
+                    "combination",
+                    {
+                        "region_key": region_key,
+                        "candidate_ids": sorted(candidate_ids),
+                    },
+                ),
+            }
+        )
+    return normalized, {
+        "raw_plan_count": len(plans),
+        "valid_unique_plan_count": len(normalized),
+        "rejected_plan_count": len(rejected),
+        "limit_exceeded": False,
+        "rejected_plans": rejected,
     }
 
 
@@ -119,7 +228,7 @@ def decide_synthesis_status(
     if unsupported_calls or review_unsupported_additions:
         return "rejected", "合成结果包含输入习语和允许上下文之外的新增操作。"
     if not context_contract_valid:
-        return "rejected", "未能提供通过来源校验的同代表区域上下文。"
+        return "rejected", "未能提供通过来源校验的成员共现区域上下文。"
     if not review_is_idiom:
         return "rejected", "质量有效性 Agent 判断合成结果不属于代码习语。"
     if not preserves_intents:
@@ -152,19 +261,23 @@ class IdiomSynthesisPipeline:
         *,
         model_client: Optional[OpenAIChatCompletionClient] = None,
         max_group_candidates: int = 12,
+        max_plans_per_region: int = DEFAULT_MAX_PLANS_PER_REGION,
     ) -> None:
         self.model = model
         self.model_client = model_client
         self._owns_model_client = model_client is None
         if max_group_candidates < 2:
             raise ValueError("max_group_candidates 必须至少为 2")
+        if max_plans_per_region < 1:
+            raise ValueError("max_plans_per_region 必须至少为 1")
         self.max_group_candidates = max_group_candidates
+        self.max_plans_per_region = max_plans_per_region
         self.runtime: Optional[SingleThreadedAgentRuntime] = None
 
     def run_contract(self) -> dict[str, object]:
         return {
             "artifact_semantics": "synthesis_delta",
-            "region_grouping": "exact_representative_source_extent",
+            "region_grouping": "member_source_region_cooccurrence",
             "decision_policy": {
                 "acceptance_score": SYNTHESIS_ACCEPTANCE_SCORE,
                 "stage2_contract_score": (
@@ -175,6 +288,8 @@ class IdiomSynthesisPipeline:
                 ),
             },
             "max_group_candidates": self.max_group_candidates,
+            "max_plans_per_region": self.max_plans_per_region,
+            "planning_mode": "single_region_call_batched_plans",
             "idiom_taxonomy": {
                 "version": IDIOM_TAXONOMY_VERSION,
                 "known_type_count": len(KNOWN_IDIOM_TYPES),
@@ -220,7 +335,10 @@ class IdiomSynthesisPipeline:
         await register_agent(
             runtime,
             "synthesis_planning",
-            lambda: SynthesisPlanningAgent(self.model_client),
+            lambda: SynthesisPlanningAgent(
+                self.model_client,
+                self.max_plans_per_region,
+            ),
         )
         await register_agent(
             runtime,
@@ -245,6 +363,8 @@ class IdiomSynthesisPipeline:
         return {
             "candidate_id": candidate.candidate_id,
             "code": candidate.code,
+            "matched_occurrences": candidate.occurrence_records(),
+            "source_order_byte": candidate.first_source_byte,
             "support_count": candidate.support_count,
             "input_stage": candidate.input_stage,
             "intent": candidate.intent,
@@ -260,7 +380,9 @@ class IdiomSynthesisPipeline:
         candidates: Sequence[IdiomCandidate],
         *,
         source_root: str | None = None,
-    ) -> SynthesisResult:
+    ) -> list[SynthesisResult]:
+        """对一个成员共现区域规划一次，并执行其中全部合法唯一计划。"""
+
         if len(candidates) < 2:
             raise ValueError("习语合成至少需要两个候选")
         project = candidates[0].project
@@ -268,7 +390,7 @@ class IdiomSynthesisPipeline:
         if any(candidate.project != project for candidate in candidates):
             raise ValueError("禁止跨仓库合成习语")
         if any(candidate.context_key != context_key for candidate in candidates):
-            raise ValueError("习语合成只能处理代表源码范围完全相同的候选")
+            raise ValueError("习语合成只能处理成员共同出现于同一源码范围的候选")
 
         if len(candidates) > self.max_group_candidates:
             context_evidence = {
@@ -283,29 +405,47 @@ class IdiomSynthesisPipeline:
                 "candidate_limit": self.max_group_candidates,
                 "limit_exceeded": True,
             }
-            return SynthesisResult(
-                project=project,
-                status="rejected",
-                selected=list(candidates),
-                context_evidence=context_evidence,
-                agent_trace=_not_run_traces("candidate_limit_exceeded"),
-                scorecard=build_synthesis_scorecard(
-                    contains_stage2_input=any(
-                        candidate.input_stage == 2
-                        for candidate in candidates
+            return [
+                SynthesisResult(
+                    project=project,
+                    status="rejected",
+                    selected=list(candidates),
+                    context_evidence=context_evidence,
+                    region_planning={
+                        "region_key": _stable_key(
+                            "region",
+                            context_key,
+                        ),
+                        "candidate_ids": [
+                            candidate.candidate_id
+                            for candidate in candidates
+                        ],
+                        "max_plans_per_region": (
+                            self.max_plans_per_region
+                        ),
+                        "planning_called": False,
+                    },
+                    agent_trace=_not_run_traces(
+                        "candidate_limit_exceeded"
                     ),
-                    quality_score=0.0,
-                ),
-                deterministic_checks={
-                    "candidate_limit_exceeded": True,
-                    "candidate_count": len(candidates),
-                    "candidate_limit": self.max_group_candidates,
-                },
-                decision_reason=(
-                    "同区域候选数量超过本次显式上限；为避免静默遗漏，"
-                    "未截断候选且未调用 Agent。请提高上限后重试该区域。"
-                ),
-            )
+                    scorecard=build_synthesis_scorecard(
+                        contains_stage2_input=any(
+                            candidate.input_stage == 2
+                            for candidate in candidates
+                        ),
+                        quality_score=0.0,
+                    ),
+                    deterministic_checks={
+                        "candidate_limit_exceeded": True,
+                        "candidate_count": len(candidates),
+                        "candidate_limit": self.max_group_candidates,
+                    },
+                    decision_reason=(
+                        "同区域候选数量超过本次显式上限；为避免静默遗漏，"
+                        "未截断候选且未调用 Agent。请提高上限后重试该区域。"
+                    ),
+                )
+            ]
 
         group_candidates = list(candidates)
         (
@@ -322,18 +462,38 @@ class IdiomSynthesisPipeline:
             }
         )
         if not available_context:
-            return SynthesisResult(
-                project=project,
-                status="rejected",
-                context_evidence=context_evidence,
-                agent_trace=_not_run_traces("context_gate_rejected"),
-                scorecard=build_synthesis_scorecard(
-                    contains_stage2_input=contains_stage2_input,
-                    quality_score=0.0,
-                ),
-                deterministic_checks={"context_contract_valid": False},
-                decision_reason="未能自动加载并验证候选所在代表源码区域。",
-            )
+            return [
+                SynthesisResult(
+                    project=project,
+                    status="rejected",
+                    context_evidence=context_evidence,
+                    region_planning={
+                        "region_key": _stable_key(
+                            "region",
+                            context_key,
+                        ),
+                        "candidate_ids": [
+                            candidate.candidate_id
+                            for candidate in group_candidates
+                        ],
+                        "max_plans_per_region": (
+                            self.max_plans_per_region
+                        ),
+                        "planning_called": False,
+                    },
+                    agent_trace=_not_run_traces("context_gate_rejected"),
+                    scorecard=build_synthesis_scorecard(
+                        contains_stage2_input=contains_stage2_input,
+                        quality_score=0.0,
+                    ),
+                    deterministic_checks={
+                        "context_contract_valid": False
+                    },
+                    decision_reason=(
+                        "未能自动加载并验证候选成员共同出现的源码区域。"
+                    ),
+                )
+            ]
 
         await self.initialize()
         assert self.runtime is not None
@@ -347,62 +507,150 @@ class IdiomSynthesisPipeline:
                 SynthesisPlanningRequest(
                     candidates=payload,
                     context_code=available_context,
+                    max_plans_per_region=self.max_plans_per_region,
                 ),
                 recipient=default_agent_id("synthesis_planning"),
             ),
             SynthesisPlanningResult(
-                should_synthesize=False,
-                selected_indices=[],
-                synthesis_goal="",
-                ordering_constraints=[],
-                expected_improvement="",
+                plans=[],
                 reason="规划 Agent Runtime 路由失败，跳过当前候选组。",
                 call_status="failed",
                 call_attempts=0,
                 failure_kind="runtime_dispatch_error",
             ),
         )
-        plan_data = asdict(plan_result)
-        if not plan_result.should_synthesize:
+        plans, validation = normalize_synthesis_plans(
+            plan_result.plans,
+            group_candidates,
+            max_plans_per_region=self.max_plans_per_region,
+        )
+        region_planning = {
+            "region_key": _stable_key("region", context_key),
+            "candidate_ids": [
+                candidate.candidate_id for candidate in group_candidates
+            ],
+            "max_plans_per_region": self.max_plans_per_region,
+            "planning_called": True,
+            "overall_reason": plan_result.reason,
+            "plans": [asdict(plan) for plan in plan_result.plans],
+            "call_status": plan_result.call_status,
+            "call_attempts": plan_result.call_attempts,
+            "failure_kind": plan_result.failure_kind,
+            "validation": validation,
+        }
+        if not plans:
             plan_failed = plan_result.call_status == "failed"
-            return SynthesisResult(
-                project=project,
-                status="rejected",
-                context_evidence=context_evidence,
-                plan=plan_data,
-                agent_trace={
-                    "planning": agent_trace(
-                        plan_result,
-                        "skip_group",
-                    ),
-                    **{
-                        stage: not_run_trace("planning_stopped")
-                        for stage in _SYNTHESIS_AGENT_STAGES[1:]
+            if plan_failed:
+                reason = "规划 Agent 技术失败，跳过当前候选区域。"
+            elif validation["raw_plan_count"]:
+                reason = "规划 Agent 返回的计划均未通过确定性校验。"
+            else:
+                reason = plan_result.reason
+            return [
+                SynthesisResult(
+                    project=project,
+                    status="rejected",
+                    context_evidence=context_evidence,
+                    region_planning=region_planning,
+                    agent_trace={
+                        "planning": agent_trace(
+                            plan_result,
+                            "skip_region",
+                        ),
+                        **{
+                            stage: not_run_trace("planning_stopped")
+                            for stage in _SYNTHESIS_AGENT_STAGES[1:]
+                        },
                     },
-                },
-                scorecard=build_synthesis_scorecard(
-                    contains_stage2_input=contains_stage2_input,
-                    quality_score=0.0,
-                ),
-                deterministic_checks={"synthesis_planned": False},
-                decision_reason=(
-                    "规划 Agent 技术失败，跳过当前候选组。"
-                    if plan_failed
-                    else "规划 Agent 未发现至少两个能够产生明确增益的习语。"
-                ),
-            )
+                    scorecard=build_synthesis_scorecard(
+                        contains_stage2_input=contains_stage2_input,
+                        quality_score=0.0,
+                    ),
+                    deterministic_checks={
+                        "synthesis_planned": False,
+                        "planning_validation": validation,
+                    },
+                    decision_reason=reason,
+                )
+            ]
 
-        selected = [
-            group_candidates[index]
-            for index in plan_result.selected_indices
-        ]
+        results: list[SynthesisResult] = []
+        planning_trace = agent_trace(plan_result, "skip_region")
+        for plan in plans:
+            selected = [
+                group_candidates[index]
+                for index in plan["selected_indices"]
+            ]
+            try:
+                result = await self._execute_plan(
+                    project=project,
+                    selected=selected,
+                    plan=plan,
+                    available_context=available_context,
+                    context_evidence=context_evidence,
+                    region_planning=region_planning,
+                    planning_trace=planning_trace,
+                )
+            except Exception as exc:
+                logger.error(
+                    "单个合成计划编排失败，已跳过并继续；error_type=%s",
+                    type(exc).__name__,
+                )
+                result = SynthesisResult(
+                    project=project,
+                    status="rejected",
+                    selected=selected,
+                    context_evidence=context_evidence,
+                    region_planning=region_planning,
+                    plan=plan,
+                    agent_trace={
+                        "planning": planning_trace,
+                        "plan_orchestration": {
+                            "status": "failed",
+                            "logical_attempts": 0,
+                            "failure_kind": (
+                                "unexpected_plan_orchestration_error"
+                            ),
+                            "failure_action": "skip_plan",
+                        },
+                    },
+                    scorecard=build_synthesis_scorecard(
+                        contains_stage2_input=any(
+                            candidate.input_stage == 2
+                            for candidate in selected
+                        ),
+                        quality_score=0.0,
+                    ),
+                    deterministic_checks={
+                        "plan_orchestration_completed": False
+                    },
+                    decision_reason=(
+                        "当前计划发生未预料编排异常，已跳过并继续同区域其他计划。"
+                    ),
+                )
+            results.append(result)
+        return results
+
+    async def _execute_plan(
+        self,
+        *,
+        project: str,
+        selected: Sequence[IdiomCandidate],
+        plan: dict[str, object],
+        available_context: str,
+        context_evidence: dict[str, object],
+        region_planning: dict[str, object],
+        planning_trace: dict[str, object],
+    ) -> SynthesisResult:
+        assert self.runtime is not None
         assembly_result = await dispatch_with_fallback(
             self.runtime.send_message(
                 IdiomAssemblyRequest(
-                    selected_codes=[
-                        candidate.code for candidate in selected
+                    selected_idioms=[
+                        self._candidate_payload(candidate)
+                        for candidate in selected
                     ],
-                    plan=plan_data,
+                    plan=plan,
                     context_code=available_context,
                 ),
                 recipient=default_agent_id("synthesis_assembly"),
@@ -419,49 +667,52 @@ class IdiomSynthesisPipeline:
         )
         assembly_data = asdict(assembly_result)
         merged = assembly_result.merged_code
-        allowed_context = available_context
         unsupported_calls = unsupported_call_targets(
             merged,
             [candidate.code for candidate in selected],
-            allowed_context,
+            available_context,
         )
         syntax_valid = bool(merged) and syntax_structure_valid(merged)
-        context_contract_valid = bool(allowed_context)
+        context_contract_valid = bool(available_context)
         deterministic = {
             "syntax_structure_valid": syntax_valid,
             "unsupported_call_targets": unsupported_calls,
             "context_contract_valid": context_contract_valid,
         }
+        selected_contains_stage2 = any(
+            candidate.input_stage == 2 for candidate in selected
+        )
         if not merged or not syntax_valid or unsupported_calls:
             if not merged:
                 reason = (
-                    "组装 Agent 技术失败，跳过复审并拒绝当前候选组。"
+                    "组装 Agent 技术失败，跳过复审并拒绝当前计划。"
                     if assembly_result.call_status == "failed"
-                    else "组装 Agent 未产生代码，跳过复审并拒绝当前候选组。"
+                    else "组装 Agent 未产生代码，跳过复审并拒绝当前计划。"
                 )
             elif not syntax_valid:
                 reason = (
                     "合成结果未通过 Tree-sitter 语法结构检查，"
-                    "跳过复审并拒绝当前候选组。"
+                    "跳过复审并拒绝当前计划。"
                 )
             else:
                 reason = (
                     "合成结果包含来源习语和允许上下文之外的新增调用，"
-                    "跳过复审并拒绝当前候选组。"
+                    "跳过复审并拒绝当前计划。"
                 )
             return SynthesisResult(
                 project=project,
                 status="rejected",
-                selected=selected,
+                selected=list(selected),
                 merged_code=merged,
                 context_evidence=context_evidence,
-                plan=plan_data,
+                region_planning=region_planning,
+                plan=plan,
                 assembly=assembly_data,
                 agent_trace={
-                    "planning": agent_trace(plan_result, "skip_group"),
+                    "planning": planning_trace,
                     "assembly": agent_trace(
                         assembly_result,
-                        "skip_downstream_and_reject_group",
+                        "skip_downstream_and_reject_plan",
                     ),
                     "quality_review": not_run_trace(
                         "assembly_or_deterministic_gate_rejected"
@@ -471,7 +722,7 @@ class IdiomSynthesisPipeline:
                     ),
                 },
                 scorecard=build_synthesis_scorecard(
-                    contains_stage2_input=contains_stage2_input,
+                    contains_stage2_input=selected_contains_stage2,
                     quality_score=0.0,
                 ),
                 deterministic_checks=deterministic,
@@ -479,12 +730,16 @@ class IdiomSynthesisPipeline:
             )
         smell_request = SmellReviewRequest(
             project=project,
-            candidate_id="synthesis:"
-            + ",".join(candidate.candidate_id for candidate in selected),
+            candidate_id=str(plan["combination_key"]),
             candidate_code=merged,
             related_examples=[
                 available_context,
-                *[candidate.code for candidate in selected],
+                *[
+                    str(occurrence["local_code"])
+                    for candidate in selected
+                    for occurrence in candidate.occurrence_records()
+                    if occurrence["local_code"]
+                ],
             ][:5],
             deterministic_evidence={
                 **deterministic,
@@ -510,9 +765,9 @@ class IdiomSynthesisPipeline:
                             self._candidate_payload(candidate)
                             for candidate in selected
                         ],
-                        plan=plan_data,
+                        plan=plan,
                         merged_code=merged,
-                        context_code=allowed_context,
+                        context_code=available_context,
                         assembly_evidence=assembly_data,
                     ),
                     recipient=default_agent_id("synthesis_review"),
@@ -553,9 +808,6 @@ class IdiomSynthesisPipeline:
         )
         review_data = asdict(review_result)
         smell_data = asdict(smell_result)
-        selected_contains_stage2 = any(
-            candidate.input_stage == 2 for candidate in selected
-        )
         status, reason = decide_synthesis_status(
             contains_stage2_input=selected_contains_stage2,
             merged_code_present=bool(merged),
@@ -596,28 +848,29 @@ class IdiomSynthesisPipeline:
         return SynthesisResult(
             project=project,
             status=status,
-            selected=selected,
+            selected=list(selected),
             merged_code=merged,
             context_evidence=context_evidence,
-            plan=plan_data,
+            region_planning=region_planning,
+            plan=plan,
             assembly=assembly_data,
             review=review_data,
             smell=smell_data,
             smell_gate=smell_gate,
             smell_review_input=asdict(smell_request),
             agent_trace={
-                "planning": agent_trace(plan_result, "skip_group"),
+                "planning": planning_trace,
                 "assembly": agent_trace(
                     assembly_result,
-                    "skip_downstream_and_reject_group",
+                    "skip_downstream_and_reject_plan",
                 ),
                 "quality_review": agent_trace(
                     review_result,
-                    "reject_group",
+                    "reject_plan",
                 ),
                 "smell_review": agent_trace(
                     smell_result,
-                    "reject_group",
+                    "reject_plan",
                 ),
             },
             scorecard=scorecard,

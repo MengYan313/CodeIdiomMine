@@ -71,7 +71,7 @@ Parser 基础结果的门禁。任何后端失败都应以能力掩码、诊断�
 | `src/parser/` | 通用 Tree-sitter 操作、C++ Adapter、异常/宏恢复、原文映射、Def-Use、目标 tokenizer 长度治理及 model-ready 片段 |
 | `src/mining/` | 对 Parser 已准备片段执行预训练模型嵌入和正式 DBSCAN 聚类，提供仓库无关、仅改进领域目标函数的标准 GP+EI warm-start 调参；HDBSCAN 保留为实验对照 |
 | `src/idiom_judgment/` | 单簇合同/低价值规则、保守抽象提案、经哈希验证的代表区域上下文、语义/复用价值业务评分、目录化通用习语与仓库专属习语分类、共享异味分类与独立门禁、Agent 理由链、失败回退和事后审计 |
-| `src/idiom_synthesis/` | 阶段3正式输入、阶段2合同适配、严格同代表区域分组、自动验证上下文、合成规划、代码组装、对当前结果重新执行质量与习语类型复审、理由链、合成增量产物、组级跳过，以及独立执行的共享异味门禁 |
+| `src/idiom_synthesis/` | 阶段3正式输入、阶段2合同适配、完整簇成员位置的同区域共现发现、区域成员与源码顺序绑定、自动验证上下文、每区域一次批量规划、有界计划规范化与稳定键、逐计划代码组装、对当前结果重新执行质量与习语类型复审、理由链、合成增量产物、计划级失败隔离，以及独立执行的共享异味门禁 |
 | `src/agents/` | 当前判断与合成流程复用的 Agent 基类、结构化调用状态和注册函数 |
 | `src/evaluation/` | 固定评价指标、四条 baseline、统一产物/指标合同、按仓库与全局聚合及明确标注的离线模拟验证 |
 | `src/llm/` | 两项目统一的模型分档、`.env`、AutoGen 客户端、JSON schema/单次修复与轻量对话封装 |
@@ -111,7 +111,7 @@ repos/<project>/...
   采集函数不作改动。选择器不读取仓库身份、人工标签或最终评价指标；该 JSON
   是选择证据，不替代阶段间 pickle。
 - `idiom-judgment.pkl`：Schema v8。正式结果按 `accepted`、`rejected` 分区，离线预检另有 `pending_llm`；每条记录保存完整 `member_codes`/`source_infos`、四项 `cluster_statistics`、规则证据、抽象提案、只含代表代码和词法去重变体的精简 `semantic_review_input`、独立 `context_evidence`、LLM `is_idiom` 与 `abstract/keep` 决策、实际批准集合与 `abstraction_applied`、目录化通用习语或仓库专属习语的 `idiom_classification`、语义/类型/异味 `agent_reasons`、最终 `decision_reason`、语义/复用价值业务 `scorecard`、精简 `smell_review_input`、结构化异味 findings 与独立 `smell_gate`、各 Agent 尝试/失败/回退的 `agent_trace`，以及 `center_point`、`info`、`cnt`、`avg_ast_num`、`avg_subtree_size` 和 `loc_label` 兼容投影。经路径/范围/哈希验证的代表上下文只用于本地门禁和审计，不进入阶段3 LLM 请求。
-- `idiom-synthesis.pkl`：Schema v7，语义固定为 `synthesis_delta`。正式读取习语判断的 `accepted` 记录并以顶层 `source_judgments` 携带其判断理由和类型，只把代表 `project + source_path + source_extent` 完全一致的候选组成一组；缺少可验证代表区域时不使用历史 `loc_label` 猜测分组。产物只保存合成尝试和成功增量，不复制未合成、未选择或合成失败的阶段3习语；它们继续由阶段3产物持有。每次尝试保存自动同区域 `context_evidence`、合成计划、组装来源、针对合成结果重新执行的 `is_idiom` 与 `idiom_classification`、规划/组装/质量/类型/异味 `agent_reasons`、最终 `decision_reason`、质量复审业务 `scorecard`、当前合成代码的 `smell_review_input`/分类 findings/独立 `smell_gate`、Tree-sitter 语法与新增调用门禁、各 Agent 尝试/失败/跳过的 `agent_trace`、全部 `source_infos`、`merge_rounds` 和 `synthesis_trace`。阶段2 `clusters.pkl` 只验证适配和严格阈值逻辑，程序化调用生成 `contract_only_not_executed` 空 artifact，不进入正式 CLI 或实验执行。
+- `idiom-synthesis.pkl`：Schema v9，语义固定为 `synthesis_delta`。正式读取习语判断的 `accepted` 记录，以完整 `source_infos` 按成员 `project + source_path + function_extent` 的交集发现同区域共现；同一簇在一个区域内只形成一个区域绑定候选，但可参与多个真实共现区域。候选自身 `extent` 和 `start_byte/end_byte` 提供局部代码与稳定源码顺序，不要求不同习语片段的字节区间相交；缺少可验证成员位置时不使用历史 `loc_label` 猜测分组。规划 Agent 每区域一次返回有界 `plans`，编排层规范化索引并按候选集合去重，以稳定 `combination_key` 逐计划执行；`region_planning` 保存总理由、调用状态和校验摘要。产物只保存合成尝试和成功增量，不复制未合成、未选择或合成失败的阶段3习语；它们继续由阶段3产物持有。每次尝试以顶层 `source_judgments` 携带来源阶段3判断理由和类型，以 `matched_source_infos`、`matched_occurrences`、`region_identity` 和 `source_order_candidate_ids` 保存实际使用的成员共现证据，完整 `source_infos` 继续保存簇级支持证据；同时保存自动同区域 `context_evidence`、单项合成计划、组装来源、针对合成结果重新执行的 `is_idiom` 与 `idiom_classification`、规划/组装/质量/类型/异味 `agent_reasons`、最终 `decision_reason`、质量复审业务 `scorecard`、当前合成代码的 `smell_review_input`/分类 findings/独立 `smell_gate`、Tree-sitter 语法与新增调用门禁、各 Agent 尝试/失败/跳过的 `agent_trace`、`merge_rounds` 和 `synthesis_trace`。阶段2 `clusters.pkl` 只验证适配和严格阈值逻辑，程序化调用生成 `contract_only_not_executed` 空 artifact，不进入正式 CLI 或实验执行。
 - `eval.json`：正式默认在每个仓库完成全仓发现后，对来源文件做确定性的参考/测量分区，并在测量分区上计算 `IC_macro`、`IC_micro`、最终 `IC=(IC_macro+IC_micro)/2`、集合复现率 `ISP` 及使用最终 IC 的 `F1`；另报告习语种类数、平均聚类簇大小、平均跨文件支持数和 `AvgAST`，并保留必要分子分母。兼容字段 `training_*`、`test_*` 只表示参考/测量分区。留一项目模式只作历史兼容，聚类模拟模式只作公式验证。
 
 当前九项正式指标默认计算全量联合视图。阶段3/4的分类字段还允许在报告层对
@@ -135,9 +135,10 @@ repos/<project>/...
 使用 `quality-v2`，也可显式用 `legacy` 复查历史选择规则；真实 embedding
 不再直接从四列 AST 数据集临时选择或截断候选。评价器自动识别 v2，并把
 `semantic_slice` 的原始字节范围映射回 AST 节点；旧数据仍使用历史规则。
-`source_infos` 和 `avg_subtree_size` 是为可复现评价增加的向后兼容证据字段；
-旧产物缺少它们时，评估器退回代表实例和数据集定位。其他任务不得顺手改变字段
-或嵌套层级。
+`source_infos` 是阶段4成员共现发现和可复现评价的共同证据字段，
+`avg_subtree_size` 是评价使用的向后兼容证据字段；旧产物缺少它们时，评估器
+退回代表实例和数据集定位，但阶段4不得用 `loc_label` 猜测成员共现。其他任务
+不得顺手改变字段或嵌套层级。
 
 Parser 的恢复、映射、候选 profile 和 Def-Use 算法见
 [Parser v2 设计](parser-design.md)，全量证据见
@@ -165,12 +166,17 @@ Parser 长度降级见[C++ Adapter 与模型输入治理](cpp-adapter-and-model-
 - 多重可信门控（`idiom_judgment`）：确定性规则与抽象提案先运行，编排层验证代表函数/区域上下文后，
   语义/复用价值 Agent 和共享代码异味 Agent 并行；业务评分与不可抵消的异味
   门禁自动给出二态结果。
-- 关联闭环融合（`idiom_synthesis`）：阶段3已接受产物 → 完全相同代表区域分组 → 自动加载同区域上下文
-  → 合成规划 → 代码组装
+- 关联闭环融合（`idiom_synthesis`）：阶段3已接受产物 → 完整成员位置的同区域共现分组 → 绑定当前区域实际成员与源码顺序 → 自动加载同区域上下文
+  → 有界语义组合规划 → 代码组装
   → 质量/共享异味并行复审；异味针对当前合成代码独立重审且不进入质量分。
   输出为不含阶段3透传项的合成增量。阶段2只运行不调用 Agent 的适配合同测试，
   禁止跨仓或跨区域合成。
-- 上下文只允许读取代表源码范围并校验文件哈希；合成结果新增的调用目标必须来自
+- 有界语义组合规划的目的，是避免对同一区域候选执行指数级全子集枚举。规划
+  Agent 每区域一次返回显式上限内所有有明确关系且值得尝试的组合；编排层排序并
+  去重索引、校验范围与必填理由、生成稳定组合键，再逐计划独立执行。不同计划可
+  共享候选，完全相同的候选集合只执行一次；不采用逐组询问模型并由模型控制停止
+  的开放循环。
+- 阶段3上下文只读取代表源码范围；阶段4只读取成员共现区域，二者都校验文件哈希。合成结果新增的调用目标必须来自
   输入习语或该上下文。
 
 详细设计见 `docs/guides/agent-system.md`，修改约束见

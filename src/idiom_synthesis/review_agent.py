@@ -30,7 +30,10 @@ _SYSTEM_MESSAGE = build_json_system_prompt(
         "独立习语产生明确、可复查的质量增益。"
     ),
     success_criteria=(
-        "检查原始意图、控制顺序、数据绑定、前置条件和异常/清理职责是否保留。",
+        (
+            "结合 matched_occurrences 检查当前区域中的原始意图、控制顺序、"
+            "数据绑定、前置条件和异常/清理职责是否保留。"
+        ),
         "区分真正的语义完整性提升与单纯代码变长、拼接或重复。",
         "列出所有不能由输入习语或允许上下文支持的新增内容。",
         "quality_score 范围为 0–100。",
@@ -63,7 +66,7 @@ _SYSTEM_MESSAGE = build_json_system_prompt(
         "证据不足或依赖未提供的外部语义时降低 quality_score。",
     ),
 )
-SYNTHESIS_REVIEW_PROMPT_VERSION = 2
+SYNTHESIS_REVIEW_PROMPT_VERSION = 3
 SYNTHESIS_REVIEW_PROMPT_SHA256 = hashlib.sha256(
     _SYSTEM_MESSAGE.encode("utf-8")
 ).hexdigest()

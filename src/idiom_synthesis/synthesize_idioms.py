@@ -17,6 +17,7 @@ from ..common.progress import progress
 from ..common.run_checkpoint import RunCheckpoint
 from ..llm.config import load_project_env, resolve_model
 from .pipeline import IdiomSynthesisPipeline
+from .planning_agent import DEFAULT_MAX_PLANS_PER_REGION
 from .schema import (
     IDIOM_SYNTHESIS_SCHEMA_VERSION,
     SynthesisResult,
@@ -54,11 +55,11 @@ def _orchestration_failure_result(
             "orchestration": {
                 "status": "failed",
                 "logical_attempts": 0,
-                "failure_kind": "unexpected_orchestration_error",
-                "failure_action": "skip_group",
+                "failure_kind": "unexpected_region_orchestration_error",
+                "failure_action": "skip_region",
             }
         },
-        decision_reason="候选组编排发生未预料异常，已跳过该组并继续运行。",
+        decision_reason="候选区域编排发生未预料异常，已跳过该区域并继续运行。",
     )
 
 
@@ -72,6 +73,7 @@ async def synthesize_idioms(
     model: Optional[str] = None,
     max_groups: int = -1,
     max_group_candidates: int = 12,
+    max_plans_per_region: int = DEFAULT_MAX_PLANS_PER_REGION,
     delay_seconds: float = 0.0,
     checkpoint_path: Optional[str] = None,
     resume: bool = False,
@@ -94,6 +96,7 @@ async def synthesize_idioms(
             for candidate in group
         }
     )
+    region_candidate_membership_count = sum(map(len, groups))
 
     contract_only = detected == "stage2"
     if not contract_only and not os.getenv("OPENAI_API_KEY"):
@@ -117,6 +120,7 @@ async def synthesize_idioms(
                 if source_root
                 else "",
                 "max_group_candidates": int(max_group_candidates),
+                "max_plans_per_region": int(max_plans_per_region),
             },
             resume=resume,
         )
@@ -134,15 +138,19 @@ async def synthesize_idioms(
     usage = {"prompt_tokens": 0, "completion_tokens": 0}
     run_contract: Dict[str, Any] = {
         "artifact_semantics": "synthesis_delta",
-        "region_grouping": "exact_representative_source_extent",
+        "region_grouping": "member_source_region_cooccurrence",
         "decision_policy": {
             "calibration_status": "synthetic_smoke_only_pilot_required"
         },
+        "max_group_candidates": max_group_candidates,
+        "max_plans_per_region": max_plans_per_region,
+        "planning_mode": "single_region_call_batched_plans",
     }
     if not contract_only:
         pipeline = IdiomSynthesisPipeline(
             model=model,
             max_group_candidates=max_group_candidates,
+            max_plans_per_region=max_plans_per_region,
         )
         run_contract = pipeline.run_contract()
         try:
@@ -152,7 +160,7 @@ async def synthesize_idioms(
                 if position in results_by_position:
                     continue
                 try:
-                    result = await pipeline.synthesize(
+                    region_results = await pipeline.synthesize(
                         group,
                         source_root=source_root,
                     )
@@ -161,10 +169,12 @@ async def synthesize_idioms(
                         "候选组编排失败，已记录拒绝并继续；error_type=%s",
                         type(exc).__name__,
                     )
-                    result = _orchestration_failure_result(project, group)
-                results_by_position[position] = result
+                    region_results = [
+                        _orchestration_failure_result(project, group)
+                    ]
+                results_by_position[position] = region_results
                 if checkpoint is not None:
-                    checkpoint.save_record(position, result)
+                    checkpoint.save_record(position, region_results)
                 if delay_seconds > 0 and position < len(groups) - 1:
                     await asyncio.sleep(delay_seconds)
         finally:
@@ -177,8 +187,9 @@ async def synthesize_idioms(
         []
         if contract_only
         else [
-            results_by_position[position]
+            result
             for position in range(len(groups))
+            for result in results_by_position[position]
         ]
     )
     artifact = build_synthesis_artifact(
@@ -188,6 +199,9 @@ async def synthesize_idioms(
         input_candidate_count=len(candidates),
         related_group_count=len(groups),
         grouped_candidate_count=grouped_candidate_count,
+        region_candidate_membership_count=(
+            region_candidate_membership_count
+        ),
     )
     artifact["execution_status"] = (
         "contract_only_not_executed"
@@ -246,7 +260,7 @@ async def synthesize_idioms(
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
-            "自动填充同代表区域上下文并对多个相关习语执行规划、组装、"
+            "从完整簇成员位置发现同区域共现并执行规划、组装、"
             "有效性与类型复审"
         )
     )
@@ -266,15 +280,21 @@ def main() -> None:
     parser.add_argument(
         "--source-root",
         required=True,
-        help="源码根；自动按候选完全相同的代表范围读取并验证上下文",
+        help="源码根；自动读取并验证成员共同出现的函数/区域上下文",
     )
     parser.add_argument("--model", "-m", default=None, help="默认使用低档模型")
     parser.add_argument("--max-groups", type=int, default=-1)
     parser.add_argument("--max-group-candidates", type=int, default=12)
+    parser.add_argument(
+        "--max-plans-per-region",
+        type=int,
+        default=DEFAULT_MAX_PLANS_PER_REGION,
+        help="每个成员共现区域一次规划最多返回的语义计划数",
+    )
     parser.add_argument("--delay", type=float, default=0.0)
     parser.add_argument(
         "--checkpoint",
-        help="可选 SQLite checkpoint；逐组持久化，避免中断后重复付费调用",
+        help="可选 SQLite checkpoint；逐区域持久化，避免重复已完成区域",
     )
     parser.add_argument(
         "--resume",
@@ -292,6 +312,7 @@ def main() -> None:
             model=args.model,
             max_groups=args.max_groups,
             max_group_candidates=args.max_group_candidates,
+            max_plans_per_region=args.max_plans_per_region,
             delay_seconds=args.delay,
             checkpoint_path=args.checkpoint,
             resume=args.resume,

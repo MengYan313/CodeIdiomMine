@@ -122,7 +122,7 @@ CodeIdiomMine 在发现层坚持仓库隔离，在知识组织层采用双层分
   共享异味审查 Agent。
 
 阶段3 Schema v8 在每条记录保存 `decision_reason`、`idiom_classification` 和
-`agent_reasons`；阶段4 Schema v7 继续携带来源阶段3的判断理由和类型，并对当前
+`agent_reasons`；阶段4 Schema v9 继续携带来源阶段3的判断理由和类型，并对当前
 合成结果重新分类，以顶层 `source_judgments` 保存来源证据，并保存规划、组装、
 质量、类型与异味理由。最终确定性裁决会把
 业务有效性依据和异味依据汇入 `decision_reason`，供后续抽样和人工审计使用。

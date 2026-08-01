@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import pickle
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping
 
+from ..idiom_judgment.source_context import representative_source_identity
 from .schema import IdiomCandidate
 
 
@@ -156,23 +158,59 @@ def group_related_idioms(
     candidates: Iterable[IdiomCandidate],
 ) -> List[List[IdiomCandidate]]:
     """
-    只以完全相同的代表函数/区域身份形成候选组。
+    使用完整簇成员位置发现同一函数/区域内的习语共现。
 
-    阶段4是同区域合成增量，不根据跨区域共现、语义相似度或其他成员位置扩大
-    分组。没有同区域伙伴的阶段3习语继续保留在阶段3产物，不复制进阶段4。
+    每个阶段3习语在一个区域内最多形成一个区域绑定候选，同一簇的重复成员不会
+    被误算为多个习语。没有同区域伙伴的阶段3习语继续保留在阶段3产物，不复制
+    进阶段4。
     """
 
-    groups: Dict[str, List[IdiomCandidate]] = {}
+    candidates_by_id: Dict[str, IdiomCandidate] = {}
+    regions: Dict[
+        tuple[str, str, str],
+        Dict[str, Dict[tuple[Any, ...], Any]],
+    ] = {}
     for candidate in candidates:
-        groups.setdefault(candidate.context_key, []).append(candidate)
-    return [
-        sorted(
-            group,
-            key=lambda candidate: (
-                -candidate.support_count,
+        candidates_by_id[candidate.candidate_id] = candidate
+        infos = candidate.source_infos or [candidate.representative_info]
+        for info in infos:
+            identity = representative_source_identity(
+                candidate.project,
+                info,
+            )
+            if identity is None:
+                continue
+            node = info[3]
+            occurrence_key = (
+                str(node.get("extent") or ""),
+                node.get("start_byte"),
+                node.get("end_byte"),
+                str(node.get("source_sha256") or ""),
+            )
+            regions.setdefault(identity, {}).setdefault(
                 candidate.candidate_id,
-            ),
+                {},
+            ).setdefault(occurrence_key, info)
+
+    groups: List[List[IdiomCandidate]] = []
+    for _, region_candidates in sorted(regions.items()):
+        if len(region_candidates) < 2:
+            continue
+        group = [
+            replace(
+                candidates_by_id[candidate_id],
+                region_info=next(iter(occurrences.values())),
+                matched_source_infos=list(occurrences.values()),
+            )
+            for candidate_id, occurrences in region_candidates.items()
+        ]
+        groups.append(
+            sorted(
+                group,
+                key=lambda candidate: (
+                    -candidate.support_count,
+                    candidate.candidate_id,
+                ),
+            )
         )
-        for _, group in sorted(groups.items())
-        if len(group) >= 2
-    ]
+    return groups
