@@ -16,14 +16,12 @@ from src.mining.dbscan_tuning import (
 from src.mining.hdbscan_clustering import HDBSCANClusteringProcessor
 from src.mining.code_embedding import (
     get_fragment_src_and_embedding,
-    get_pros_src_and_embedding,
     is_within_extent,
     parse_extent,
 )
 from src.parser.fragment_builder import prepare_fragment_data
 from src.parser.token_budget import TokenBudget
 from src.parser.token_length_audit import summarize_token_lengths
-from src.parser.candidates import LEGACY_PROFILE, QUALITY_PROFILE
 from src.parser.repo2data import parse_repository
 
 
@@ -343,63 +341,6 @@ class MiningHelperTests(unittest.TestCase):
         )
         self.assertAlmostEqual(sum(SCORE_WEIGHTS.values()), 1.0)
 
-    def test_embedding_profiles_preserve_mapping_and_semantic_candidates(self):
-        with tempfile.TemporaryDirectory() as temporary_directory:
-            root = Path(temporary_directory)
-            project = root / "sample"
-            project.mkdir()
-            padding = "\n".join(
-                f"  // 长函数审计填充 {index}" for index in range(35)
-            )
-            (project / "sample.cpp").write_text(
-                f"""
-int sample() {{
-{padding}
-  auto handle = open_resource();
-  auto value = read_value(handle);
-  record(value);
-  close_resource(handle);
-  return value;
-}}
-""",
-                encoding="utf-8",
-            )
-            dataset_path = root / "dataset.pkl"
-            parse_repository(str(root), str(dataset_path))
-            data = pd.read_pickle(dataset_path)
-
-            quality = get_pros_src_and_embedding(
-                data,
-                _FakeEmbedder(),
-                min_project_size=1,
-                candidate_profile=QUALITY_PROFILE,
-            )
-            quality_infos = quality[3][0]
-            self.assertTrue(
-                any(info[3]["kind"] == "semantic_slice" for info in quality_infos)
-            )
-            self.assertTrue(
-                all(
-                    info[3].get("source_file_id")
-                    and info[3].get("start_byte") is not None
-                    and info[3].get("end_byte") is not None
-                    for info in quality_infos
-                )
-            )
-
-            legacy = get_pros_src_and_embedding(
-                data,
-                _FakeEmbedder(),
-                min_nodes=1,
-                min_ast_num=1,
-                min_project_size=1,
-                candidate_profile=LEGACY_PROFILE,
-            )
-            self.assertTrue(legacy[3][0])
-            self.assertFalse(
-                any(info[3]["kind"] == "semantic_slice" for info in legacy[3][0])
-            )
-
     def test_token_budget_counts_special_tokens_and_rejects_overflow(self):
         budget = TokenBudget(
             _WhitespaceTokenizer(),
@@ -442,23 +383,14 @@ int load_value() {{
             data = pd.read_pickle(dataset_path)
 
             embedder = _BudgetFakeEmbedder(max_input_tokens=40)
-            with self.assertRaisesRegex(ValueError, "必须先由"):
-                get_pros_src_and_embedding(
-                    data,
-                    embedder,
-                    min_project_size=1,
-                    candidate_profile=QUALITY_PROFILE,
-                )
             fragments = prepare_fragment_data(
                 data,
                 embedder.token_budget,
-                candidate_profile=QUALITY_PROFILE,
             )
             result = get_fragment_src_and_embedding(
                 fragments,
                 embedder,
                 min_project_size=1,
-                candidate_profile=QUALITY_PROFILE,
             )
             infos = result[3][0]
 

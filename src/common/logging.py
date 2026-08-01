@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import atexit
-import inspect
 import logging
 import os
 import re
@@ -42,16 +41,6 @@ def _detect_run_name() -> str:
         if script_path.stem == "__main__":
             return _safe_name(script_path.parent.name)
         return _safe_name(script_path.stem)
-
-    for frame_info in inspect.stack()[2:]:
-        filename = Path(frame_info.filename)
-        if filename == Path(__file__) or filename.name in {"__init__.py", "__main__.py"}:
-            continue
-        if "site-packages" in filename.parts:
-            continue
-        if filename.suffix == ".py":
-            return _safe_name(filename.stem)
-
     return "application"
 
 
@@ -66,18 +55,9 @@ class AppLogger:
         cls,
         name: str,
         run_name: Optional[str] = None,
-        *,
-        script_name: Optional[str] = None,
     ) -> logging.Logger:
-        """返回将 INFO 写入 stdout、将 DEBUG 写入 ``logs/`` 的日志器。
-
-        ``script_name`` 保留为旧 WPF2React 调用点的兼容别名。仅当自动生成的
-        命令名称不合适时，新代码才应显式使用 ``run_name``。
-        """
-        if run_name and script_name and run_name != script_name:
-            raise ValueError("run_name 与 script_name 不能指定不同值")
-
-        resolved_run_name = _safe_name(run_name or script_name or _detect_run_name())
+        """返回将 INFO 写入 stdout、将 DEBUG 写入 ``logs/`` 的日志器。"""
+        resolved_run_name = _safe_name(run_name or _detect_run_name())
         cache_key = (name, resolved_run_name)
         if cache_key in cls._loggers:
             return cls._loggers[cache_key]
@@ -138,11 +118,9 @@ class AppLogger:
 def get_logger(
     name: str,
     run_name: Optional[str] = None,
-    *,
-    script_name: Optional[str] = None,
 ) -> logging.Logger:
     """对 :meth:`AppLogger.get_logger` 的便捷封装。"""
-    return AppLogger.get_logger(name, run_name, script_name=script_name)
+    return AppLogger.get_logger(name, run_name)
 
 
 atexit.register(AppLogger.shutdown)

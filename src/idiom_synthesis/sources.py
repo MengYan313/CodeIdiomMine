@@ -1,4 +1,4 @@
-"""阶段3正式输入及阶段2合同兼容输入到合成候选的适配器。"""
+"""把习语判断产物转换为合成候选。"""
 
 from __future__ import annotations
 
@@ -57,7 +57,6 @@ def _from_judgment_artifact(
                 source_infos=list(record.get("source_infos") or []),
                 representative_info=record.get("info"),
                 support_count=int(record.get("cnt") or 0),
-                input_stage=3,
                 intent=_semantic_intent(record),
                 judgment_status=str(record.get("status") or ""),
                 judgment_reason=str(record.get("decision_reason") or ""),
@@ -89,69 +88,21 @@ def _from_judgment_artifact(
     return project, [candidate for candidate in candidates if candidate.code]
 
 
-def _from_stage2(items: List[Any]) -> tuple[str, List[IdiomCandidate]]:
-    if len(items) != 1 or not isinstance(items[0], dict):
-        raise ValueError("阶段2合同适配一次只接受一个仓库的 clusters.pkl")
-    project = str(items[0].get("pros_name") or "")
-    clusters = items[0].get("clusters")
-    candidates: List[IdiomCandidate] = []
-    for _, row in clusters.iterrows():
-        infos = list(row.get("infos") or [])
-        candidates.append(
-            IdiomCandidate(
-                candidate_id=f"cluster:{row.get('label')}",
-                project=project,
-                code=str(row.get("center_point") or "").strip(),
-                loc_label=str(row.get("loc_label") or ""),
-                source_infos=infos,
-                representative_info=row.get("center_point_info"),
-                support_count=int(row.get("cluster_size") or len(infos)),
-                input_stage=2,
-                judgment_status="not_run",
-            )
-        )
-    return project, [candidate for candidate in candidates if candidate.code]
-
-
 def load_idiom_candidates(
     path: str | Path,
-    *,
-    input_kind: str = "auto",
-) -> tuple[str, List[IdiomCandidate], str]:
-    """适配阶段3正式输入；阶段2分支只用于合同与后备逻辑验证。"""
+) -> tuple[str, List[IdiomCandidate]]:
+    """加载当前习语判断产物。"""
 
     with Path(path).open("rb") as stream:
         data = pickle.load(stream)
-    detected = input_kind
-    if input_kind == "auto":
-        if isinstance(data, dict) and data.get("artifact_type") == "idiom_judgment":
-            detected = "judgment"
-        elif (
-            isinstance(data, list)
-            and data
-            and isinstance(data[0], dict)
-            and "clusters" in data[0]
-            and "pros_name" in data[0]
-        ):
-            detected = "stage2"
-        else:
-            raise ValueError("无法识别合成输入产物")
-
-    if detected == "judgment":
-        if not isinstance(data, dict):
-            raise ValueError("judgment 输入必须是习语判断 artifact")
-        project, candidates = _from_judgment_artifact(data)
-    elif detected == "stage2":
-        if not isinstance(data, list):
-            raise ValueError("stage2 输入必须是 clusters.pkl")
-        project, candidates = _from_stage2(data)
-    else:
-        raise ValueError(f"不支持的 input_kind: {input_kind}")
+    if not isinstance(data, dict) or data.get("artifact_type") != "idiom_judgment":
+        raise ValueError("合成输入必须是习语判断 artifact")
+    project, candidates = _from_judgment_artifact(data)
     if not project:
         raise ValueError("无法从输入确定仓库身份")
     if any(candidate.project != project for candidate in candidates):
         raise ValueError("合成输入包含多个仓库")
-    return project, candidates, detected
+    return project, candidates
 
 
 def group_related_idioms(
@@ -185,7 +136,6 @@ def group_related_idioms(
                 str(node.get("extent") or ""),
                 node.get("start_byte"),
                 node.get("end_byte"),
-                str(node.get("source_sha256") or ""),
             )
             regions.setdefault(identity, {}).setdefault(
                 candidate.candidate_id,

@@ -84,7 +84,6 @@ def _validate_output_selection_contract(
             raise ValueError(f"{manifest_path} 缺少 IdioMine-CPP 参数")
         if (
             parameters.get("candidate_origin") != "semantic_def_use"
-            or parameters.get("analysis_version") != "def-use-v1"
             or parameters.get("metric") != "cosine"
             or not str(parameters.get("embedding_model") or "").strip()
             or parameters.get("region_grouping")
@@ -258,9 +257,9 @@ def main() -> None:
     )
     parser.add_argument(
         "--mode",
-        choices=("leave_one_project_out", "within_project_file_split"),
+        choices=("within_project_file_split",),
         default=DEFAULT_EVALUATION_MODE,
-        help="正式默认是仓库内参考/测量分区；留一项目仅作历史兼容",
+        help="仓库内参考/测量分区",
     )
     parser.add_argument("--test-fraction", type=float, default=0.2)
     parser.add_argument(

@@ -6,7 +6,6 @@ from dataclasses import asdict, dataclass
 from typing import Any, Dict, Iterable, Mapping, Sequence
 
 
-SMELL_TAXONOMY_VERSION = 1
 SMELL_REJECTION_THRESHOLD = 60.0
 
 SEVERITY_BASE_RISK = {
@@ -333,7 +332,6 @@ def build_smell_gate(
     else:
         trigger_kind = "none"
     return {
-        "taxonomy_version": SMELL_TAXONOMY_VERSION,
         "threshold": float(threshold),
         "analysis_status": analysis_status,
         "risk_score": round(float(risk_score), 4),

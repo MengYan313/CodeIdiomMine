@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 from dataclasses import dataclass
 from typing import List
@@ -10,7 +9,7 @@ from typing import List
 from autogen_core import MessageContext, message_handler
 from autogen_ext.models.openai import OpenAIChatCompletionClient
 
-from ..agents._base import JsonLLMAgent
+from ..agents.base import JsonLLMAgent
 from ..llm.prompting import build_json_system_prompt
 
 
@@ -50,11 +49,6 @@ _SYSTEM_MESSAGE = build_json_system_prompt(
         "一次返回不超过 max_plans_per_region 的 plans 后停止；找不到有效组合时返回空 plans。",
     ),
 )
-SYNTHESIS_PLANNING_PROMPT_VERSION = 5
-SYNTHESIS_PLANNING_PROMPT_SHA256 = hashlib.sha256(
-    _SYSTEM_MESSAGE.encode("utf-8")
-).hexdigest()
-
 DEFAULT_MAX_PLANS_PER_REGION = 8
 
 

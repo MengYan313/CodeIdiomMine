@@ -8,7 +8,6 @@
 | --- | --- |
 | `src/common/` | 不含业务算法的横切基础设施，例如日志与兼容配置导出 |
 | `src/llm/` | 模型分档、`.env` 加载、AutoGen 模型客户端和轻量对话封装 |
-| `src/agents/base.py` | `RoutedAgent` 基类、默认 `AgentId` 与统一注册函数 |
 | `src/parser/` | 项目特有的确定性解析流程 |
 | 领域包 | CodeIdiomMine 使用 `mining/evaluation/agents`；WPF2React 使用 `migration` |
 | `tests/<package>/` | 与 `src/<package>/` 对应的离线测试和显式集成测试 |
@@ -23,7 +22,6 @@
 - `src/common/model_config.py`
 - `src/logger.py`（兼容导入）
 - `src/llm/{__init__,agent,client,config,json_output,message,prompting,utils}.py`
-- `src/agents/base.py`
 - `tests/common/test_shared_infrastructure.py`
 - `docs/guides/prompt-engineering-guide.md`
 - `docs/guides/shared-development-conventions.md`
@@ -108,7 +106,7 @@ async with LLMClient(config) as client:
 ## 5. AutoGen Agent
 
 - 使用 `autogen_core.SingleThreadedAgentRuntime`、强类型消息和 `RoutedAgent`，不混用旧 `autogen` API。
-- 通用 Agent 继承 `src.agents.base.BaseRoutedAgent`；领域基类可以继续封装它。
+- Agent 基类可按领域调用方式保持精简，不要求两个项目逐字一致。
 - 统一通过 `register_agent(runtime, type, factory)` 注册；该函数内部只使用 `runtime.register_factory()`。
 - 默认地址统一由 `default_agent_id(type)` 生成，即 `AgentId(type, key="default")`。
 - Runtime 生命周期采用 `start()` → `try` 中发送消息 → `finally` 中 `stop()` 或 `stop_when_idle()`。

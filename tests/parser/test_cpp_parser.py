@@ -7,7 +7,7 @@ import pandas as pd
 
 from src.parser.ast_parser import ASTParser
 from src.parser.audit import audit_parser
-from src.parser.candidates import QUALITY_PROFILE, select_candidates
+from src.parser.candidates import select_candidates
 from src.parser.cpp_adapter import CPP_ADAPTER
 from src.parser.cpp_lex import lexically_equivalent
 from src.parser.file_scanner import FileScanner
@@ -301,8 +301,7 @@ int mapped() {
             self.assertIn('"https://example.test/a//b"', root["code_snippet"])
             self.assertIn("// 该注释属于原始片段", root["code_snippet"])
             self.assertEqual(root["source_path"], "mapping.cpp")
-            self.assertEqual(len(root["source_file_id"]), 64)
-            self.assertEqual(root["mapping_version"], 2)
+            self.assertEqual(root["source_file_id"], "mapping.cpp")
 
     def test_incomplete_code_is_recovered_and_auditable(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -348,7 +347,7 @@ int conditional(int value) {
             self.assertEqual(len(functions), 1)
             recovery = parser.last_file_diagnostics["recovery"]
             self.assertTrue(recovery["used"])
-            self.assertEqual(recovery["strategy"], "preprocessor-shadow-v1")
+            self.assertEqual(recovery["strategy"], "preprocessor-shadow")
             self.assertGreater(parser.last_file_diagnostics["raw"]["missing_count"], 0)
             self.assertEqual(recovery["shadow"]["missing_count"], 0)
 
@@ -409,7 +408,6 @@ int load_value() {{
 
             selected = select_candidates(
                 node_infos,
-                profile=QUALITY_PROFILE,
                 min_nodes=10,
                 min_ast_num=5,
             )
@@ -431,11 +429,9 @@ int load_value() {{
             "subtree_size": 20,
             "start_byte": 0,
             "end_byte": 6000,
-            "mapping_version": 2,
             "mapping_exact": True,
             "source_path": "sample.cpp",
-            "source_file_id": "f" * 64,
-            "source_sha256": "a" * 64,
+            "source_file_id": "sample.cpp",
             "parse_origin": "raw",
             "parse_flags": 0,
         }
@@ -478,7 +474,6 @@ int load_value() {{
 
         selected = select_candidates(
             [root, nested, oversized_statement, *leaves],
-            profile=QUALITY_PROFILE,
             min_nodes=10,
         )
 
@@ -528,7 +523,7 @@ int load_value() {{
             self.assertEqual(len(audit["files"]), 3)
             self.assertGreaterEqual(audit["summary"]["missing_count"], 1)
 
-    def test_full_audit_is_reproducible_and_matches_v2_dataset(self):
+    def test_full_audit_is_reproducible_and_matches_current_dataset(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
             project = root / "sample"
@@ -556,7 +551,6 @@ int sample(int value) {
                 dataset_path=first,
                 repeat_dataset_path=second,
                 output_path=report_path,
-                candidate_profile=QUALITY_PROFILE,
             )
 
             self.assertTrue(report["performance"]["byte_identical_repeat"])

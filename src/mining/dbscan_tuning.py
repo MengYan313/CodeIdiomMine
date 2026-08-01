@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import math
 import pickle
@@ -39,7 +38,7 @@ DENSE_EPS_EXTENSION = (0.0025, 0.005)
 SPARSE_EPS_EXTENSION = (0.45, 0.50)
 
 IMPROVED_BAYESIAN_OBJECTIVE = (
-    "constraint-aware-warm-start-improved-bayesian-v1"
+    "constraint-aware-warm-start-improved-bayesian"
 )
 SCORE_WEIGHTS = {
     "cross_file_recurrence": 0.45,
@@ -134,7 +133,6 @@ def calculate_candidate_metrics(
         "macro_mean_cosine_distance_to_centroid": (
             float(np.mean(list(cohesion.values()))) if cohesion else None
         ),
-        "labels_sha256": hashlib.sha256(labels.tobytes()).hexdigest(),
     }
 
 
@@ -347,11 +345,10 @@ class DBSCANAutoTuner:
             infos=infos,
         )
         report = {
-            "schema_version": 1,
             "algorithm": "DBSCAN",
             "metric": "cosine",
             "optimization_method": (
-                "repository-agnostic-unsupervised-grid-v1"
+                "repository-agnostic-unsupervised-grid"
             ),
             "bayesian_objective": {
                 "name": IMPROVED_BAYESIAN_OBJECTIVE,

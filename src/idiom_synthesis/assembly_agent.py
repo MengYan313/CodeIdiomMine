@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 from dataclasses import dataclass
 from typing import List
@@ -10,7 +9,7 @@ from typing import List
 from autogen_core import MessageContext, message_handler
 from autogen_ext.models.openai import OpenAIChatCompletionClient
 
-from ..agents._base import JsonLLMAgent
+from ..agents.base import JsonLLMAgent
 from ..llm.prompting import build_json_system_prompt
 
 
@@ -36,11 +35,6 @@ _SYSTEM_MESSAGE = build_json_system_prompt(
         "计划冲突或证据不足时 merged_code 返回空字符串，并在 reason 中说明。",
     ),
 )
-IDIOM_ASSEMBLY_PROMPT_VERSION = 4
-IDIOM_ASSEMBLY_PROMPT_SHA256 = hashlib.sha256(
-    _SYSTEM_MESSAGE.encode("utf-8")
-).hexdigest()
-
 _RESPONSE_SCHEMA = {
     "type": "object",
     "properties": {

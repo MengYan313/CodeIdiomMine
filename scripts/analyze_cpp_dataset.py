@@ -10,7 +10,6 @@ from __future__ import annotations
 import argparse
 from collections import Counter, defaultdict
 from datetime import datetime
-import hashlib
 import json
 from pathlib import Path
 import resource
@@ -22,11 +21,10 @@ from typing import Any, Iterable, Mapping
 import pandas as pd
 
 from src.parser.ast_parser import ASTParser
-from src.parser.candidates import QUALITY_PROFILE, select_candidates
+from src.parser.candidates import select_candidates
 from src.parser.file_scanner import FileScanner
 
 
-SCHEMA_VERSION = 1
 DATASET_EXTENSIONS = frozenset(
     {".c", ".cc", ".cpp", ".cxx", ".c++", ".h", ".hh", ".hpp", ".hxx"}
 )
@@ -58,17 +56,7 @@ ENTITY_KINDS = {
     "call": frozenset({"call_expression"}),
 }
 CLASS_LIKE_KINDS = frozenset({"class_specifier", "struct_specifier"})
-PARSER_SOURCE_PATHS = (
-    Path("src/parser/ast_parser.py"),
-    Path("src/parser/candidates.py"),
-    Path("src/parser/cpp_adapter.py"),
-    Path("src/parser/file_scanner.py"),
-    Path("src/parser/repo2data.py"),
-    Path("src/parser/semantic_slicer.py"),
-)
 FORMAL_STATUSES = frozenset({"保留", "条件保留"})
-HISTORICAL_STATUS = "阶段2后排除"
-REMOVED_STATUS = "淘汰"
 ANALYSIS_COMPLEXITY_TIERS = ("低", "中", "高")
 ANALYSIS_COMPLEXITY_INDICATORS = (
     "effective_line_count",
@@ -200,31 +188,6 @@ def _include_target(node: Any) -> str:
     return parts[1].strip() if len(parts) == 2 else text
 
 
-def _canonical_digest(payload: Mapping[str, Any]) -> str:
-    data = json.dumps(
-        payload,
-        ensure_ascii=False,
-        separators=(",", ":"),
-        sort_keys=True,
-    ).encode("utf-8")
-    return hashlib.sha256(data).hexdigest()
-
-
-def _sha256_path(path: Path) -> str:
-    with path.open("rb") as file:
-        return hashlib.file_digest(file, "sha256").hexdigest()
-
-
-def _parser_source_digest() -> str:
-    digest = hashlib.sha256()
-    for path in PARSER_SOURCE_PATHS:
-        digest.update(path.as_posix().encode("utf-8"))
-        digest.update(b"\0")
-        digest.update(path.read_bytes())
-        digest.update(b"\n")
-    return digest.hexdigest()
-
-
 def analyze_repository(
     repository: Path,
     *,
@@ -258,7 +221,6 @@ def analyze_repository(
     error_categories: Counter[str] = Counter()
     source_totals: Counter[str] = Counter()
     parse_totals: Counter[str] = Counter()
-    inventory_hash = hashlib.sha256()
 
     for path in selected_paths:
         relative_path, path_escape = _relative_posix(path, repository)
@@ -293,7 +255,6 @@ def analyze_repository(
         text, encoding = _decode_source(source)
         physical_lines = len(text.splitlines())
         effective_lines = _effective_line_count(text)
-        source_sha256 = hashlib.sha256(source).hexdigest()
         source_totals.update(
             {
                 "byte_count": len(source),
@@ -303,10 +264,6 @@ def analyze_repository(
         )
         if encoding != "utf-8":
             error_categories["encoding_fallback"] += 1
-        inventory_hash.update(relative_path.encode("utf-8"))
-        inventory_hash.update(b"\0")
-        inventory_hash.update(source_sha256.encode("ascii"))
-        inventory_hash.update(b"\n")
 
         tree = parser.parse_file(str(path), source_root=str(repository))
         if tree is None:
@@ -321,7 +278,6 @@ def analyze_repository(
                     "byte_count": len(source),
                     "physical_line_count": physical_lines,
                     "effective_line_count": effective_lines,
-                    "source_sha256": source_sha256,
                 }
             )
             error_categories["parse_failure"] += 1
@@ -370,10 +326,7 @@ def analyze_repository(
             semantic_slice_count += (
                 len(function_ast[0].get("semantic_slices", [])) if function_ast else 0
             )
-            for candidate in select_candidates(
-                function_ast,
-                profile=QUALITY_PROFILE,
-            ):
+            for candidate in select_candidates(function_ast):
                 key = (
                     "semantic_def_use"
                     if candidate.origin == "semantic_def_use"
@@ -430,7 +383,6 @@ def analyze_repository(
                 "byte_count": len(source),
                 "physical_line_count": physical_lines,
                 "effective_line_count": effective_lines,
-                "source_sha256": source_sha256,
                 "error_count": error_count,
                 "missing_count": missing_count,
                 "macro_related_error_count": macro_related,
@@ -481,46 +433,15 @@ def analyze_repository(
         if len(paths) > 1
     }
     relative_paths = [record["path"] for record in files]
-    deterministic_evidence = {
-        "project": project,
-        "commit": _git_output(repository, "rev-parse", "HEAD"),
-        "parser_source_sha256": _parser_source_digest(),
-        "source_inventory_sha256": inventory_hash.hexdigest(),
-        "selected_relative_paths": relative_paths,
-        "parse_counts": dict(sorted(parse_totals.items())),
-        "entity_counts": dict(sorted(entity_counts.items())),
-        "candidate_counts": dict(sorted(candidate_counts.items())),
-        "error_categories": dict(sorted(error_categories.items())),
-        "file_evidence": [
-            {
-                key: value
-                for key, value in record.items()
-                if key not in {"message"}
-            }
-            for record in files
-        ],
-    }
     report: dict[str, Any] = {
-        "schema_version": SCHEMA_VERSION,
         "project": project,
         "repository": {
             "path": repository.as_posix(),
             "remote_url": _git_output(repository, "remote", "get-url", "origin"),
-            "commit": _git_output(repository, "rev-parse", "HEAD"),
-            "commit_date": _git_output(repository, "log", "-1", "--format=%cI"),
-            "is_shallow": _git_output(
-                repository, "rev-parse", "--is-shallow-repository"
-            )
-            == "true",
         },
         "configuration": {
             "scanner": "FileScanner current contract",
-            "candidate_profile": QUALITY_PROFILE,
             "dataset_extensions": sorted(DATASET_EXTENSIONS),
-            "codeidiommine_commit": _git_output(
-                Path.cwd(), "rev-parse", "HEAD"
-            ),
-            "parser_source_sha256": _parser_source_digest(),
         },
         "source": {
             "all_supported_file_count": len(all_supported_paths),
@@ -529,7 +450,6 @@ def analyze_repository(
                 len(all_supported_paths) - attempted
             ),
             **dict(sorted(source_totals.items())),
-            "source_inventory_sha256": inventory_hash.hexdigest(),
         },
         "paths": {
             "unique_relative_path_count": len(set(relative_paths)),
@@ -595,7 +515,6 @@ def analyze_repository(
             ],
             "invalid_json_count": 0,
         },
-        "deterministic_digest": _canonical_digest(deterministic_evidence),
         "files": files,
     }
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -653,7 +572,6 @@ def aggregate_reports(analysis_root: Path, output_path: Path) -> dict[str, Any]:
         projects.append(
             {
                 "project": report["project"],
-                "commit": report["repository"]["commit"],
                 "selected_file_count": source["selected_file_count"],
                 "effective_line_count": source.get("effective_line_count", 0),
                 "file_success_rate": parse["file_success_rate"],
@@ -662,13 +580,11 @@ def aggregate_reports(analysis_root: Path, output_path: Path) -> dict[str, Any]:
                     "selected_function_count", 0
                 ),
                 "candidate_count": sum(report["candidates"].values()),
-                "deterministic_digest": report["deterministic_digest"],
             }
         )
     attempted = totals["attempted_file_count"]
     significant = totals["significant_byte_count"]
     summary = {
-        "schema_version": SCHEMA_VERSION,
         "analysis_root": analysis_root.as_posix(),
         "totals": {
             **dict(sorted(totals.items())),
@@ -726,7 +642,7 @@ def _license_evidence(repository: Path) -> list[dict[str, Any]]:
             evidence.append(
                 {
                     "path": path.name,
-                    "sha256": _sha256_path(path),
+                    "size_bytes": path.stat().st_size,
                 }
             )
     return evidence
@@ -757,7 +673,6 @@ def _clone_commands(
     *,
     github_full_name: str,
     slug: str,
-    commit: str,
     sparse_paths: list[str],
 ) -> list[str]:
     destination = f"repos/{slug}"
@@ -778,12 +693,7 @@ def _clone_commands(
                 ),
             ]
         )
-    commands.extend(
-        [
-            f"git -C {destination} fetch --depth 1 origin {commit}",
-            f"git -C {destination} checkout --detach FETCH_HEAD",
-        ]
-    )
+    commands.append(f"git -C {destination} pull --depth 1 origin HEAD")
     return commands
 
 
@@ -795,7 +705,6 @@ def _compact_analysis(
     return {
         "artifact_path": artifact_path.as_posix(),
         "artifact_size_bytes": artifact_path.stat().st_size,
-        "artifact_sha256": _sha256_path(artifact_path),
         "configuration": report["configuration"],
         "source": report["source"],
         "paths": {
@@ -812,14 +721,10 @@ def _compact_analysis(
             "failed_file_count": len(report["errors"]["failed_files"]),
         },
         "output_integrity": report["output_integrity"],
-        "deterministic_digest": report["deterministic_digest"],
     }
 
 
-def _phase_statistics(
-    projects: list[dict[str, Any]],
-    phase: str,
-) -> dict[str, Any]:
+def _analysis_statistics(projects: list[dict[str, Any]]) -> dict[str, Any]:
     totals: Counter[str] = Counter()
     entities: Counter[str] = Counter()
     candidates: Counter[str] = Counter()
@@ -828,7 +733,7 @@ def _phase_statistics(
     for project in projects:
         if project["selection"]["status"] not in FORMAL_STATUSES:
             continue
-        report = project["parse"][phase]
+        report = project["parse"]["analysis"]
         totals.update(
             {
                 "source_file_count": int(
@@ -963,19 +868,19 @@ def _apply_dataset_classification(
     indicator_values = {
         "effective_line_count": {
             project["slug"]: int(
-                project["parse"]["final"]["source"]["effective_line_count"]
+                project["parse"]["analysis"]["source"]["effective_line_count"]
             )
             for project in formal
         },
         "selected_file_count": {
             project["slug"]: int(
-                project["parse"]["final"]["source"]["selected_file_count"]
+                project["parse"]["analysis"]["source"]["selected_file_count"]
             )
             for project in formal
         },
         "candidate_count": {
             project["slug"]: sum(
-                project["parse"]["final"]["candidates"].values()
+                project["parse"]["analysis"]["candidates"].values()
             )
             for project in formal
         },
@@ -1043,33 +948,33 @@ def _formal_statistics(
     for project in projects:
         if project["selection"]["status"] not in FORMAL_STATUSES:
             continue
-        final = project["parse"]["final"]
+        analysis = project["parse"]["analysis"]
         totals.update(
             {
                 "project_count": 1,
                 "seed_project_count": int(project["selection"]["seed_project"]),
-                "source_file_count": int(final["source"]["selected_file_count"]),
+                "source_file_count": int(analysis["source"]["selected_file_count"]),
                 "effective_line_count": int(
-                    final["source"]["effective_line_count"]
+                    analysis["source"]["effective_line_count"]
                 ),
-                "parsed_file_count": int(final["parse"]["parsed_file_count"]),
-                "failed_file_count": int(final["parse"]["failed_file_count"]),
+                "parsed_file_count": int(analysis["parse"]["parsed_file_count"]),
+                "failed_file_count": int(analysis["parse"]["failed_file_count"]),
                 "selected_function_count": int(
-                    final["parse"]["selected_function_count"]
+                    analysis["parse"]["selected_function_count"]
                 ),
-                "error_count": int(final["parse"]["error_count"]),
-                "missing_count": int(final["parse"]["missing_count"]),
+                "error_count": int(analysis["parse"]["error_count"]),
+                "missing_count": int(analysis["parse"]["missing_count"]),
                 "significant_byte_count": int(
-                    final["parse"]["significant_byte_count"]
+                    analysis["parse"]["significant_byte_count"]
                 ),
                 "reliable_significant_byte_count": int(
-                    final["parse"]["reliable_significant_byte_count"]
+                    analysis["parse"]["reliable_significant_byte_count"]
                 ),
             }
         )
-        entities.update(final["entities"])
-        candidates.update(final["candidates"])
-        errors.update(final["errors"]["categories"])
+        entities.update(analysis["entities"])
+        candidates.update(analysis["candidates"])
+        errors.update(analysis["errors"]["categories"])
         selection = project["selection"]
         standards[selection["cpp_standard"]] += 1
         project_types[selection["project_type"]] += 1
@@ -1085,8 +990,8 @@ def _formal_statistics(
         github = project["github"]
         star_count = int(github["stars_at_retrieval"])
         fork_count = int(github["forks_at_retrieval"])
-        line_count = int(final["source"]["effective_line_count"])
-        file_count = int(final["source"]["selected_file_count"])
+        line_count = int(analysis["source"]["effective_line_count"])
+        file_count = int(analysis["source"]["selected_file_count"])
         stars.append(star_count)
         forks.append(fork_count)
         effective_lines.append(line_count)
@@ -1188,10 +1093,7 @@ def _formal_statistics(
             "effective_line_buckets": dict(sorted(scale_buckets.items())),
             "source_file_buckets": dict(sorted(file_buckets.items())),
         },
-        "parser_comparison": {
-            phase: _phase_statistics(projects, phase)
-            for phase in ("baseline", "final")
-        },
+        "parser_statistics": _analysis_statistics(projects),
     }
 
 
@@ -1201,23 +1103,15 @@ def build_manifest(
     repositories_root: Path,
     metadata_root: Path,
     search_path: Path,
-    baseline_root: Path,
-    final_root: Path,
+    analysis_root: Path,
     output_path: Path,
     statistics_output_path: Path,
 ) -> dict[str, Any]:
     selection_payload = json.loads(selection_path.read_text(encoding="utf-8"))
-    previous_projects = {}
-    if output_path.exists():
-        previous_manifest = json.loads(
-            output_path.read_text(encoding="utf-8")
-        )
-        previous_projects = {
-            project["slug"]: project
-            for project in previous_manifest["projects"]
-        }
     project_entries: list[dict[str, Any]] = []
     for annotation in selection_payload["projects"]:
+        if annotation["status"] not in FORMAL_STATUSES:
+            continue
         slug = annotation["slug"]
         repository = repositories_root / slug
         selection = {
@@ -1232,30 +1126,18 @@ def build_manifest(
                 "sparse_paths",
             }
         }
-        if annotation["status"] == REMOVED_STATUS and not repository.exists():
-            project = previous_projects[slug]
-            project["selection"] = selection
-            project.pop("classification", None)
-            project_entries.append(project)
-            continue
-        commit = _git_output(repository, "rev-parse", "HEAD")
         github_metadata = _load_github_metadata(
             slug=slug,
             github_full_name=annotation["github_full_name"],
             metadata_root=metadata_root,
             search_path=search_path,
         )
-        baseline_path = baseline_root / slug / "analysis.json"
-        final_path = final_root / slug / "analysis.json"
-        baseline_report = json.loads(
-            baseline_path.read_text(encoding="utf-8")
-        )
-        final_report = json.loads(final_path.read_text(encoding="utf-8"))
-        baseline = _compact_analysis(baseline_report, baseline_path)
-        final = _compact_analysis(final_report, final_path)
+        analysis_path = analysis_root / slug / "analysis.json"
+        analysis_report = json.loads(analysis_path.read_text(encoding="utf-8"))
+        analysis = _compact_analysis(analysis_report, analysis_path)
         sparse_paths = list(annotation.get("sparse_paths", []))
-        canonical_dataset_path = final_root / slug / "dataset.pkl"
-        canonical_audit_path = final_root / slug / "dataset.audit.json"
+        canonical_dataset_path = analysis_root / slug / "dataset.pkl"
+        canonical_audit_path = analysis_root / slug / "dataset.audit.json"
         canonical_artifacts = {}
         for artifact_name, artifact_path in (
             ("dataset", canonical_dataset_path),
@@ -1266,11 +1148,6 @@ def build_manifest(
                 "exists": artifact_path.exists(),
                 "size_bytes": (
                     artifact_path.stat().st_size
-                    if artifact_path.exists()
-                    else None
-                ),
-                "sha256": (
-                    _sha256_path(artifact_path)
                     if artifact_path.exists()
                     else None
                 ),
@@ -1297,28 +1174,15 @@ def build_manifest(
                         "retrieved_at"
                     ],
                 },
-                "revision": {
-                    "commit": commit,
-                    "commit_date": _git_output(
-                        repository, "log", "-1", "--format=%cI"
-                    ),
+                "repository": {
                     "local_path": repository.as_posix(),
                     "remote_url": _git_output(
                         repository, "remote", "get-url", "origin"
                     ),
-                    "is_shallow": (
-                        _git_output(
-                            repository,
-                            "rev-parse",
-                            "--is-shallow-repository",
-                        )
-                        == "true"
-                    ),
                     "sparse_paths": sparse_paths,
-                    "reproduction_commands": _clone_commands(
+                    "clone_commands": _clone_commands(
                         github_full_name=annotation["github_full_name"],
                         slug=slug,
-                        commit=commit,
                         sparse_paths=sparse_paths,
                     ),
                 },
@@ -1355,8 +1219,7 @@ def build_manifest(
                     },
                 },
                 "parse": {
-                    "baseline": baseline,
-                    "final": final,
+                    "analysis": analysis,
                     "canonical_dataset_path": (
                         canonical_dataset_path.as_posix()
                     ),
@@ -1372,22 +1235,13 @@ def build_manifest(
                         "--audit-output "
                         f"{canonical_audit_path.as_posix()}"
                     ),
-                    "analysis_commands": {
-                        "baseline": (
-                            ".venv/bin/python -m "
-                            "scripts.analyze_cpp_dataset analyze-repo "
-                            f"--repo {repository.as_posix()} "
-                            f"--project {slug} "
-                            f"--output {baseline_path.as_posix()}"
-                        ),
-                        "final": (
-                            ".venv/bin/python -m "
-                            "scripts.analyze_cpp_dataset analyze-repo "
-                            f"--repo {repository.as_posix()} "
-                            f"--project {slug} "
-                            f"--output {final_path.as_posix()}"
-                        ),
-                    },
+                    "analysis_command": (
+                        ".venv/bin/python -m "
+                        "scripts.analyze_cpp_dataset analyze-repo "
+                        f"--repo {repository.as_posix()} "
+                        f"--project {slug} "
+                        f"--output {analysis_path.as_posix()}"
+                    ),
                 },
             }
         )
@@ -1419,7 +1273,6 @@ def build_manifest(
         ),
     }
     statistics_payload = {
-        "schema_version": 1,
         "generated_from": output_path.as_posix(),
         "selection_source": selection_path.as_posix(),
         "screened_at": selection_payload.get("screened_at"),
@@ -1428,7 +1281,6 @@ def build_manifest(
         **statistics,
     }
     manifest = {
-        "schema_version": 1,
         "dataset_name": "CodeIdiomMine C++ 实验数据集",
         "generated_at": selection_payload["retrieved_at"],
         "screened_at": selection_payload.get("screened_at"),
@@ -1447,32 +1299,13 @@ def build_manifest(
                 for value in project_entries
             ),
             "formal_project_count": statistics["totals"]["project_count"],
-            "historical_project_count": sum(
-                value["selection"]["status"] == HISTORICAL_STATUS
-                for value in project_entries
-            ),
-            "removed_project_count": sum(
-                value["selection"]["status"] == REMOVED_STATUS
-                for value in project_entries
-            ),
             "selection_source": selection_path.as_posix(),
             "github_search_snapshot": search_path.as_posix(),
         },
         "parser": {
             "backend": "tree-sitter-cpp",
             "zero_build_parsing": True,
-            "candidate_profile": QUALITY_PROFILE,
-            "baseline_codeidiommine_commit": project_entries[0]["parse"][
-                "baseline"
-            ]["configuration"]["codeidiommine_commit"],
-            "final_codeidiommine_commit": project_entries[0]["parse"][
-                "final"
-            ]["configuration"]["codeidiommine_commit"],
-            "final_parser_source_sha256": project_entries[0]["parse"][
-                "final"
-            ]["configuration"]["parser_source_sha256"],
-            "baseline_root": baseline_root.as_posix(),
-            "final_root": final_root.as_posix(),
+            "analysis_root": analysis_root.as_posix(),
         },
         "statistics_path": statistics_output_path.as_posix(),
         "statistics": statistics,
@@ -1508,31 +1341,11 @@ def validate_manifest(manifest_path: Path) -> dict[str, Any]:
         for project in manifest["projects"]
         if project["selection"]["status"] in FORMAL_STATUSES
     ]
-    historical_projects = [
-        project
-        for project in manifest["projects"]
-        if project["selection"]["status"] == HISTORICAL_STATUS
-    ]
-    removed_projects = [
-        project
-        for project in manifest["projects"]
-        if project["selection"]["status"] == REMOVED_STATUS
-    ]
     policy = manifest["selection_policy"]
     if frozenset(policy["formal_statuses"]) != FORMAL_STATUSES:
         errors.append("正式项目状态策略与校验器不一致")
-    if policy["historical_status"] != HISTORICAL_STATUS:
-        errors.append("历史项目状态策略与校验器不一致")
-    if policy["excluded_status"] != REMOVED_STATUS:
-        errors.append("淘汰项目状态策略与校验器不一致")
     if manifest["source"]["formal_project_count"] != len(formal_projects):
         errors.append("清单正式项目数与项目状态不一致")
-    if manifest["source"]["historical_project_count"] != len(
-        historical_projects
-    ):
-        errors.append("清单历史项目数与项目状态不一致")
-    if manifest["source"]["removed_project_count"] != len(removed_projects):
-        errors.append("清单淘汰项目数与项目状态不一致")
     if manifest["statistics"]["totals"]["project_count"] != len(
         formal_projects
     ):
@@ -1545,9 +1358,9 @@ def validate_manifest(manifest_path: Path) -> dict[str, Any]:
                 "primary_domain": project["classification"]["primary_domain"]
             },
             "parse": {
-                "final": {
-                    "source": project["parse"]["final"]["source"],
-                    "candidates": project["parse"]["final"]["candidates"],
+                "analysis": {
+                    "source": project["parse"]["analysis"]["source"],
+                    "candidates": project["parse"]["analysis"]["candidates"],
                 }
             },
         }
@@ -1566,8 +1379,6 @@ def validate_manifest(manifest_path: Path) -> dict[str, Any]:
             project["slug"]
         ]:
             errors.append(f"{project['slug']}: 数据集分类不可复算")
-    if any("classification" in project for project in historical_projects):
-        errors.append("阶段2后排除项目不应进入正式分类")
     classification_statistics = manifest["statistics"]["classification"]
     domain_counts = Counter(
         project["classification"]["primary_domain"]
@@ -1609,22 +1420,14 @@ def validate_manifest(manifest_path: Path) -> dict[str, Any]:
         slug = project["slug"]
         repository = Path(project["revision"]["local_path"])
         status = project["selection"]["status"]
-        if status == REMOVED_STATUS:
-            if repository.exists():
-                errors.append(f"{slug}: 已淘汰仓库仍存在于本地")
-            continue
-        if status not in FORMAL_STATUSES and status != HISTORICAL_STATUS:
+        if status not in FORMAL_STATUSES:
             errors.append(f"{slug}: 未知筛选状态 {status}")
             continue
         if not repository.is_dir():
             errors.append(f"{slug}: 缺少应保留的本地仓库")
             continue
-        if _git_output(repository, "rev-parse", "HEAD") != project[
-            "revision"
-        ]["commit"]:
-            errors.append(f"{slug}: 本地 commit 与清单不一致")
-        final = project["parse"]["final"]
-        paths = final["paths"]
+        analysis = project["parse"]["analysis"]
+        paths = analysis["paths"]
         if int(paths["duplicate_relative_path_count"]):
             errors.append(f"{slug}: 存在重复仓库相对路径")
         if int(paths["path_escape_count"]):
@@ -1648,8 +1451,6 @@ def validate_manifest(manifest_path: Path) -> dict[str, Any]:
             ]
             if artifact_path.stat().st_size != artifact["size_bytes"]:
                 errors.append(f"{slug}: {artifact_name} 文件大小不一致")
-            if _sha256_path(artifact_path) != artifact["sha256"]:
-                errors.append(f"{slug}: {artifact_name} SHA-256 不一致")
         data = pd.read_pickle(dataset_path)
         if data.columns.tolist() != [
             "project",
@@ -1671,22 +1472,18 @@ def validate_manifest(manifest_path: Path) -> dict[str, Any]:
         audit = json.loads(audit_path.read_text(encoding="utf-8"))
         if audit["projects"] != [slug]:
             errors.append(f"{slug}: audit 项目标识不正确")
-        if audit["summary"]["scanned_file_count"] != final["source"][
+        if audit["summary"]["scanned_file_count"] != analysis["source"][
             "selected_file_count"
         ]:
             errors.append(f"{slug}: audit 与统计扫描文件数不一致")
-        if audit["summary"]["selected_function_count"] != final["parse"][
+        if audit["summary"]["selected_function_count"] != analysis["parse"][
             "selected_function_count"
         ]:
             errors.append(f"{slug}: audit 与统计函数数不一致")
     result = {
         "manifest": manifest_path.as_posix(),
         "formal_project_count": len(formal_projects),
-        "historical_project_count": len(historical_projects),
-        "removed_project_count": len(removed_projects),
-        "checked_project_count": len(formal_projects)
-        + len(historical_projects),
-        "excluded_project_count": len(manifest["projects"]) - len(formal_projects),
+        "checked_project_count": len(formal_projects),
         "error_count": len(errors),
         "errors": errors,
         "valid": not errors,
@@ -1717,8 +1514,7 @@ def main() -> None:
     manifest.add_argument("--repositories-root", type=Path, required=True)
     manifest.add_argument("--metadata-root", type=Path, required=True)
     manifest.add_argument("--search-snapshot", type=Path, required=True)
-    manifest.add_argument("--baseline-root", type=Path, required=True)
-    manifest.add_argument("--final-root", type=Path, required=True)
+    manifest.add_argument("--analysis-root", type=Path, required=True)
     manifest.add_argument("--output", type=Path, required=True)
     manifest.add_argument("--statistics-output", type=Path, required=True)
 
@@ -1767,8 +1563,7 @@ def main() -> None:
             repositories_root=arguments.repositories_root,
             metadata_root=arguments.metadata_root,
             search_path=arguments.search_snapshot,
-            baseline_root=arguments.baseline_root,
-            final_root=arguments.final_root,
+            analysis_root=arguments.analysis_root,
             output_path=arguments.output,
             statistics_output_path=arguments.statistics_output,
         )

@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import hashlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -256,7 +255,6 @@ def _adapt_llm_idioms(
     units: Sequence[_EvidenceUnit],
     *,
     model_name: str,
-    prompt_hash: str,
     estimated_tokens: int,
 ) -> List[Dict[str, Any]]:
     unit_index = {unit.evidence_id: unit for unit in units}
@@ -295,7 +293,6 @@ def _adapt_llm_idioms(
                     "project": project,
                     "model": model_name,
                     "confidence": float(raw.get("confidence", 0) or 0),
-                    "prompt_hash": prompt_hash,
                     "estimated_run_tokens": estimated_tokens,
                     "discovery_inputs": "mechanically_chunked_raw_cpp_only",
                     "evidence_mapping": (
@@ -333,9 +330,6 @@ async def generate_llm_direct_budget(
     raw_client = model_client or create_model_client(config)
     client = _BudgetedModelClient(raw_client, token_budget)
     model_name = config.model
-    prompt_hash = hashlib.sha256(
-        (_MAP_SYSTEM_PROMPT + "\n" + _REDUCE_SYSTEM_PROMPT).encode("utf-8")
-    ).hexdigest()
     call_count = 0
     counts: Dict[str, int] = {}
     projects_manifest: List[Dict[str, Any]] = []
@@ -394,7 +388,6 @@ async def generate_llm_direct_budget(
                 reduced,
                 units,
                 model_name=model_name,
-                prompt_hash=prompt_hash,
                 estimated_tokens=client.estimated_tokens,
             )
             output_path = write_project_idioms(output_dir, project, records)
@@ -428,7 +421,6 @@ async def generate_llm_direct_budget(
             "is_mock": False,
             "dataset": str(dataset_path),
             "model": model_name,
-            "prompt_hash": prompt_hash,
             "schema": _IDIOM_SCHEMA,
             "token_budget": token_budget,
             "estimated_input_output_tokens": client.estimated_tokens,

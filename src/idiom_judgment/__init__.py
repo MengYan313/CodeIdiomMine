@@ -11,7 +11,6 @@ from .pipeline import (
     decide_judgment_status,
 )
 from .idiom_taxonomy import (
-    IDIOM_TAXONOMY_VERSION,
     KNOWN_IDIOM_TYPES,
     REPOSITORY_SPECIFIC_IDIOM_LABEL,
     IdiomClassification,
@@ -25,7 +24,6 @@ from .schema import (
 )
 from .smell_taxonomy import (
     SMELL_REJECTION_THRESHOLD,
-    SMELL_TAXONOMY_VERSION,
     SmellFinding,
     build_smell_gate,
     calculate_smell_risk_score,
@@ -36,12 +34,10 @@ __all__ = [
     "AbstractionProposal",
     "ClusterCandidate",
     "RuleAssessment",
-    "IDIOM_TAXONOMY_VERSION",
     "KNOWN_IDIOM_TYPES",
     "REPOSITORY_SPECIFIC_IDIOM_LABEL",
     "IdiomClassification",
     "SMELL_REJECTION_THRESHOLD",
-    "SMELL_TAXONOMY_VERSION",
     "SmellFinding",
     "IdiomJudgmentPipeline",
     "IdiomJudgmentResult",

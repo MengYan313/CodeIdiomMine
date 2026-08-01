@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import math
 from collections import Counter
@@ -14,31 +13,15 @@ import pandas as pd
 from transformers import AutoTokenizer
 
 from ..common.logging import get_logger
-from .candidates import (
-    QUALITY_PROFILE,
-    SUPPORTED_PROFILES,
-    SelectedCandidate,
-    select_candidates,
-)
+from .candidates import SelectedCandidate, select_candidates
 from .fragment_builder import (
     potential_candidate_snippets,
     resolve_model_input,
 )
-from .token_budget import (
-    TOKEN_BUDGET_POLICY_VERSION,
-    TokenBudget,
-)
+from .token_budget import TokenBudget
 
 
 logger = get_logger(__name__)
-TOKEN_LENGTH_AUDIT_SCHEMA_VERSION = 1
-
-
-def _sha256_file(path: Path) -> str:
-    with path.open("rb") as stream:
-        return hashlib.file_digest(stream, "sha256").hexdigest()
-
-
 def _percentile(sorted_values: Sequence[int], fraction: float) -> float:
     if not sorted_values:
         return 0.0
@@ -113,7 +96,6 @@ def build_token_length_report(
     data: pd.DataFrame,
     dataset_path: Path,
     token_budget: TokenBudget,
-    candidate_profile: str = QUALITY_PROFILE,
     min_nodes: int = 10,
     min_ast_num: int = 5,
     max_regions_per_function: int = 2,
@@ -148,7 +130,6 @@ def build_token_length_report(
     for project, file_name, function_ast in _iter_functions(data):
         raw_candidates = select_candidates(
             function_ast,
-            profile=candidate_profile,
             min_nodes=min_nodes,
             min_ast_num=min_ast_num,
             max_regions_per_function=max_regions_per_function,
@@ -156,7 +137,6 @@ def build_token_length_report(
         )
         ready_candidates = select_candidates(
             function_ast,
-            profile=candidate_profile,
             min_nodes=min_nodes,
             min_ast_num=min_ast_num,
             max_regions_per_function=max_regions_per_function,
@@ -233,11 +213,8 @@ def build_token_length_report(
         token_budget=token_budget.max_input_tokens,
     )
     return {
-        "schema_version": TOKEN_LENGTH_AUDIT_SCHEMA_VERSION,
-        "policy_version": TOKEN_BUDGET_POLICY_VERSION,
         "dataset": {
             "path": dataset_path.as_posix(),
-            "sha256": _sha256_file(dataset_path),
         },
         "model": {
             "name": token_budget.model_name,
@@ -245,7 +222,6 @@ def build_token_length_report(
             "length_includes_special_tokens": True,
             "silent_truncation_allowed": False,
         },
-        "candidate_profile": candidate_profile,
         "raw_candidates": raw_summary,
         "model_ready_candidates": ready_summary,
         "degradation": dict(sorted(degradation.items())),
@@ -270,11 +246,6 @@ def main() -> None:
         help="可选的更严格总 token 上限",
     )
     parser.add_argument(
-        "--candidate-profile",
-        choices=SUPPORTED_PROFILES,
-        default=QUALITY_PROFILE,
-    )
-    parser.add_argument(
         "--local-files-only",
         action="store_true",
         help="只使用本地模型缓存，禁止下载",
@@ -296,7 +267,6 @@ def main() -> None:
         data=pd.read_pickle(dataset_path),
         dataset_path=dataset_path,
         token_budget=budget,
-        candidate_profile=args.candidate_profile,
     )
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)

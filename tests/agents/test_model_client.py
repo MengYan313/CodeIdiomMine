@@ -3,7 +3,8 @@ import os
 import unittest
 from unittest.mock import patch
 
-from src.agents._base import create_model_client, dispatch_with_fallback
+from src.agents.base import dispatch_with_fallback
+from src.llm.client import create_model_client
 from src.llm.config import load_project_env
 
 

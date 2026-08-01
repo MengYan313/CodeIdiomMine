@@ -25,7 +25,7 @@ class DatasetClassificationTests(unittest.TestCase):
             "selection": {"status": status},
             "classification": {"primary_domain": domain},
             "parse": {
-                "final": {
+                "analysis": {
                     "source": {
                         "effective_line_count": value,
                         "selected_file_count": value,
@@ -45,17 +45,11 @@ class DatasetClassificationTests(unittest.TestCase):
             {"a": 0.0, "b": 0.5, "c": 0.5, "d": 1.0},
         )
 
-    def test_classification_is_formal_only_and_nearly_equal_frequency(self) -> None:
+    def test_classification_is_nearly_equal_frequency(self) -> None:
         projects = [
             self._project(f"project-{index}", index + 1)
             for index in range(6)
         ]
-        historical = self._project(
-            "historical",
-            100,
-            status="阶段2后排除",
-        )
-        projects.append(historical)
         policy = {
             "primary_domain": {"categories": ["领域甲"]},
             "analysis_complexity": {
@@ -74,7 +68,6 @@ class DatasetClassificationTests(unittest.TestCase):
             for project in projects[:6]
         ]
         self.assertEqual(tiers, ["低", "低", "中", "中", "高", "高"])
-        self.assertNotIn("analysis_complexity", historical["classification"])
         self.assertEqual(
             projects[0]["classification"]["analysis_complexity"][
                 "indicator_values"

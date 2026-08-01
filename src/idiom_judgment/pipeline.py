@@ -9,13 +9,13 @@ from typing import Optional
 from autogen_core import SingleThreadedAgentRuntime
 from autogen_ext.models.openai import OpenAIChatCompletionClient
 
-from ..agents._base import (
+from ..agents.base import (
     agent_trace,
-    create_model_client,
     dispatch_with_fallback,
     not_run_trace,
 )
 from ..agents.base import default_agent_id, register_agent
+from ..llm.client import create_model_client
 from .abstraction import (
     AbstractionPolicy,
     apply_approved_abstractions,
@@ -24,7 +24,6 @@ from .abstraction import (
 from .rules import evaluate_cluster_rules
 from .source_context import load_verified_source_context
 from .idiom_taxonomy import (
-    IDIOM_TAXONOMY_VERSION,
     KNOWN_IDIOM_TYPES,
     REPOSITORY_SPECIFIC_IDIOM_LABEL,
     empty_idiom_classification,
@@ -36,16 +35,12 @@ from .schema import (
     IdiomJudgmentResult,
 )
 from .semantic_review_agent import (
-    SEMANTIC_REVIEW_PROMPT_SHA256,
-    SEMANTIC_REVIEW_PROMPT_VERSION,
     SemanticReviewAgent,
     SemanticReviewRequest,
     SemanticReviewResult,
 )
 from .smell_review_agent import (
     SMELL_REVIEW_AGENT_TYPE,
-    SMELL_REVIEW_PROMPT_SHA256,
-    SMELL_REVIEW_PROMPT_VERSION,
     SmellReviewAgent,
     SmellReviewRequest,
     SmellReviewResult,
@@ -153,21 +148,10 @@ class IdiomJudgmentPipeline:
             },
             "abstraction_policy": asdict(self.abstraction_policy),
             "idiom_taxonomy": {
-                "version": IDIOM_TAXONOMY_VERSION,
                 "known_type_count": len(KNOWN_IDIOM_TYPES),
                 "repository_specific_label": (
                     REPOSITORY_SPECIFIC_IDIOM_LABEL
                 ),
-            },
-            "prompt_contracts": {
-                "semantic_review": {
-                    "version": SEMANTIC_REVIEW_PROMPT_VERSION,
-                    "sha256": SEMANTIC_REVIEW_PROMPT_SHA256,
-                },
-                "smell_review": {
-                    "version": SMELL_REVIEW_PROMPT_VERSION,
-                    "sha256": SMELL_REVIEW_PROMPT_SHA256,
-                },
             },
         }
 

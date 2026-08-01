@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import math
 from dataclasses import dataclass
@@ -11,7 +10,7 @@ from typing import List
 from autogen_core import MessageContext, message_handler
 from autogen_ext.models.openai import OpenAIChatCompletionClient
 
-from ..agents._base import JsonLLMAgent
+from ..agents.base import JsonLLMAgent
 from ..idiom_judgment.idiom_taxonomy import (
     IDIOM_CLASSIFICATION_RESPONSE_SCHEMA,
     IdiomClassification,
@@ -66,11 +65,6 @@ _SYSTEM_MESSAGE = build_json_system_prompt(
         "证据不足或依赖未提供的外部语义时降低 quality_score。",
     ),
 )
-SYNTHESIS_REVIEW_PROMPT_VERSION = 3
-SYNTHESIS_REVIEW_PROMPT_SHA256 = hashlib.sha256(
-    _SYSTEM_MESSAGE.encode("utf-8")
-).hexdigest()
-
 _RESPONSE_SCHEMA = {
     "type": "object",
     "properties": {

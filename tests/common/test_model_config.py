@@ -2,7 +2,7 @@ import os
 import unittest
 from unittest.mock import patch
 
-from src.common.model_config import (
+from src.llm.config import (
     DEFAULT_MODEL_HIGH,
     DEFAULT_MODEL_LOW,
     DEFAULT_MODEL_MEDIUM,

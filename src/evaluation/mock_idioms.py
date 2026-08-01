@@ -15,6 +15,7 @@ from typing import Any, Dict, List
 import pandas as pd
 
 from ..common.logging import get_logger
+from .baseline_common import write_project_idioms
 
 logger = get_logger(__name__)
 
@@ -111,9 +112,7 @@ def build_mock_idioms(
                 }
             )
 
-        output_path = output_dir / f"{project_name}_idiom.pkl"
-        with output_path.open("wb") as file:
-            pickle.dump(idioms, file)
+        output_path = write_project_idioms(output_dir, project_name, idioms)
         counts[project_name] = len(idioms)
         logger.info("模拟习语 %s: %d -> %s", project_name, len(idioms), output_path)
     return counts

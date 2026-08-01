@@ -48,7 +48,7 @@ class MockIdiomBuilderTests(unittest.TestCase):
                         "cluster_size": 2,
                         "center_point_info": info,
                         "infos": [info, second_info],
-                        "loc_label": "legacy-location",
+                        "loc_label": "sample-location",
                     },
                     {
                         "label": 9,
@@ -72,7 +72,7 @@ class MockIdiomBuilderTests(unittest.TestCase):
                 {"sample": 1},
             )
             with (output_dir / "sample_idiom.pkl").open("rb") as file:
-                idioms = pickle.load(file)
+                idioms = pickle.load(file)["accepted"]
             self.assertEqual(idioms[0]["source_infos"], [info, second_info])
             self.assertEqual(idioms[0]["avg_subtree_size"], 9)
             self.assertEqual(

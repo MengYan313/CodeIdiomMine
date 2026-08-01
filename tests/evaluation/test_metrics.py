@@ -16,7 +16,6 @@ from src.evaluation.idiom_metrics import (
     compute_idiom_library_stats,
     evaluate_mock_cluster_file_split,
     evaluate_cpp,
-    evaluate_project,
 )
 
 
@@ -41,6 +40,7 @@ def _function_ast(prefix, condition_name, number, operator="if"):
             "kind": "function_definition",
             "code_snippet": f"void sample() {{ {candidate_code} }}",
             "ast_num": 4,
+            "subtree_size": 20,
         },
         {
             "depth": 1,
@@ -48,6 +48,7 @@ def _function_ast(prefix, condition_name, number, operator="if"):
             "kind": "if_statement",
             "code_snippet": candidate_code,
             "ast_num": 5,
+            "subtree_size": 10,
         },
         _leaf(2, f"{prefix + 1}-2-{prefix + 1}-4", "if", operator),
         _leaf(2, f"{prefix + 1}-5-{prefix + 1}-15", "condition_clause", condition_name),
@@ -77,7 +78,7 @@ class MetricHelperTests(unittest.TestCase):
         self.assertEqual(compute_f1(0.0, 0.0), 0.0)
         self.assertAlmostEqual(compute_f1(0.5, 0.5), 0.5)
 
-    def test_leave_one_project_metrics_use_one_training_set_and_candidate_extent(self):
+    def test_coverage_uses_candidate_extent(self):
         train_ast = _function_ast(1, "value", 1)
         test_ast = _function_ast(10, "ready", 2)
         unmatched_ast = [
@@ -126,22 +127,7 @@ class MetricHelperTests(unittest.TestCase):
             compute_idiom_set_precision([idiom], data.iloc[1]["func_src"][0]),
             1.0,
         )
-        self.assertEqual(compute_avg_idiom_size([idiom], data, "train", 0), 6.0)
-
-        result = evaluate_project(
-            project_name="test",
-            idiom_path="unused.pkl",
-            data=data,
-            project_idx=1,
-            all_idioms={"train": [idiom], "test": []},
-        )
-        self.assertEqual(result["ISP"], 1.0)
-        self.assertEqual(result["matched_idiom_count"], 1)
-        self.assertEqual(result["avg_idiom_size"], 6.0)
-        self.assertAlmostEqual(result["IC_macro"], round(3 / 7, 4))
-        self.assertAlmostEqual(
-            result["IC"], round(((3 / 7) + (6 / 8)) / 2, 4)
-        )
+        self.assertEqual(compute_avg_idiom_size([idiom], data, "train", 0), 10.0)
 
     def test_mock_cluster_split_uses_candidate_evidence_not_function_root(self):
         first_ast = _function_ast(1, "value", 1)
@@ -172,12 +158,12 @@ class MetricHelperTests(unittest.TestCase):
         self.assertEqual(result["ISP"], 1.0)
         self.assertEqual(result["matched_idiom_count"], 1)
         self.assertAlmostEqual(result["IC"], round(6 / 7, 4))
-        self.assertEqual(result["avg_idiom_size"], 6.0)
+        self.assertEqual(result["avg_idiom_size"], 10.0)
         library = compute_idiom_library_stats([idiom], data, "sample", 0)
         self.assertEqual(library["idiom_type_count"], 1)
         self.assertEqual(library["avg_cluster_size"], 2)
         self.assertEqual(library["avg_cross_file_support"], 2)
-        self.assertEqual(library["AvgAST"], 6)
+        self.assertEqual(library["AvgAST"], 10)
 
     def test_quality_semantic_slice_maps_back_to_ast_coverage(self):
         semantic_slice = {
@@ -190,14 +176,11 @@ class MetricHelperTests(unittest.TestCase):
             "start_byte": 20,
             "end_byte": 60,
             "source_path": "sample.cpp",
-            "source_file_id": "f" * 64,
-            "source_sha256": "a" * 64,
-            "mapping_version": 2,
+            "source_file_id": "sample.cpp",
             "mapping_exact": True,
             "parse_origin": "raw",
             "candidate_level": "region",
             "candidate_origin": "semantic_def_use",
-            "analysis_version": "def-use-v1",
             "parse_flags": 0,
         }
         function_ast = [
@@ -210,11 +193,9 @@ class MetricHelperTests(unittest.TestCase):
                 "subtree_size": 10,
                 "start_byte": 0,
                 "end_byte": 80,
-                "mapping_version": 2,
                 "mapping_exact": True,
                 "source_path": "sample.cpp",
-                "source_file_id": "f" * 64,
-                "source_sha256": "a" * 64,
+                "source_file_id": "sample.cpp",
                 "parse_origin": "raw",
                 "parse_flags": 0,
                 "semantic_slices": [semantic_slice],
@@ -308,7 +289,14 @@ class MetricHelperTests(unittest.TestCase):
             pd.DataFrame(rows).to_pickle(dataset_path)
             for project, idioms in idioms_by_project.items():
                 with (idiom_dir / f"{project}_idiom.pkl").open("wb") as file:
-                    pickle.dump(idioms, file)
+                    pickle.dump(
+                        {
+                            "artifact_type": "idiom_judgment",
+                            "project": project,
+                            "accepted": idioms,
+                        },
+                        file,
+                    )
             result = evaluate_cpp(
                 str(idiom_dir),
                 str(dataset_path),

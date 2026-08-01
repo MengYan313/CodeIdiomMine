@@ -59,6 +59,9 @@ nohup.out
 *.swo
 *~
 
+# Local dependency snapshot
+requirements-local.lock
+
 # IDE and local tool settings
 .vscode/
 .idea/

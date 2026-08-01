@@ -440,19 +440,11 @@ def export_clusters(
 def _result_paths(
     result_dir: Path,
     stage: str,
-    *,
-    legacy_result_dir: Path | None = None,
 ) -> list[Path]:
     if stage == "judgment":
         paths = list(result_dir.glob("**/idiom-judgment.pkl"))
-        legacy_root = legacy_result_dir or result_dir
-        paths.extend(
-            path for path in legacy_root.glob("*_idiom.pkl")
-            if not path.name.endswith("_idiom_syn.pkl")
-        )
     elif stage == "synthesis":
         paths = list(result_dir.glob("**/idiom-synthesis.pkl"))
-        paths.extend(result_dir.glob("*_idiom_syn.pkl"))
     else:
         raise ValueError(f"未知 Agent 产物阶段: {stage}")
     paths = sorted(set(paths))
@@ -466,9 +458,6 @@ def _load_result_records(
     stage: str,
 ) -> tuple[list[dict[str, Any]], dict[str, int] | None]:
     payload = pd.read_pickle(path)
-    if isinstance(payload, list):
-        return payload, None
-
     expected_type = {
         "judgment": "idiom_judgment",
         "synthesis": "idiom_synthesis",
@@ -511,14 +500,8 @@ def export_agent_results(
     stage: str,
     limit: int,
     text_limit: int,
-    *,
-    legacy_result_dir: Path | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    paths = _result_paths(
-        result_dir,
-        stage,
-        legacy_result_dir=legacy_result_dir,
-    )
+    paths = _result_paths(result_dir, stage)
     required = {
         "judgment": {"center_point", "info", "cnt", "avg_ast_num", "loc_label"},
         "synthesis": {
@@ -575,11 +558,7 @@ def export_agent_results(
         for record_index, record in enumerate(records):
             if not isinstance(record, dict):
                 raise TypeError(f"{path} 的第 {record_index} 条记录不是 dict")
-            record_required = (
-                required | current_required
-                if status_counts is not None
-                else required
-            )
+            record_required = required | current_required
             missing = record_required - record.keys()
             if missing:
                 raise ValueError(f"{path} 的第 {record_index} 条缺少字段: {sorted(missing)}")
@@ -852,7 +831,6 @@ def export_artifacts(
                 stage,
                 limit,
                 text_limit,
-                legacy_result_dir=result_dir,
             )
             summaries[stage] = summary
             inputs[stage] = path_metadata
@@ -872,7 +850,6 @@ def export_artifacts(
     ]
     generated_files.extend(["README.md", "manifest.json"])
     manifest = {
-        "format_version": 1,
         "generated_at": _now_iso(),
         "policy": {
             "canonical_format": "pickle",

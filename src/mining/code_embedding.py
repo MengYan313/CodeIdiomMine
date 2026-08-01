@@ -15,15 +15,7 @@ from transformers import AutoTokenizer, AutoModel
 
 from ..common.logging import get_logger
 from ..common.progress import progress
-from ..parser.candidates import (
-    QUALITY_PROFILE,
-    SUPPORTED_PROFILES,
-    select_candidates,
-)
-from ..parser.fragment_builder import (
-    FRAGMENT_SCHEMA_VERSION,
-    MODEL_INPUT_CONFIGS,
-)
+from ..parser.fragment_builder import MODEL_INPUT_CONFIGS
 from ..parser.token_budget import TokenBudget, resolve_max_input_tokens
 
 # 创建日志记录器
@@ -261,136 +253,16 @@ def is_within_extent(extent_pre: str, extent_cur: str) -> bool:
         return False
 
 
-def get_pros_src_and_embedding(
-    data: pd.DataFrame,
-    embedder: CodeEmbedder,
-    min_nodes: int = 10,
-    min_ast_num: int = 5,
-    min_project_size: int = 1000,
-    batch_size: int = 8,
-    candidate_profile: str = QUALITY_PROFILE,
-    max_regions_per_function: int = 2,
-    max_statements_per_function: int = 2,
-) -> Tuple[List[str], List[List[str]], List[List[torch.Tensor]], List[List[List]]]:
-    """
-    从 AST 数据中提取代码片段并生成嵌入
-    
-    Args:
-        data: 包含 AST 数据的 DataFrame
-        embedder: 代码嵌入器实例
-        min_nodes: 函数的最小节点数阈值
-        min_ast_num: 节点的最小子节点数量阈值（过滤太简单的代码片段）
-        min_project_size: 项目的最小代码片段数量阈值
-        batch_size: 模型批量推理大小
-        candidate_profile: ``quality-v2`` 或兼容旧行为的 ``legacy``
-        max_regions_per_function: quality-v2 中每个函数的基础区域候选上限
-        max_statements_per_function: quality-v2 中每个函数的语句候选上限
-        
-    Returns:
-        (pros_name, pros_src, pros_emb, pros_info) 元组
-    """
-    if hasattr(embedder, "token_budget"):
-        raise ValueError(
-            "真实 embedding 输入必须先由 src.parser.fragment_builder "
-            "生成 model-ready 片段；embedding 阶段不再负责超长降级"
-        )
-    logger.info("开始提取 C++ 代码片段并生成嵌入")
-    logger.info(
-        "过滤条件: min_nodes=%s, min_ast_num=%s, min_project_size=%s, "
-        "candidate_profile=%s",
-        min_nodes,
-        min_ast_num,
-        min_project_size,
-        candidate_profile,
-    )
-    
-    projects = data['project']
-    files = data['cppFile']
-    asts = data['func_ast']
-    srcs = data['func_src']
-    
-    pros_name, pros_src, pros_emb, pros_info = [], [], [], []
-    
-    for i, project_data in enumerate(asts):
-        pro_name = projects[i]
-        logger.info(f"处理项目 [{i+1}/{len(asts)}]: {pro_name}")
-        
-        pro_src, pro_info = [], []
-        seen_source_candidates = set()
-        
-        for j, file_data in enumerate(project_data):
-            file_name = files[i][j]
-            logger.info(f"  处理文件 [{j+1}/{len(project_data)}]: {os.path.basename(file_name)}")
-            
-            for func_data in file_data:
-                for candidate in select_candidates(
-                    func_data,
-                    profile=candidate_profile,
-                    min_nodes=min_nodes,
-                    min_ast_num=min_ast_num,
-                    max_regions_per_function=max_regions_per_function,
-                    max_statements_per_function=max_statements_per_function,
-                ):
-                    node_info = candidate.node_info
-                    code_snippet = str(node_info.get("code_snippet") or "")
-                    extent = str(node_info.get("extent") or "")
-                    source_file_id = str(
-                        node_info.get("source_file_id") or file_name
-                    )
-                    deduplication_key = (
-                        source_file_id,
-                        extent,
-                        candidate.level,
-                        candidate.origin,
-                    )
-                    if deduplication_key in seen_source_candidates:
-                        continue
-                    seen_source_candidates.add(deduplication_key)
-                    pro_src.append(code_snippet)
-                    pro_info.append(
-                        [
-                            pro_name,
-                            file_name,
-                            candidate.function_extent,
-                            node_info,
-                        ]
-                    )
-        
-        logger.info(f"  项目 {pro_name}: {len(pro_src)} 个代码片段")
-        
-        # 只有当项目代码片段数量达到阈值时才添加
-        if len(pro_src) >= min_project_size:
-            logger.info(f"  批量生成嵌入（batch_size={batch_size}）")
-            if hasattr(embedder, "get_embeddings"):
-                pro_emb = embedder.get_embeddings(pro_src, batch_size=batch_size)
-            else:
-                # 保留只实现 get_embedding 的轻量测试替身兼容性。
-                pro_emb = [embedder.get_embedding(snippet) for snippet in pro_src]
-            pros_name.append(pro_name)
-            pros_src.append(pro_src)
-            pros_emb.append(pro_emb)
-            pros_info.append(pro_info)
-            logger.info(f"  项目 {pro_name} 已添加（符合最小项目大小阈值）")
-        else:
-            logger.warning(f"  项目 {pro_name} 跳过（代码片段数 {len(pro_src)} < {min_project_size}）")
-    
-    logger.info(f"完成处理，共 {len(pros_name)} 个项目符合条件")
-    return pros_name, pros_src, pros_emb, pros_info
-
-
 def get_fragment_src_and_embedding(
     fragments: pd.DataFrame,
     embedder: CodeEmbedder,
     *,
     min_project_size: int = 1000,
     batch_size: int = 8,
-    candidate_profile: str = QUALITY_PROFILE,
 ) -> Tuple[List[str], List[List[str]], List[List[torch.Tensor]], List[List[List]]]:
     """只嵌入 Parser 已完成降级的 model-ready 片段。"""
     required = {
         "project",
-        "fragment_schema_version",
-        "candidate_profile",
         "model_name",
         "max_input_tokens",
         "fragment_src",
@@ -411,17 +283,6 @@ def get_fragment_src_and_embedding(
         range(len(fragments)), desc="嵌入项目", unit="项目"
     ):
         row = fragments.iloc[row_index]
-        schema_version = int(row["fragment_schema_version"])
-        if schema_version != FRAGMENT_SCHEMA_VERSION:
-            raise ValueError(
-                f"不支持的 fragment_schema_version: {schema_version}"
-            )
-        artifact_profile = str(row["candidate_profile"])
-        if artifact_profile != candidate_profile:
-            raise ValueError(
-                "片段 profile 与请求不一致："
-                f"{artifact_profile} != {candidate_profile}"
-            )
         artifact_model = str(row["model_name"])
         artifact_budget = int(row["max_input_tokens"])
         if artifact_model != embedder.model_name:
@@ -438,7 +299,6 @@ def get_fragment_src_and_embedding(
         infos = list(row["fragment_info"])
         if len(sources) != len(infos):
             raise ValueError("fragment_src 与 fragment_info 长度不一致")
-        # 这里只做防御性合同校验；发现异常即失败，不在 embedding 阶段切分。
         embedder.token_budget.validate(sources)
         project = str(row["project"])
         if len(sources) < min_project_size:
@@ -502,9 +362,6 @@ def generate_embeddings(
     device: Optional[str] = None,
     min_project_size: int = 100,  # 降低测试阈值
     batch_size: int = 8,
-    candidate_profile: str = QUALITY_PROFILE,
-    max_regions_per_function: int = 2,
-    max_statements_per_function: int = 2,
     max_input_tokens: Optional[int] = None,
 ):
     """
@@ -517,9 +374,6 @@ def generate_embeddings(
         device: 设备（cuda/cpu）
         min_project_size: 项目最小代码片段数量（测试时可以设置较小值）
         batch_size: 模型批量推理大小
-        candidate_profile: 候选选择 profile
-        max_regions_per_function: 兼容参数；切分已在 Parser 阶段完成
-        max_statements_per_function: 兼容参数；切分已在 Parser 阶段完成
         max_input_tokens: 可选的更严格模型输入 token 上限
     """
     logger.info("=" * 60)
@@ -546,7 +400,6 @@ def generate_embeddings(
         embedder,
         min_project_size=min_project_size,
         batch_size=batch_size,
-        candidate_profile=candidate_profile,
     )
     
     # 保存结果
@@ -592,24 +445,6 @@ def main():
         help='模型批量推理大小（默认: 8）'
     )
     parser.add_argument(
-        '--candidate-profile',
-        choices=SUPPORTED_PROFILES,
-        default=QUALITY_PROFILE,
-        help='校验 Parser 片段产物的候选 profile（默认: quality-v2）',
-    )
-    parser.add_argument(
-        '--max-regions-per-function',
-        type=int,
-        default=2,
-        help='兼容旧命令；model-ready 片段已在 Parser 阶段确定',
-    )
-    parser.add_argument(
-        '--max-statements-per-function',
-        type=int,
-        default=2,
-        help='兼容旧命令；model-ready 片段已在 Parser 阶段确定',
-    )
-    parser.add_argument(
         '--max-input-tokens',
         type=int,
         default=None,
@@ -625,9 +460,6 @@ def main():
         device=args.device,
         min_project_size=args.min_project_size,
         batch_size=args.batch_size,
-        candidate_profile=args.candidate_profile,
-        max_regions_per_function=args.max_regions_per_function,
-        max_statements_per_function=args.max_statements_per_function,
         max_input_tokens=args.max_input_tokens,
     )
 

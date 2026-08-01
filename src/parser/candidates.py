@@ -10,10 +10,6 @@ from .cpp_adapter import CPP_ADAPTER
 from .semantic_slicer import SEMANTIC_SLICE_KIND
 
 
-LEGACY_PROFILE = "legacy"
-QUALITY_PROFILE = "quality-v2"
-SUPPORTED_PROFILES = (LEGACY_PROFILE, QUALITY_PROFILE)
-
 CandidateFilter = Callable[[Mapping[str, Any]], bool]
 MAX_QUALITY_STATEMENT_BYTES = 4000
 MAX_QUALITY_STATEMENT_LINES = 80
@@ -58,43 +54,6 @@ def _subtree_end(
             break
         end += 1
     return end
-
-
-def _legacy_candidates(
-    function_ast: Sequence[Mapping[str, Any]],
-    *,
-    min_nodes: int,
-    min_ast_num: int,
-    candidate_filter: Optional[CandidateFilter],
-) -> List[SelectedCandidate]:
-    if len(function_ast) < min_nodes:
-        return []
-    extent_valid = "0-0-0-0"
-    function_extent = str(function_ast[0].get("extent") or "")
-    candidates: List[SelectedCandidate] = []
-    for node_info in function_ast:
-        code = str(node_info.get("code_snippet") or "")
-        kind = str(node_info.get("kind") or "")
-        extent = str(node_info.get("extent") or "")
-        ast_num = int(node_info.get("ast_num", 0) or 0)
-        if not code or ast_num < min_ast_num:
-            continue
-        if candidate_filter is not None and not candidate_filter(node_info):
-            continue
-        if kind in FUNCTION_KINDS:
-            candidates.append(
-                SelectedCandidate("function", function_extent, node_info, "base")
-            )
-        elif kind in BLOCK_KINDS:
-            candidates.append(
-                SelectedCandidate("region", function_extent, node_info, "base")
-            )
-        elif kind in STATEMENT_KINDS and not _within_extent(extent_valid, extent):
-            extent_valid = extent
-            candidates.append(
-                SelectedCandidate("statement", function_extent, node_info, "base")
-            )
-    return candidates
 
 
 def _node_contexts(
@@ -155,8 +114,6 @@ def _materialize_mapping(
     required = (
         "source_path",
         "source_file_id",
-        "source_sha256",
-        "mapping_version",
         "mapping_exact",
         "parse_origin",
     )
@@ -166,7 +123,6 @@ def _materialize_mapping(
     for key in required:
         if materialized.get(key) is None and function_node.get(key) is not None:
             materialized[key] = function_node[key]
-    materialized.setdefault("mapping_version", 2)
     materialized.setdefault("mapping_exact", True)
     return materialized
 
@@ -420,30 +376,18 @@ def _quality_candidates(
 def select_candidates(
     function_ast: Sequence[Mapping[str, Any]],
     *,
-    profile: str = QUALITY_PROFILE,
     min_nodes: int = 10,
     min_ast_num: int = 5,
     max_regions_per_function: int = 2,
     max_statements_per_function: int = 2,
     candidate_filter: Optional[CandidateFilter] = None,
 ) -> List[SelectedCandidate]:
-    """按显式 profile 选择候选；过滤函数根时仍允许降级选择其子候选。"""
-    if profile == LEGACY_PROFILE:
-        return _legacy_candidates(
-            function_ast,
-            min_nodes=min_nodes,
-            min_ast_num=min_ast_num,
-            candidate_filter=candidate_filter,
-        )
-    if profile == QUALITY_PROFILE:
-        return _quality_candidates(
-            function_ast,
-            min_nodes=min_nodes,
-            min_ast_num=min_ast_num,
-            max_regions_per_function=max_regions_per_function,
-            max_statements_per_function=max_statements_per_function,
-            candidate_filter=candidate_filter,
-        )
-    raise ValueError(
-        f"未知候选 profile: {profile}；可选值为 {', '.join(SUPPORTED_PROFILES)}"
+    """选择函数、区域、语句和语义切片候选。"""
+    return _quality_candidates(
+        function_ast,
+        min_nodes=min_nodes,
+        min_ast_num=min_ast_num,
+        max_regions_per_function=max_regions_per_function,
+        max_statements_per_function=max_statements_per_function,
+        candidate_filter=candidate_filter,
     )

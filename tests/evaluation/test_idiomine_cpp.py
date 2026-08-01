@@ -12,7 +12,6 @@ import pandas as pd
 
 from src.evaluation.baseline_common import make_idiom_record
 from src.evaluation.idiomine_cpp import (
-    PROMPT_VERSION,
     _representative_region,
     estimate_idiomine_cpp_run,
     run_idiomine_cpp_baseline,
@@ -46,7 +45,6 @@ def _source_info(
             "extent": candidate_extent,
             "code_snippet": code,
             "candidate_origin": "semantic_def_use",
-            "analysis_version": "def-use-v1",
             "candidate_level": "region",
             "ast_num": 8,
             "subtree_size": 9,
@@ -165,7 +163,7 @@ class IdioMineCppTests(unittest.TestCase):
                 )
             )
             with (output_dir / "sample_idiom.pkl").open("rb") as file:
-                final_records = pickle.load(file)
+                final_records = pickle.load(file)["accepted"]
             manifest = json.loads(
                 (output_dir / "baseline-manifest.json").read_text(
                     encoding="utf-8"
@@ -205,7 +203,6 @@ class IdioMineCppTests(unittest.TestCase):
         self.assertEqual(manifest["judgment_call_count"], 3)
         self.assertEqual(manifest["synthesis_call_count"], 1)
         self.assertEqual(manifest["endpoint_request_count"], 4)
-        self.assertEqual(manifest["prompt_version"], PROMPT_VERSION)
         self.assertEqual(
             manifest["candidate_generation"]["artifact_kind"],
             "internal_candidate_clusters",

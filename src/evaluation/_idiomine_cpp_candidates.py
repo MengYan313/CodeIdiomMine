@@ -35,9 +35,7 @@ logger = get_logger(__name__)
 
 IDIOMINE_DOI = "10.1145/3597503.3639135"
 IDIOMINE_REFERENCE_REPOSITORY = "https://github.com/Yanming-Yang/idioMine"
-IDIOMINE_REFERENCE_COMMIT = "b9961c9fe85203eff16351d470b11b381572467f"
 CANDIDATE_ORIGIN = "semantic_def_use"
-ANALYSIS_VERSION = "def-use-v1"
 
 
 def _as_vector(value: Any) -> np.ndarray:
@@ -61,7 +59,6 @@ def _is_dcc_lite_candidate(info: Any) -> bool:
     node_info = info[3]
     return (
         node_info.get("candidate_origin") == CANDIDATE_ORIGIN
-        and node_info.get("analysis_version") == ANALYSIS_VERSION
         and bool(str(node_info.get("code_snippet") or "").strip())
     )
 
@@ -179,7 +176,6 @@ def _cluster_project(
                     "source_method": "IdioMine",
                     "source_doi": IDIOMINE_DOI,
                     "reference_repository": IDIOMINE_REFERENCE_REPOSITORY,
-                    "reference_commit": IDIOMINE_REFERENCE_COMMIT,
                     "embedding_model": embedding_model,
                     "source_embeddings": source_embeddings,
                     "cluster_label": label,
@@ -278,12 +274,10 @@ def build_idiomine_cpp_candidate_artifacts(
                 "name": "IdioMine",
                 "doi": IDIOMINE_DOI,
                 "reference_repository": IDIOMINE_REFERENCE_REPOSITORY,
-                "reference_commit": IDIOMINE_REFERENCE_COMMIT,
             },
             "source_embeddings": sorted(set(source_paths)),
             "parameters": {
                 "candidate_origin": CANDIDATE_ORIGIN,
-                "analysis_version": ANALYSIS_VERSION,
                 "embedding_model": embedding_model,
                 "eps": eps,
                 "min_samples": min_samples,

@@ -3,16 +3,13 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 from pathlib import Path
 
 
 SHARED_PATHS = (
     ".env.example",
     "src/common/logging.py",
-    "src/common/model_config.py",
     "src/common/progress.py",
-    "src/logger.py",
     "src/llm/__init__.py",
     "src/llm/agent.py",
     "src/llm/client.py",
@@ -21,15 +18,10 @@ SHARED_PATHS = (
     "src/llm/message.py",
     "src/llm/prompting.py",
     "src/llm/utils.py",
-    "src/agents/base.py",
     "tests/common/test_shared_infrastructure.py",
     "docs/guides/prompt-engineering-guide.md",
     "docs/guides/shared-development-conventions.md",
 )
-
-
-def sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def main() -> int:
@@ -46,7 +38,7 @@ def main() -> int:
         other_path = other_root / relative_path
         if not local_path.is_file() or not other_path.is_file():
             mismatches.append(f"missing: {relative_path}")
-        elif sha256(local_path) != sha256(other_path):
+        elif local_path.read_bytes() != other_path.read_bytes():
             mismatches.append(f"different: {relative_path}")
 
     if mismatches:

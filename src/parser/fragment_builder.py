@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 from collections import Counter
 from pathlib import Path
 from typing import Any, Dict, Iterable, Mapping, Optional, Sequence, Tuple
@@ -13,18 +12,12 @@ from transformers import AutoTokenizer
 
 from ..common.logging import get_logger
 from ..common.node_kinds import BLOCK_KINDS, FUNCTION_KINDS, STATEMENT_KINDS
-from .candidates import (
-    QUALITY_PROFILE,
-    SUPPORTED_PROFILES,
-    SelectedCandidate,
-    select_candidates,
-)
+from .candidates import SelectedCandidate, select_candidates
 from .cpp_adapter import CPP_ADAPTER
 from .token_budget import TokenBudget, resolve_max_input_tokens
 
 
 logger = get_logger(__name__)
-FRAGMENT_SCHEMA_VERSION = 1
 MODEL_INPUT_CONFIGS = {
     "codellama": {
         "name": "codellama/CodeLlama-7b-hf",
@@ -78,11 +71,6 @@ def load_token_budget(
         local_files_only=local_files_only,
     )
     return TokenBudget(tokenizer, model_name, effective_limit)
-
-
-def _sha256_file(path: Path) -> str:
-    with path.open("rb") as stream:
-        return hashlib.file_digest(stream, "sha256").hexdigest()
 
 
 def _candidate_type(candidate: SelectedCandidate) -> str:
@@ -149,7 +137,6 @@ def prepare_fragment_data(
     data: pd.DataFrame,
     token_budget: TokenBudget,
     *,
-    candidate_profile: str = QUALITY_PROFILE,
     min_nodes: int = 10,
     min_ast_num: int = 5,
     max_regions_per_function: int = 2,
@@ -185,7 +172,6 @@ def prepare_fragment_data(
     for row_index, project, file_name, function_ast in _iter_functions(data):
         raw_candidates = select_candidates(
             function_ast,
-            profile=candidate_profile,
             min_nodes=min_nodes,
             min_ast_num=min_ast_num,
             max_regions_per_function=max_regions_per_function,
@@ -193,7 +179,6 @@ def prepare_fragment_data(
         )
         ready_candidates = select_candidates(
             function_ast,
-            profile=candidate_profile,
             min_nodes=min_nodes,
             min_ast_num=min_ast_num,
             max_regions_per_function=max_regions_per_function,
@@ -299,14 +284,6 @@ def prepare_fragment_data(
     return pd.DataFrame(
         {
             "project": projects,
-            "fragment_schema_version": [
-                FRAGMENT_SCHEMA_VERSION for _ in projects
-            ],
-            "source_dataset_schema": [
-                ["project", "cppFile", "func_ast", "func_src"]
-                for _ in projects
-            ],
-            "candidate_profile": [candidate_profile for _ in projects],
             "model_name": [token_budget.model_name for _ in projects],
             "max_input_tokens": [
                 token_budget.max_input_tokens for _ in projects
@@ -327,26 +304,19 @@ def build_fragment_file(
     output_path: str,
     model: str = "unixcoder",
     max_input_tokens: Optional[int] = None,
-    candidate_profile: str = QUALITY_PROFILE,
     local_files_only: bool = False,
 ) -> pd.DataFrame:
-    """从四列 AST 数据集生成版本化 Parser 片段产物。"""
+    """从四列 AST 数据集生成 Parser 片段产物。"""
     source_path = Path(dataset_path)
     budget = load_token_budget(
         model,
         max_input_tokens=max_input_tokens,
         local_files_only=local_files_only,
     )
-    fragments = prepare_fragment_data(
-        pd.read_pickle(source_path),
-        budget,
-        candidate_profile=candidate_profile,
-    )
+    fragments = prepare_fragment_data(pd.read_pickle(source_path), budget)
     fragments.attrs.update(
         {
-            "fragment_schema_version": FRAGMENT_SCHEMA_VERSION,
             "source_dataset_path": source_path.as_posix(),
-            "source_dataset_sha256": _sha256_file(source_path),
             "decision_stage": "parser",
         }
     )
@@ -370,11 +340,6 @@ def main() -> None:
     parser.add_argument("--model", default="unixcoder")
     parser.add_argument("--max-input-tokens", type=int, default=None)
     parser.add_argument(
-        "--candidate-profile",
-        choices=SUPPORTED_PROFILES,
-        default=QUALITY_PROFILE,
-    )
-    parser.add_argument(
         "--local-files-only",
         action="store_true",
         help="只使用本地 tokenizer 缓存，禁止下载",
@@ -385,7 +350,6 @@ def main() -> None:
         output_path=args.output,
         model=args.model,
         max_input_tokens=args.max_input_tokens,
-        candidate_profile=args.candidate_profile,
         local_files_only=args.local_files_only,
     )
 

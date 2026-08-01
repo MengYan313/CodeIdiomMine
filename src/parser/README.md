@@ -1,40 +1,16 @@
-# Parser 模块
+# Parser
 
-本模块以零构建方式扫描 C/C++ 源码，生成 AST、逐文件审计侧车和满足目标 tokenizer 长度约束的候选片段。目标仓库无需编译、链接或执行；单文件失败不会中止其他文件。
-
-每个仓库是独立的 Parser 和后续挖掘单元。多个仓库必须分别生成各自的
-`dataset.pkl`、`dataset.audit.json` 和 `fragments.pkl`；不要合并不同仓库的
-片段。已有 canonical `dataset.pkl` 通过固定 commit、Parser 指纹、审计侧车和
-SHA 核对后，可以直接用 `src.parser.fragment_builder` 补建片段，无需重复 AST
-解析。
-
-## 启动命令
+Parser 扫描当前 C/C++ 仓库，用 Tree-sitter 提取函数 AST、源码范围、解析诊断和多粒度候选。文件身份是仓库相对 POSIX 路径。
 
 ```bash
 .venv/bin/python -m src.parser.repo2data \
   --input repos --project cli11 \
   --output outputs/cpp/cli11/dataset.pkl \
+  --audit-output outputs/cpp/cli11/dataset.audit.json \
   --fragment-output outputs/cpp/cli11/fragments.pkl \
   --embedding-model unixcoder --local-files-only
-
-.venv/bin/python -m src.parser.audit \
-  --source-root repos \
-  --dataset outputs/cpp/cli11/dataset.pkl \
-  --output outputs/cpp/cli11/parser-audit.json
 ```
 
-从已经审计的 AST 产物单独补建模型输入：
+当前只存在一套候选规则和一套数据格式。`fragments.pkl` 是嵌入阶段的唯一输入，包含原始片段、候选信息、拒绝记录和统计。
 
-```bash
-.venv/bin/python -m src.parser.fragment_builder \
-  --input outputs/cpp/cli11/dataset.pkl \
-  --output outputs/cpp/cli11/fragments.pkl \
-  --model unixcoder --candidate-profile quality-v2 --local-files-only
-
-.venv/bin/python -m src.parser.token_length_audit \
-  --dataset outputs/cpp/cli11/dataset.pkl \
-  --output outputs/cpp/cli11/token-length-audit.json \
-  --model unixcoder --candidate-profile quality-v2 --local-files-only
-```
-
-详细设计见 [Parser v2](../../docs/guides/parser-design.md)，复杂语法与长度策略见 [C++ Adapter 与模型输入治理](../../docs/guides/cpp-adapter-and-model-input.md)。
+解析器允许 Tree-sitter 对不完整 C++ 产生诊断与有限恢复，但不会为旧 AST、旧字段或旧候选策略提供兼容路径。

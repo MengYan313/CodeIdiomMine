@@ -15,12 +15,10 @@
 视为模板变体，并执行保留 C++ 关键字/运算符、抽象标识符和字面量的结构化词法
 匹配。该匹配比空白子串稳定，同时仍要求候选节点类型一致。
 
-``leave_one_project_out`` 仅为读取历史实验保留，不是正式研究模式。
 """
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import pickle
@@ -34,15 +32,12 @@ import pandas as pd
 
 from ..common.logging import get_logger
 from ..common.progress import progress
-from ..common.node_kinds import BLOCK_KINDS, FUNCTION_KINDS, STATEMENT_KINDS
-from ..parser.candidates import QUALITY_PROFILE, SelectedCandidate, select_candidates
+from ..parser.candidates import SelectedCandidate, select_candidates
 
 logger = get_logger(__name__)
 
 CPP_LANGUAGE = "cpp"
 DEFAULT_EVALUATION_MODE = "within_project_file_split"
-MIN_CANDIDATE_CHILDREN = 5
-CANDIDATE_KINDS = FUNCTION_KINDS | BLOCK_KINDS | STATEMENT_KINDS
 
 _CPP_KEYWORDS = {
     "alignas", "alignof", "and", "and_eq", "asm", "auto", "bitand",
@@ -119,7 +114,7 @@ def _get_subtree_size(node_info_list: List[Dict], root_extent: str) -> int:
 
 
 def _normalize_code(code: str) -> str:
-    """仅折叠空白；用于精确去重和兼容旧调用。"""
+    """折叠空白以进行精确去重。"""
     return " ".join(str(code or "").split())
 
 
@@ -160,15 +155,11 @@ def _code_match(idiom_code: str, func_code: str) -> bool:
 def load_idiom_artifact(
     idiom_path: str,
 ) -> Tuple[Optional[str], List[Dict[str, Any]]]:
-    """读取当前语义产物或旧列表产物，并投影为可评价的习语记录。"""
+    """读取当前语义产物并返回可评价的习语记录。"""
     with open(idiom_path, "rb") as file:
         payload = pickle.load(file)
-    if isinstance(payload, list):
-        if not all(isinstance(record, dict) for record in payload):
-            raise TypeError(f"{idiom_path} 的旧习语列表包含非对象记录")
-        return None, payload
     if not isinstance(payload, Mapping):
-        raise TypeError(f"{idiom_path} 顶层必须是 list 或习语 artifact")
+        raise TypeError(f"{idiom_path} 顶层必须是习语 artifact")
 
     artifact_type = str(payload.get("artifact_type") or "")
     if artifact_type not in {"idiom_judgment", "idiom_synthesis"}:
@@ -181,13 +172,6 @@ def load_idiom_artifact(
     project = str(payload.get("project") or "") or None
     return project, records
 
-
-def load_idioms(idiom_path: str) -> List[Dict[str, Any]]:
-    """兼容旧调用，只返回可进入知识库的记录。"""
-    _, records = load_idiom_artifact(idiom_path)
-    return records
-
-
 def load_dataset(dataset_path: str) -> pd.DataFrame:
     return pd.read_pickle(dataset_path)
 
@@ -196,7 +180,7 @@ def _build_project_index(data: pd.DataFrame) -> Dict[str, int]:
     index: Dict[str, int] = {}
     for i in range(len(data)):
         row = data.iloc[i]
-        project = row.get("project", row.get("pros_name"))
+        project = row.get("project")
         if project is not None:
             index[str(project)] = i
     return index
@@ -422,59 +406,27 @@ def compute_coverage_stats(
             if not func_ast:
                 continue
             intervals: List[Tuple[int, int]] = []
-            if int(func_ast[0].get("mapping_version", 0) or 0) >= 2:
-                for candidate in select_candidates(
+            for candidate in select_candidates(func_ast):
+                node_info = candidate.node_info
+                kind = str(node_info.get("kind") or "")
+                signature = _code_signature(
+                    str(node_info.get("code_snippet") or "")
+                )
+                if not signature:
+                    continue
+                idiom_indices = set(pattern_index.get((kind, signature), ()))
+                idiom_indices.update(pattern_index.get(("", signature), ()))
+                if not idiom_indices:
+                    continue
+                candidate_intervals = _quality_candidate_intervals(
                     func_ast,
-                    profile=QUALITY_PROFILE,
-                ):
-                    node_info = candidate.node_info
-                    kind = str(node_info.get("kind") or "")
-                    signature = _code_signature(
-                        str(node_info.get("code_snippet") or "")
-                    )
-                    if not signature:
-                        continue
-                    idiom_indices = set(
-                        pattern_index.get((kind, signature), ())
-                    )
-                    idiom_indices.update(pattern_index.get(("", signature), ()))
-                    if not idiom_indices:
-                        continue
-                    candidate_intervals = _quality_candidate_intervals(
-                        func_ast,
-                        candidate,
-                    )
-                    if not candidate_intervals:
-                        continue
-                    matched_idioms.update(idiom_indices)
-                    intervals.extend(candidate_intervals)
-                    match_count += 1
-            else:
-                for node_idx, node_info in enumerate(func_ast):
-                    kind = str(node_info.get("kind") or "")
-                    if kind not in CANDIDATE_KINDS:
-                        continue
-                    if (
-                        int(node_info.get("ast_num", 0) or 0)
-                        < MIN_CANDIDATE_CHILDREN
-                    ):
-                        continue
-                    signature = _code_signature(
-                        str(node_info.get("code_snippet") or "")
-                    )
-                    if not signature:
-                        continue
-                    idiom_indices = set(
-                        pattern_index.get((kind, signature), ())
-                    )
-                    idiom_indices.update(pattern_index.get(("", signature), ()))
-                    if not idiom_indices:
-                        continue
-                    matched_idioms.update(idiom_indices)
-                    intervals.append(
-                        (node_idx, _subtree_end(func_ast, node_idx))
-                    )
-                    match_count += 1
+                    candidate,
+                )
+                if not candidate_intervals:
+                    continue
+                matched_idioms.update(idiom_indices)
+                intervals.extend(candidate_intervals)
+                match_count += 1
 
             function_nodes = len(func_ast)
             function_covered = _covered_interval_size(intervals)
@@ -758,10 +710,7 @@ def _stable_file_split(
     files: Sequence[str],
     test_fraction: float,
 ) -> Tuple[set[int], set[int]]:
-    """按稳定哈希划分参考/测量文件，避免依赖随机哈希种子。
-
-    ``test_fraction`` 是兼容字段，语义是测量分区占比。
-    """
+    """按稳定路径顺序划分参考/测量文件。"""
     if not 0 < test_fraction < 1:
         raise ValueError("test_fraction 必须位于 (0, 1)")
     file_count = len(files)
@@ -771,9 +720,10 @@ def _stable_file_split(
         return set(), {0}
     ordered = sorted(
         range(file_count),
-        key=lambda index: hashlib.sha256(
-            f"{project_name}\0{str(files[index]).replace(os.sep, '/')}".encode("utf-8")
-        ).digest(),
+        key=lambda index: (
+            project_name,
+            str(files[index]).replace(os.sep, "/"),
+        ),
     )
     measurement_count = min(
         file_count - 1,
@@ -807,54 +757,6 @@ def _restrict_idioms_to_reference_files(
     return _deduplicate_idioms(restricted)
 
 
-def evaluate_project(
-    project_name: str,
-    idiom_path: str,
-    data: pd.DataFrame,
-    project_idx: int,
-    all_idioms: Dict[str, List[Dict[str, Any]]],
-) -> Dict[str, Any]:
-    """执行历史留一仓库评价；仅为旧产物兼容保留。"""
-    del idiom_path
-    training_projects = sorted(repo for repo in all_idioms if repo != project_name)
-    training_idioms = _deduplicate_idioms(
-        [
-            idiom
-            for repo in training_projects
-            for idiom in all_idioms.get(repo, [])
-        ]
-    )
-    coverage = compute_coverage_stats(
-        training_idioms, data, project_name, project_idx
-    )
-    matched_idiom_count = len(coverage["matched_idiom_indices"])
-    isp = matched_idiom_count / len(training_idioms) if training_idioms else 0.0
-    ic_macro = float(coverage["IC_macro"])
-    ic_micro = float(coverage["IC_micro"])
-    ic = float(coverage["IC"])
-    size_stats = compute_idiom_size_stats(training_idioms, data)
-
-    return {
-        "project": project_name,
-        "training_projects": training_projects,
-        "IC_macro": round(ic_macro, 4),
-        "IC_micro": round(ic_micro, 4),
-        "IC": round(ic, 4),
-        "ISP": round(isp, 4),
-        "F1": round(compute_f1(ic, isp), 4),
-        "avg_idiom_size": round(size_stats["mean"], 2),
-        "median_idiom_size": round(size_stats["median"], 2),
-        "idiom_size_iqr": round(size_stats["iqr"], 2),
-        "idiom_count": len(training_idioms),
-        "matched_idiom_count": matched_idiom_count,
-        "matched_node_count": int(coverage["matched_node_count"]),
-        "total_node_count": int(coverage["total_node_count"]),
-        "function_count": int(coverage["function_count"]),
-        "function_coverage_sum": float(coverage["function_coverage_sum"]),
-        "match_count": int(coverage["match_count"]),
-    }
-
-
 def evaluate_project_file_split(
     project_name: str,
     data: pd.DataFrame,
@@ -866,7 +768,7 @@ def evaluate_project_file_split(
 
     ``project_idioms`` 已由完整仓库流水线产生。这里不重新运行任何发现阶段，
     只按来源位置选取参考实例构造匹配变体，并在测量文件上计算 IC/ISP。
-    输出中的 ``training_*``、``test_*`` 字段仅为 Schema 兼容保留。
+    输出记录参考分区和测量分区统计。
     """
     row = data.iloc[project_idx]
     files = row.get("cppFile", [])
@@ -1087,18 +989,7 @@ def evaluate_cpp(
         desc="评价项目",
         unit="项目",
     ):
-        if evaluation_mode == "leave_one_project_out":
-            idiom_path = idiom_paths.get(project_name)
-            if idiom_path is None:
-                raise ValueError(f"仓库 {project_name} 缺少 {artifact_stage} 产物")
-            result = evaluate_project(
-                project_name=project_name,
-                idiom_path=str(idiom_path),
-                data=data,
-                project_idx=project_idx,
-                all_idioms=all_idioms,
-            )
-        elif evaluation_mode == "within_project_file_split":
+        if evaluation_mode == "within_project_file_split":
             result = evaluate_project_file_split(
                 project_name=project_name,
                 data=data,
@@ -1233,7 +1124,7 @@ def evaluate_cpp(
             "matcher": (
                 "cluster_membership_evidence_oracle"
                 if evaluation_mode == "mock_cluster_file_split"
-                else "cpp_lexical_structure_v1"
+                else "cpp_lexical_structure"
             ),
             "is_mock_evaluation": has_mock_inputs,
             "mock_warning": (
@@ -1305,27 +1196,25 @@ def main() -> None:
         choices=("judgment", "synthesis"),
         default="synthesis",
         help=(
-            "评价习语判断或习语合成产物；同时兼容旧列表产物，默认 synthesis"
+            "评价习语判断或习语合成产物，默认 synthesis"
         ),
     )
     parser.add_argument(
         "--mode",
         choices=(
-            "leave_one_project_out",
             "within_project_file_split",
             "mock_cluster_file_split",
         ),
         default=DEFAULT_EVALUATION_MODE,
         help=(
-            "仓库内参考/测量分区（正式默认）、历史留一项目兼容模式"
-            "或冻结簇证据模拟"
+            "仓库内参考/测量分区（正式默认）或冻结簇证据模拟"
         ),
     )
     parser.add_argument(
         "--test-fraction",
         type=float,
         default=0.2,
-        help="仓库内文件划分的测量分区比例，默认 0.2；字段名为兼容保留",
+        help="仓库内文件划分的测量分区比例，默认 0.2",
     )
     args = parser.parse_args()
     run_evaluation(

@@ -145,7 +145,6 @@ class FileScanner:
         
         self.pro_file_list = pro_file_list
         self.last_scan_diagnostics = {
-            "schema_version": 1,
             "extensions": sorted(self.CPP_EXTENSIONS),
             "excluded_directory_names": sorted(self.EXCLUDED_DIRECTORY_NAMES),
             "excluded_directory_prefixes": list(

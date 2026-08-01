@@ -1,6 +1,5 @@
 # C++ 习语实验方法与 baseline 复现
 
-- 版本：**Sol 6.4**
 - 状态：当前 baseline 实现与复现规范
 - 生效日期：2026-08-01
 - 适用范围：四条 baseline、CIMAS-CPP 对照边界、公共产物适配和九指标验证
@@ -41,7 +40,7 @@ LLM 能力；Rules-Embedding-Clustering 衡量只保留规则候选、嵌入和�
 
 正式实验必须遵守以下公共边界：
 
-- 使用相同的仓库版本、文件过滤和完整合格源码；
+- 使用相同的仓库源码、文件过滤和完整合格源码；
 - 各方法都在单个仓库的完整语料上独立发现习语，仓库间不得交换候选或结果；
 - 方法参数在运行前按论文来源、固定资源预算、统一固定值或预先规定的无监督内部统计规则冻结；不得根据最终 IC、ISP、F1 或人工标签反复选择；
 - 参考/测量文件分区只在全仓发现结束后的最终评价阶段形成，不触发重新发现；
@@ -64,7 +63,7 @@ Top100 或习语种类数量上限。LLM 的
 
 ## 2. Haggis-CPP 的复现边界
 
-实现固定参考 Haggis 论文与原作者归档仓库 `mast-group/codemining-treelm` 的 commit `8b241a195fe860713c8dbbee387710533b97258c`。当前端口保留以下统计核心：
+实现参考 Haggis 论文与原作者归档仓库 `mast-group/codemining-treelm`。当前端口保留以下统计核心：
 
 - AST 边上的隐式片段边界；
 - PCFG 基分布；
@@ -136,7 +135,7 @@ LLM 发现阶段只看到原始函数源码和机械生成的 `evidence_id`。AS
 
 这种设计中的 `Budget` 指总 token/调用成本边界，而不是输出 Top-K。预算耗尽会停止后续模型请求；它不允许在已经得到的有效习语中再按数量裁剪。
 
-预算是整个输入数据集上的全局上限，估算同时计入 system prompt、带 JSON Schema 的 user prompt 和实际 JSON 输出。每次真实端点请求都先按完整输入和最大输出预留检查剩余额度，因此 JSON 单次修复也不能绕过上限。manifest 分别保存逻辑 map/reduce `call_count` 与包含修复的 `endpoint_request_count`，并记录模型、prompt hash、估算输入输出 token、分块大小和逐项目调用统计。正式实验应另外保存端点实际 usage/账单，因为本地近似计数不能替代服务端计量。
+预算是整个输入数据集上的全局上限，估算同时计入 system prompt、带 JSON Schema 的 user prompt 和实际 JSON 输出。每次真实端点请求都先按完整输入和最大输出预留检查剩余额度，因此 JSON 单次修复也不能绕过上限。manifest 分别保存逻辑 map/reduce `call_count` 与包含修复的 `endpoint_request_count`，并记录模型、估算输入输出 token、分块大小和逐项目调用统计。正式实验应另外保存端点实际 usage/账单，因为本地近似计数不能替代服务端计量。
 
 默认模型只读取 `OPENAI_MODEL_LOW`。正式对比时必须与 CIMAS-CPP 使用同一基础模型，并先确定 CIMAS 的总输入输出 token，再把该预算显式传给 `--token-budget`。
 
@@ -152,7 +151,7 @@ LLM 发现阶段只看到原始函数源码和机械生成的 `evidence_id`。AS
 | `endpoint_request_count` | 含 JSON 修复在内的实际请求数 | 写入 manifest |
 | `estimated_input_output_tokens` | 本地近似累计用量 | 不能替代服务端 usage/账单 |
 
-若预算不足以执行某项目的 reduce，该项目输出为空并记录警告，不能把未经统一归并的 map 候选悄悄当成正式结果。真实调用还必须记录模型标识、prompt hash、日期、端点用量和源码披露范围。
+若预算不足以执行某项目的 reduce，该项目输出为空并记录警告，不能把未经统一归并的 map 候选悄悄当成正式结果。真实调用还必须记录模型标识、日期、端点用量和源码披露范围。
 
 证据映射使用 AST 只是为了满足当前评价器的数据合同，不会把节点类型或聚类信息反馈给 LLM。不过，这项投影会使无法落到当前候选粒度的 LLM 结果被丢弃，正式报告必须把它作为公共测量适配限制，而不能宣称纯 LLM 自身主动进行了 AST 过滤。
 
@@ -160,8 +159,7 @@ LLM 发现阶段只看到原始函数源码和机械生成的 `evidence_id`。AS
 
 IdioMine [E006] 的正式论文为
 [Streamlining Java Programming: Uncovering Well-Formed Idioms with IdioMine](https://doi.org/10.1145/3597503.3639135)。
-实现分析固定参考[作者公开仓库](https://github.com/Yanming-Yang/idioMine)的
-commit `b9961c9fe85203eff16351d470b11b381572467f`。文献稳定编号由同级
+实现分析参考[作者公开仓库](https://github.com/Yanming-Yang/idioMine)。文献稳定编号由同级
 `thesis/references/library.json` 维护，本仓库不复制文献库。
 
 原方法的核心处理链为：从 Java 方法构造包含数据与控制关系的精简 DvCFG；沿
@@ -174,7 +172,7 @@ Data-driven Control Chain（DCC）抽取子习语；使用 GraphCodeBERT 表示�
 
 | 原 IdioMine 操作 | 当前 C++ 迁移 | 实验解释 |
 |---|---|---|
-| Java DvCFG 与 DCC | 复用 Parser `def-use-v1` 产生的 `candidate_origin=semantic_def_use` 局部 Def-Use 片段 | 只近似数据依赖链，没有完整控制依赖，称为 DCC-lite |
+| Java DvCFG 与 DCC | 复用 Parser 产生的 `candidate_origin=semantic_def_use` 局部 Def-Use 片段 | 只近似数据依赖链，没有完整控制依赖，称为 DCC-lite |
 | GraphCodeBERT 表示 | 复用输入 `embeddings.pkl` 的实际预训练模型向量，并强制记录 `--embedding-model` | 允许使用当前已缓存 UniXcoder；模型差异必须披露 |
 | 密度聚类 | 每个仓库独立执行余弦 DBSCAN | 保留原方法的密度发现核心，不混合仓库 |
 | ChatGPT 判断 | 对每个 DBSCAN 簇执行一次相互独立的结构化判断，只返回 `is_idiom` 和理由 | 不共享其他簇判断，不使用 CIMAS 的分类、评分或异味门禁 |
@@ -190,7 +188,7 @@ baseline 的判断与合成结果。
 ### 4.2 处理流程与参数
 
 1. 读取一个或多个仓库隔离的 `embeddings.pkl`，拒绝重复项目或未对齐字段；
-2. 只保留 `semantic_def_use + def-use-v1` 且具有非空源码的候选；
+2. 只保留 `candidate_origin=semantic_def_use` 且具有非空源码的候选；
 3. 拒绝非有限、零向量或维度不一致的 embedding；
 4. 对每个仓库独立执行 `DBSCAN(metric="cosine")`；
 5. 将每个非噪声簇转换为一个候选习语，以最接近簇质心的实例作为代表代码；

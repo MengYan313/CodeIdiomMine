@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from typing import Any, List, Mapping, Sequence
 
 
-IDIOM_TAXONOMY_VERSION = "cpp-common-idioms-v1"
 CATALOGED_IDIOM_KIND = "cataloged"
 REPOSITORY_SPECIFIC_IDIOM_KIND = "repository_specific"
 NOT_APPLICABLE_IDIOM_KIND = "not_applicable"
@@ -251,7 +250,6 @@ IDIOM_CLASSIFICATION_RESPONSE_SCHEMA = {
 class IdiomClassification:
     """写入最终产物的标准化分类结果。"""
 
-    taxonomy_version: str
     kind: str
     label: str
     catalog_ids: List[str]
@@ -274,7 +272,6 @@ def render_idiom_catalog_for_prompt() -> str:
 
 def empty_idiom_classification(reason: str = "") -> IdiomClassification:
     return IdiomClassification(
-        taxonomy_version=IDIOM_TAXONOMY_VERSION,
         kind=NOT_APPLICABLE_IDIOM_KIND,
         label=NOT_APPLICABLE_IDIOM_LABEL,
         catalog_ids=[],
@@ -337,7 +334,6 @@ def normalize_idiom_classification(
             invalid = True
         return (
             IdiomClassification(
-                taxonomy_version=IDIOM_TAXONOMY_VERSION,
                 kind=NOT_APPLICABLE_IDIOM_KIND,
                 label=NOT_APPLICABLE_IDIOM_LABEL,
                 catalog_ids=[],
@@ -358,7 +354,6 @@ def normalize_idiom_classification(
         ]
         return (
             IdiomClassification(
-                taxonomy_version=IDIOM_TAXONOMY_VERSION,
                 kind=CATALOGED_IDIOM_KIND,
                 label="、".join(catalog_names),
                 catalog_ids=catalog_ids,
@@ -372,7 +367,6 @@ def normalize_idiom_classification(
     if kind == REPOSITORY_SPECIFIC_IDIOM_KIND and not catalog_ids:
         return (
             IdiomClassification(
-                taxonomy_version=IDIOM_TAXONOMY_VERSION,
                 kind=REPOSITORY_SPECIFIC_IDIOM_KIND,
                 label=REPOSITORY_SPECIFIC_IDIOM_LABEL,
                 catalog_ids=[],

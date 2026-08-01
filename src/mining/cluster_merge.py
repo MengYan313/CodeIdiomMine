@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import pickle
 from dataclasses import dataclass
@@ -25,7 +24,6 @@ from .cluster_result import CLUSTER_COLUMNS, embeddings_to_numpy
 
 
 logger = get_logger(__name__)
-MERGE_SCHEMA_VERSION = 1
 DEFAULT_SIMILARITY_THRESHOLD = 0.92
 DEFAULT_MIN_FUZZY_TOKENS = 20
 
@@ -43,11 +41,6 @@ class _ClusterUnit:
     source_labels: list[int]
     analysis: CppLexicalAnalysis
     merge_reasons: list[str]
-
-
-def _sha256(path: Path) -> str:
-    with path.open("rb") as stream:
-        return hashlib.file_digest(stream, "sha256").hexdigest()
 
 
 def _node_info(info: Any) -> Mapping[str, Any]:
@@ -350,7 +343,6 @@ def merge_repository_clusters(
     before = cluster_quality_summary(clusters)
     after = cluster_quality_summary(merged)
     metadata = {
-        "schema_version": MERGE_SCHEMA_VERSION,
         "method": "repository_local_conservative_cluster_merge",
         "similarity_threshold": similarity_threshold,
         "min_fuzzy_tokens": min_fuzzy_tokens,
@@ -395,9 +387,7 @@ def merge_cluster_artifacts(
     )
     input_metadata = {
         "clusters_path": str(clusters_path),
-        "clusters_sha256": _sha256(clusters_path),
         "embeddings_path": str(embeddings_path),
-        "embeddings_sha256": _sha256(embeddings_path),
     }
     output = [
         {
@@ -416,7 +406,6 @@ def merge_cluster_artifacts(
     with output_path.open("wb") as stream:
         pickle.dump(output, stream, protocol=pickle.HIGHEST_PROTOCOL)
     report = {
-        "schema_version": MERGE_SCHEMA_VERSION,
         "artifact_type": "cluster_merge_report",
         "project": project,
         "output_path": str(output_path),

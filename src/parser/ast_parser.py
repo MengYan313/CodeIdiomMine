@@ -1,6 +1,5 @@
 """通用 Tree-sitter AST 操作核心；当前固定装配 C++ Adapter。"""
 
-import hashlib
 import os
 import re
 from pathlib import Path
@@ -39,7 +38,6 @@ class ASTParser:
         self._cached_shadow_tree: Optional[tree_sitter.Tree] = None
         self._source_path: str = ""
         self._source_file_id: str = ""
-        self._source_sha256: str = ""
         self._node_origins: Dict[int, str] = {}
         self.last_file_diagnostics: Dict[str, Any] = {}
         
@@ -73,10 +71,7 @@ class ASTParser:
             self._cached_path = file_path
             self._cached_source = source_code
             self._source_path = self._stable_source_path(file_path, source_root)
-            self._source_file_id = hashlib.sha256(
-                self._source_path.encode("utf-8")
-            ).hexdigest()
-            self._source_sha256 = hashlib.sha256(source_code).hexdigest()
+            self._source_file_id = self._source_path
             self._node_origins.clear()
             tree = self.parser.parse(source_code)
             self._cached_tree = tree
@@ -113,10 +108,8 @@ class ASTParser:
                         recovery_used = True
 
             self.last_file_diagnostics = {
-                "schema_version": 2,
                 "source_path": self._source_path,
                 "source_file_id": self._source_file_id,
-                "source_sha256": self._source_sha256,
                 "byte_count": len(source_code),
                 "status": (
                     "recovered"
@@ -126,7 +119,7 @@ class ASTParser:
                 ),
                 "raw": raw_diagnostics,
                 "recovery": {
-                    "strategy": "preprocessor-shadow-v1",
+                    "strategy": "preprocessor-shadow",
                     "attempted": shadow_diagnostics is not None,
                     "used": recovery_used,
                     "masked_ranges": [
@@ -142,7 +135,6 @@ class ASTParser:
             self._cached_tree = None
             self._cached_shadow_tree = None
             self.last_file_diagnostics = {
-                "schema_version": 2,
                 "source_path": self._stable_source_path(file_path, source_root),
                 "status": "failed",
                 "failure": type(e).__name__,
@@ -163,13 +155,6 @@ class ASTParser:
             return path.resolve().relative_to(Path(source_root).resolve()).as_posix()
         except ValueError:
             return path.as_posix()
-
-    def _mask_preprocessor(
-        self,
-        source: bytes,
-    ) -> Tuple[bytes, List[Tuple[int, int]]]:
-        """兼容旧内部调用；实际策略由 C++ Adapter 提供。"""
-        return self.adapter.mask_preprocessor(source)
 
     def _iter_nodes(
         self,
@@ -494,8 +479,6 @@ class ASTParser:
                     {
                         "source_path": self._source_path,
                         "source_file_id": self._source_file_id,
-                        "source_sha256": self._source_sha256,
-                        "mapping_version": 2,
                         "mapping_exact": True,
                         "parse_origin": parse_origin,
                     }
@@ -506,7 +489,6 @@ class ASTParser:
                         self._cached_source,
                         source_path=self._source_path,
                         source_file_id=self._source_file_id,
-                        source_sha256=self._source_sha256,
                         parse_origin=parse_origin,
                     )
             

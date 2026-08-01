@@ -16,9 +16,6 @@ from .idiom_taxonomy import (
 from .smell_taxonomy import SmellFinding
 
 
-IDIOM_JUDGMENT_SCHEMA_VERSION = 8
-
-
 def _node_info(info: Any) -> Mapping[str, Any]:
     if isinstance(info, (list, tuple)) and len(info) >= 4:
         node = info[3]
@@ -27,10 +24,6 @@ def _node_info(info: Any) -> Mapping[str, Any]:
     if isinstance(info, Mapping):
         return info
     return {}
-
-
-def _member_code(info: Any) -> str:
-    return str(_node_info(info).get("code_snippet") or "")
 
 
 def _source_file(info: Any) -> str:
@@ -68,7 +61,6 @@ class ClusterCandidate:
     source_infos: List[Any]
     loc_label: str
     declared_cluster_size: int
-    input_stage: int = 2
 
     @classmethod
     def from_cluster_row(
@@ -78,21 +70,13 @@ class ClusterCandidate:
     ) -> "ClusterCandidate":
         infos = list(row.get("infos") or [])
         representative = str(row.get("center_point") or "")
-        # `center_point + else_point` 是阶段2簇成员源码的直接合同，优先使用它
-        # 以保证完整成员可用于本地规则、审计和评价；LLM 只接收词法去重后的
-        # 代码变体。`infos[*].code_snippet` 仅作旧产物缺失源码字段时的回退。
+        # `center_point + else_point` 是簇成员源码的直接合同。
         codes = [representative] if representative.strip() else []
         codes.extend(
             str(code)
             for code in (row.get("else_point") or [])
             if str(code).strip()
         )
-        if not codes:
-            codes = [
-                code
-                for code in (_member_code(info) for info in infos)
-                if code
-            ]
         return cls(
             project=str(project),
             cluster_id=str(row.get("label")),
@@ -244,7 +228,6 @@ class IdiomJudgmentResult:
             "smell_review": self.smell.reason if self.smell else "",
         }
         record = {
-            "idiom_judgment_schema_version": IDIOM_JUDGMENT_SCHEMA_VERSION,
             "project": self.candidate.project,
             "cluster_id": self.candidate.cluster_id,
             "status": self.status,
@@ -268,7 +251,6 @@ class IdiomJudgmentResult:
                 else 0.0
             ),
             "loc_label": self.candidate.loc_label,
-            "input_stage": self.candidate.input_stage,
             "rules": asdict(self.rules),
             "abstraction_proposals": [
                 asdict(proposal) for proposal in self.proposals
@@ -331,7 +313,6 @@ def build_judgment_artifact(
     return {
         "artifact_type": "idiom_judgment",
         "stage": 3,
-        "idiom_judgment_schema_version": IDIOM_JUDGMENT_SCHEMA_VERSION,
         "project": project,
         "rule_only": bool(rule_only),
         "accepted": accepted,

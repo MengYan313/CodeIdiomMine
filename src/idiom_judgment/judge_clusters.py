@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import hashlib
 import json
 import os
 import pickle
@@ -18,7 +17,6 @@ from ..common.run_checkpoint import RunCheckpoint
 from ..llm.config import load_project_env, resolve_model
 from .pipeline import IdiomJudgmentPipeline
 from .schema import (
-    IDIOM_JUDGMENT_SCHEMA_VERSION,
     ClusterCandidate,
     IdiomJudgmentResult,
     RuleAssessment,
@@ -27,11 +25,6 @@ from .schema import (
 
 
 logger = get_logger(__name__)
-
-
-def _sha256(path: Path) -> str:
-    with path.open("rb") as stream:
-        return hashlib.file_digest(stream, "sha256").hexdigest()
 
 
 def _orchestration_failure_result(
@@ -105,7 +98,6 @@ async def judge_clusters(
         raise RuntimeError("未设置 OPENAI_API_KEY；可先用 --rule-only 执行离线预检")
 
     project, clusters = load_single_repository_clusters(input_path)
-    input_digest = _sha256(Path(input_path))
     rows = list(clusters.iterrows())
     if limit > 0:
         rows = rows[:limit]
@@ -114,19 +106,6 @@ async def judge_clusters(
     checkpoint = (
         RunCheckpoint(
             checkpoint_path,
-            metadata={
-                "stage": "idiom_judgment",
-                "schema_version": IDIOM_JUDGMENT_SCHEMA_VERSION,
-                "input_sha256": input_digest,
-                "project": project,
-                "row_count": len(rows),
-                "rule_only": bool(rule_only),
-                "model": resolved_model,
-                "source_root": str(Path(source_root).resolve())
-                if source_root
-                else "",
-                "require_context": bool(require_context),
-            },
             resume=resume,
         )
         if checkpoint_path
@@ -136,10 +115,11 @@ async def judge_clusters(
         checkpoint.load_records() if checkpoint is not None else {}
     )
     resumed_record_count = len(results_by_position)
-    if any(position < 0 or position >= len(rows) for position in results_by_position):
-        if checkpoint is not None:
-            checkpoint.close()
-        raise ValueError("checkpoint 含超出当前输入范围的记录位置")
+    results_by_position = {
+        position: value
+        for position, value in results_by_position.items()
+        if 0 <= position < len(rows)
+    }
 
     pipeline = IdiomJudgmentPipeline(
         model=model,
@@ -186,7 +166,6 @@ async def judge_clusters(
     artifact = build_judgment_artifact(project, results, rule_only=rule_only)
     artifact["input"] = {
         "clusters_path": str(Path(input_path)),
-        "clusters_sha256": input_digest,
     }
     artifact["run"] = {
         "model": resolved_model,
@@ -205,7 +184,6 @@ async def judge_clusters(
         pickle.dump(artifact, stream, protocol=pickle.HIGHEST_PROTOCOL)
 
     report = {
-        "schema_version": 1,
         "artifact_type": "idiom_judgment_report",
         "project": project,
         "rule_only": rule_only,
@@ -245,7 +223,7 @@ def main() -> None:
     parser.add_argument(
         "--require-context",
         action="store_true",
-        help="上下文缺失或哈希不匹配时零 LLM 调用并拒绝当前簇",
+        help="上下文缺失时零 LLM 调用并拒绝当前簇",
     )
     parser.add_argument(
         "--checkpoint",
@@ -254,7 +232,7 @@ def main() -> None:
     parser.add_argument(
         "--resume",
         action="store_true",
-        help="从 --checkpoint 续跑；输入和运行配置必须完全一致",
+        help="按 checkpoint 中已有位置续跑",
     )
     parser.add_argument(
         "--rule-only",

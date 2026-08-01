@@ -59,7 +59,7 @@
       "strata": "按综合分数升序确定近似等频三层；当前23仓为低8、中8、高7，分界相同时以 slug 保证确定性。"
     },
     "primary_domain": {
-      "assignment_basis": "按固定 commit 中项目核心生产用途人工指定一个互斥主领域；跨领域能力继续由 project_type 与 idiom_focus 保留，不因分类而丢失。",
+      "assignment_basis": "按项目核心生产用途人工指定一个互斥主领域；跨领域能力继续由 project_type 与 idiom_focus 表达。",
       "categories": [
         "数据表示与泛型基础库",
         "开发工具与工程基础设施",
@@ -234,260 +234,6 @@
       "sum": 544475
     }
   },
-  "parser_comparison": {
-    "baseline": {
-      "candidates": {
-        "function": 95487,
-        "region": 48586,
-        "semantic_def_use": 11195,
-        "statement": 127807
-      },
-      "entities": {
-        "call": 464530,
-        "class": 12780,
-        "enum": 2941,
-        "function_definition": 106748,
-        "include": 60268,
-        "lambda": 6494,
-        "method_definition": 49742,
-        "namespace": 22389,
-        "struct": 21576,
-        "template": 79205,
-        "type": 67240
-      },
-      "errors": {
-        "affected_projects": {
-          "empty_function_output": [
-            "btop",
-            "catch2",
-            "cereal",
-            "cli11",
-            "concurrentqueue",
-            "drogon",
-            "envoy",
-            "fmt",
-            "json",
-            "leveldb",
-            "libzmq",
-            "magic_enum",
-            "mosh",
-            "ninja",
-            "polybar",
-            "qbittorrent",
-            "react-native",
-            "spdlog",
-            "taskflow",
-            "tomlplusplus",
-            "uwebsockets",
-            "yaml-cpp",
-            "yoga"
-          ],
-          "preprocessor_or_macro": [
-            "btop",
-            "catch2",
-            "cereal",
-            "cli11",
-            "concurrentqueue",
-            "drogon",
-            "envoy",
-            "fmt",
-            "json",
-            "leveldb",
-            "libzmq",
-            "magic_enum",
-            "mosh",
-            "ninja",
-            "polybar",
-            "qbittorrent",
-            "react-native",
-            "spdlog",
-            "taskflow",
-            "tomlplusplus",
-            "uwebsockets",
-            "yaml-cpp",
-            "yoga"
-          ],
-          "symlink_file": [
-            "envoy"
-          ],
-          "syntax_or_recovery": [
-            "btop",
-            "catch2",
-            "cereal",
-            "cli11",
-            "concurrentqueue",
-            "drogon",
-            "envoy",
-            "fmt",
-            "json",
-            "leveldb",
-            "libzmq",
-            "magic_enum",
-            "mosh",
-            "ninja",
-            "polybar",
-            "qbittorrent",
-            "react-native",
-            "spdlog",
-            "taskflow",
-            "tomlplusplus",
-            "uwebsockets",
-            "yaml-cpp",
-            "yoga"
-          ]
-        },
-        "counts": {
-          "empty_function_output": 2903,
-          "preprocessor_or_macro": 1276,
-          "symlink_file": 5,
-          "syntax_or_recovery": 2674
-        }
-      },
-      "totals": {
-        "anomalous_file_count": 3950,
-        "anomalous_file_rate": 0.35665914221218964,
-        "ast_coverage": 0.9083900313461486,
-        "candidate_count": 283075,
-        "duplicate_relative_path_count": 5,
-        "effective_line_count": 1596497,
-        "error_count": 38653,
-        "failed_file_count": 0,
-        "file_success_rate": 1.0,
-        "missing_count": 13335,
-        "parsed_file_count": 11075,
-        "path_escape_count": 0,
-        "reliable_significant_byte_count": 59440350,
-        "selected_function_count": 106970,
-        "significant_byte_count": 65434833,
-        "source_file_count": 11075,
-        "symlink_file_count": 5
-      }
-    },
-    "final": {
-      "candidates": {
-        "function": 67719,
-        "region": 36668,
-        "semantic_def_use": 8600,
-        "statement": 90622
-      },
-      "entities": {
-        "call": 337695,
-        "class": 9589,
-        "enum": 1417,
-        "function_definition": 71986,
-        "include": 47223,
-        "lambda": 5410,
-        "method_definition": 29536,
-        "namespace": 16812,
-        "struct": 6903,
-        "template": 39785,
-        "type": 25579
-      },
-      "errors": {
-        "affected_projects": {
-          "empty_function_output": [
-            "btop",
-            "catch2",
-            "cereal",
-            "cli11",
-            "concurrentqueue",
-            "drogon",
-            "envoy",
-            "fmt",
-            "json",
-            "leveldb",
-            "libzmq",
-            "magic_enum",
-            "mosh",
-            "ninja",
-            "polybar",
-            "qbittorrent",
-            "react-native",
-            "spdlog",
-            "taskflow",
-            "tomlplusplus",
-            "uwebsockets",
-            "yaml-cpp",
-            "yoga"
-          ],
-          "preprocessor_or_macro": [
-            "btop",
-            "catch2",
-            "cereal",
-            "cli11",
-            "concurrentqueue",
-            "drogon",
-            "envoy",
-            "fmt",
-            "json",
-            "leveldb",
-            "libzmq",
-            "magic_enum",
-            "mosh",
-            "ninja",
-            "polybar",
-            "qbittorrent",
-            "react-native",
-            "spdlog",
-            "taskflow",
-            "tomlplusplus",
-            "uwebsockets",
-            "yaml-cpp",
-            "yoga"
-          ],
-          "syntax_or_recovery": [
-            "btop",
-            "catch2",
-            "cereal",
-            "cli11",
-            "concurrentqueue",
-            "drogon",
-            "envoy",
-            "fmt",
-            "json",
-            "leveldb",
-            "libzmq",
-            "magic_enum",
-            "mosh",
-            "ninja",
-            "polybar",
-            "qbittorrent",
-            "react-native",
-            "spdlog",
-            "taskflow",
-            "tomlplusplus",
-            "uwebsockets",
-            "yaml-cpp",
-            "yoga"
-          ]
-        },
-        "counts": {
-          "empty_function_output": 1399,
-          "preprocessor_or_macro": 391,
-          "syntax_or_recovery": 1857
-        }
-      },
-      "totals": {
-        "anomalous_file_count": 2248,
-        "anomalous_file_rate": 0.2995336442371752,
-        "ast_coverage": 0.9108641364319137,
-        "candidate_count": 203609,
-        "duplicate_relative_path_count": 0,
-        "effective_line_count": 1013071,
-        "error_count": 18712,
-        "failed_file_count": 0,
-        "file_success_rate": 1.0,
-        "missing_count": 4900,
-        "parsed_file_count": 7505,
-        "path_escape_count": 0,
-        "reliable_significant_byte_count": 38223417,
-        "selected_function_count": 72090,
-        "significant_byte_count": 41963906,
-        "source_file_count": 7505,
-        "symlink_file_count": 0
-      }
-    }
-  },
   "scale_distribution": {
     "effective_line_buckets": {
       "10,000～99,999": 18,
@@ -515,62 +261,21 @@
       "sum": 7505
     }
   },
-  "schema_version": 1,
   "screened_at": "2026-07-29",
   "selection": {
-    "candidate_count": 27,
-    "new_candidate_count": 24,
-    "seed_project_count": 3,
+    "project_count": 23,
     "status_counts": {
       "保留": 16,
-      "条件保留": 7,
-      "淘汰": 1,
-      "阶段2后排除": 3
+      "条件保留": 7
     }
   },
   "selection_policy": {
-    "candidate_criteria": [
-      "公开且许可可核验的真实生产项目",
-      "C++ 主体且核心源码可按统一入口读取",
-      "非归档并在元数据快照日前365天内有上游push",
-      "与已有候选在领域、规模或习语重点上形成互补"
-    ],
-    "excluded_status": "淘汰",
+    "sampling_method": "有明确约束的目的性最大差异抽样",
     "formal_statuses": [
       "保留",
       "条件保留"
     ],
-    "historical_status": "阶段2后排除",
-    "non_selection_signals": [
-      "star与fork不作为硬阈值",
-      "低AST覆盖率本身不作为淘汰理由",
-      "真实LLM结果和最终IC、ISP、F1不参与项目去留"
-    ],
-    "notes": "“保留”和“条件保留”构成23仓正式论文主数据集；“阶段2后排除”不进入后续LLM判断、合成或主结果统计，但保留固定源码和阶段1/2产物作为筛选前证据；“淘汰”不保留本地仓库。定量字段由 scripts/analyze_cpp_dataset.py 从固定本地仓库与解析产物重算。",
-    "probability_sample": false,
-    "sampling_method": "有明确约束的目的性最大差异抽样",
-    "stage1_eligibility": [
-      "固定完整commit和源码范围",
-      "统一扩展名、目录与文件排除规则",
-      "每个扫描文件都有零构建解析或诊断记录",
-      "路径、项目身份和产物可复算"
-    ],
-    "stage2_suitability": [
-      "冻结DBSCAN产物不被聚合发行副本或依赖镜像主导",
-      "聚类支持与跨文件复现足以支持后续LLM和主评价",
-      "定量代理必须结合具体代表簇语义复核"
-    ],
-    "standard_extensions": [
-      ".c",
-      ".cc",
-      ".cpp",
-      ".cxx",
-      ".c++",
-      ".h",
-      ".hh",
-      ".hpp",
-      ".hxx"
-    ]
+    "notes": "当前统计仅覆盖正式实验项目。"
   },
   "selection_source": "docs/research/cpp-dataset-selection.json",
   "totals": {
@@ -588,5 +293,129 @@
     "selected_function_count": 72090,
     "significant_byte_count": 41963906,
     "source_file_count": 7505
+  },
+  "parser_statistics": {
+    "candidates": {
+      "function": 67719,
+      "region": 36668,
+      "semantic_def_use": 8600,
+      "statement": 90622
+    },
+    "entities": {
+      "call": 337695,
+      "class": 9589,
+      "enum": 1417,
+      "function_definition": 71986,
+      "include": 47223,
+      "lambda": 5410,
+      "method_definition": 29536,
+      "namespace": 16812,
+      "struct": 6903,
+      "template": 39785,
+      "type": 25579
+    },
+    "errors": {
+      "affected_projects": {
+        "empty_function_output": [
+          "btop",
+          "catch2",
+          "cereal",
+          "cli11",
+          "concurrentqueue",
+          "drogon",
+          "envoy",
+          "fmt",
+          "json",
+          "leveldb",
+          "libzmq",
+          "magic_enum",
+          "mosh",
+          "ninja",
+          "polybar",
+          "qbittorrent",
+          "react-native",
+          "spdlog",
+          "taskflow",
+          "tomlplusplus",
+          "uwebsockets",
+          "yaml-cpp",
+          "yoga"
+        ],
+        "preprocessor_or_macro": [
+          "btop",
+          "catch2",
+          "cereal",
+          "cli11",
+          "concurrentqueue",
+          "drogon",
+          "envoy",
+          "fmt",
+          "json",
+          "leveldb",
+          "libzmq",
+          "magic_enum",
+          "mosh",
+          "ninja",
+          "polybar",
+          "qbittorrent",
+          "react-native",
+          "spdlog",
+          "taskflow",
+          "tomlplusplus",
+          "uwebsockets",
+          "yaml-cpp",
+          "yoga"
+        ],
+        "syntax_or_recovery": [
+          "btop",
+          "catch2",
+          "cereal",
+          "cli11",
+          "concurrentqueue",
+          "drogon",
+          "envoy",
+          "fmt",
+          "json",
+          "leveldb",
+          "libzmq",
+          "magic_enum",
+          "mosh",
+          "ninja",
+          "polybar",
+          "qbittorrent",
+          "react-native",
+          "spdlog",
+          "taskflow",
+          "tomlplusplus",
+          "uwebsockets",
+          "yaml-cpp",
+          "yoga"
+        ]
+      },
+      "counts": {
+        "empty_function_output": 1399,
+        "preprocessor_or_macro": 391,
+        "syntax_or_recovery": 1857
+      }
+    },
+    "totals": {
+      "anomalous_file_count": 2248,
+      "anomalous_file_rate": 0.2995336442371752,
+      "ast_coverage": 0.9108641364319137,
+      "candidate_count": 203609,
+      "duplicate_relative_path_count": 0,
+      "effective_line_count": 1013071,
+      "error_count": 18712,
+      "failed_file_count": 0,
+      "file_success_rate": 1.0,
+      "missing_count": 4900,
+      "parsed_file_count": 7505,
+      "path_escape_count": 0,
+      "reliable_significant_byte_count": 38223417,
+      "selected_function_count": 72090,
+      "significant_byte_count": 41963906,
+      "source_file_count": 7505,
+      "symlink_file_count": 0
+    }
   }
 }

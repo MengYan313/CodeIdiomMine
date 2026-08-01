@@ -10,7 +10,6 @@ import tree_sitter
 from .cpp_adapter import CPP_ADAPTER
 
 SEMANTIC_SLICE_KIND = "semantic_slice"
-SEMANTIC_ANALYSIS_VERSION = "def-use-v1"
 
 
 def _decode(data: bytes) -> str:
@@ -239,7 +238,6 @@ def _slice_for_anchor(
     source: bytes,
     source_path: str,
     source_file_id: str,
-    source_sha256: str,
     parse_origin: str,
     max_span_statements: int,
     max_slice_bytes: int,
@@ -313,14 +311,11 @@ def _slice_for_anchor(
         "subtree_size": sum(item.node.descendant_count for item in included_facts),
         "candidate_level": "region",
         "candidate_origin": "semantic_def_use",
-        "analysis_version": SEMANTIC_ANALYSIS_VERSION,
         "parent_extent": parent_extent,
         "source_path": source_path,
         "source_file_id": source_file_id,
-        "source_sha256": source_sha256,
         "start_byte": start_byte,
         "end_byte": end_byte,
-        "mapping_version": 2,
         "mapping_exact": True,
         "parse_origin": parse_origin,
         "has_error": False,
@@ -348,7 +343,6 @@ def extract_semantic_slices(
     *,
     source_path: str,
     source_file_id: str,
-    source_sha256: str,
     parse_origin: str = "raw",
     min_function_lines: int = 30,
     min_function_bytes: int = 1200,
@@ -406,7 +400,6 @@ def extract_semantic_slices(
                 source=source,
                 source_path=source_path,
                 source_file_id=source_file_id,
-                source_sha256=source_sha256,
                 parse_origin=parse_origin,
                 max_span_statements=max_span_statements,
                 max_slice_bytes=max_slice_bytes,

@@ -1,6 +1,5 @@
 import asyncio
 import pickle
-import hashlib
 import json
 import tempfile
 import unittest
@@ -23,7 +22,6 @@ from src.idiom_synthesis.pipeline import (
 )
 from src.idiom_synthesis.planning_agent import SynthesisPlan
 from src.idiom_synthesis.schema import (
-    IDIOM_SYNTHESIS_SCHEMA_VERSION,
     IdiomCandidate,
     SynthesisResult,
     build_synthesis_artifact,
@@ -45,7 +43,6 @@ def _info(
     candidate_extent="",
     start_byte=None,
     end_byte=None,
-    source_sha256="",
 ):
     node = {
         "code_snippet": code,
@@ -57,8 +54,6 @@ def _info(
         node["start_byte"] = start_byte
     if end_byte is not None:
         node["end_byte"] = end_byte
-    if source_sha256:
-        node["source_sha256"] = source_sha256
     return [
         project,
         path,
@@ -80,69 +75,13 @@ class IdiomSynthesisTests(unittest.TestCase):
         ):
             IdiomSynthesisPipeline(max_plans_per_region=0)
 
-    def test_loads_stage2_and_judgment_inputs(self):
+    def test_loads_judgment_input(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
             code_a = "auto handle = open_resource();"
             code_b = "close_resource(handle);"
             info_a = _info("sample", "a.cpp", "1-0-5-1", code_a)
             info_b = _info("sample", "a.cpp", "1-0-5-1", code_b)
-            frame = pd.DataFrame(
-                [
-                    {
-                        "label": 1,
-                        "center_point": code_a,
-                        "else_point": [code_a],
-                        "cluster_size": 2,
-                        "center_point_info": info_a,
-                        "infos": [info_a, info_a],
-                        "loc_label": "sample-a.cpp-1-0-5-1",
-                    },
-                    {
-                        "label": 2,
-                        "center_point": code_b,
-                        "else_point": [code_b],
-                        "cluster_size": 2,
-                        "center_point_info": info_b,
-                        "infos": [info_b, info_b],
-                        "loc_label": "sample-a.cpp-1-0-5-1",
-                    },
-                ]
-            )
-            stage2_path = root / "clusters.pkl"
-            with stage2_path.open("wb") as stream:
-                pickle.dump([{"pros_name": "sample", "clusters": frame}], stream)
-            project, candidates, kind = load_idiom_candidates(stage2_path)
-            self.assertEqual((project, kind), ("sample", "stage2"))
-            self.assertTrue(all(item.input_stage == 2 for item in candidates))
-            self.assertEqual(len(group_related_idioms(candidates)), 1)
-            contract_output = root / "stage2-contract.pkl"
-            with patch(
-                "src.idiom_synthesis.synthesize_idioms.load_project_env"
-            ) as load_env:
-                contract_report = asyncio.run(
-                    synthesize_idioms(
-                        str(stage2_path),
-                        str(contract_output),
-                        input_kind="stage2",
-                    )
-                )
-            load_env.assert_called_once_with()
-            self.assertEqual(
-                contract_report["execution_status"],
-                "contract_only_not_executed",
-            )
-            with contract_output.open("rb") as stream:
-                contract_artifact = pickle.load(stream)
-            self.assertEqual(
-                contract_artifact["execution_status"],
-                "contract_only_not_executed",
-            )
-            self.assertEqual(
-                contract_artifact["summary"]["attempt_count"],
-                0,
-            )
-
             judgment_path = root / "judgment.pkl"
             with judgment_path.open("wb") as stream:
                 pickle.dump(
@@ -206,9 +145,8 @@ class IdiomSynthesisTests(unittest.TestCase):
                     },
                     stream,
                 )
-            project, candidates, kind = load_idiom_candidates(judgment_path)
-            self.assertEqual((project, kind), ("sample", "judgment"))
-            self.assertTrue(all(item.input_stage == 3 for item in candidates))
+            project, candidates = load_idiom_candidates(judgment_path)
+            self.assertEqual(project, "sample")
             self.assertEqual(
                 candidates[0].idiom_classification["kind"],
                 "repository_specific",
@@ -252,13 +190,12 @@ class IdiomSynthesisTests(unittest.TestCase):
             )
         )
 
-    def test_context_requires_matching_source_hash(self):
+    def test_context_uses_matching_source_identity_and_bounds(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
             source = "void f() {\n  acquire();\n  release();\n}\n"
             source_path = root / "sample.cpp"
             source_path.write_text(source, encoding="utf-8")
-            digest = hashlib.sha256(source.encode("utf-8")).hexdigest()
             candidate = IdiomCandidate(
                 candidate_id="judgment:1",
                 project="sample",
@@ -269,45 +206,29 @@ class IdiomSynthesisTests(unittest.TestCase):
                     "sample",
                     "sample.cpp",
                     "1-0-4-1",
-                    {"source_sha256": digest},
+                    {},
                 ],
                 support_count=3,
-                input_stage=3,
             )
             self.assertIn(
                 "release();",
                 load_group_context_with_evidence([candidate], root)[0],
             )
-            missing_hash = IdiomCandidate(
+            mismatched_path = IdiomCandidate(
                 **{
                     **candidate.__dict__,
+                    "candidate_id": "judgment:2",
                     "representative_info": [
                         "sample",
-                        "sample.cpp",
+                        "other.cpp",
                         "1-0-4-1",
                         {},
                     ],
                 }
             )
             self.assertEqual(
-                load_group_context_with_evidence([missing_hash], root)[0],
-                "",
-            )
-            mismatched_hash = IdiomCandidate(
-                **{
-                    **candidate.__dict__,
-                    "candidate_id": "judgment:2",
-                    "representative_info": [
-                        "sample",
-                        "sample.cpp",
-                        "1-0-4-1",
-                        {"source_sha256": "0" * 64},
-                    ],
-                }
-            )
-            self.assertEqual(
                 load_group_context_with_evidence(
-                    [candidate, mismatched_hash],
+                    [candidate, mismatched_path],
                     root,
                 )[0],
                 "",
@@ -321,7 +242,7 @@ class IdiomSynthesisTests(unittest.TestCase):
                 "",
             )
 
-    def test_stage2_contract_input_uses_stricter_quality_threshold(self):
+    def test_synthesis_quality_threshold(self):
         common = dict(
             merged_code_present=True,
             syntax_valid=True,
@@ -333,19 +254,11 @@ class IdiomSynthesisTests(unittest.TestCase):
             review_unsupported_additions=[],
         )
         status, _ = decide_synthesis_status(
-            contains_stage2_input=True,
-            quality_score=70,
-            **common,
-        )
-        self.assertEqual(status, "rejected")
-        status, _ = decide_synthesis_status(
-            contains_stage2_input=False,
             quality_score=70,
             **common,
         )
         self.assertEqual(status, "accepted")
         status, _ = decide_synthesis_status(
-            contains_stage2_input=False,
             quality_score=100,
             **{**common, "review_is_idiom": False},
         )
@@ -362,7 +275,6 @@ class IdiomSynthesisTests(unittest.TestCase):
                 source_infos=[info],
                 representative_info=info,
                 support_count=3,
-                input_stage=3,
             )
             for index in range(3)
         ]
@@ -486,7 +398,6 @@ class IdiomSynthesisTests(unittest.TestCase):
                 "}\n"
             )
             (root / "sample.cpp").write_text(source, encoding="utf-8")
-            digest = hashlib.sha256(source.encode("utf-8")).hexdigest()
             info_a = _info(
                 "sample",
                 "sample.cpp",
@@ -495,7 +406,6 @@ class IdiomSynthesisTests(unittest.TestCase):
                 candidate_extent="3-2-3-40",
                 start_byte=32,
                 end_byte=70,
-                source_sha256=digest,
             )
             info_b = _info(
                 "sample",
@@ -505,7 +415,6 @@ class IdiomSynthesisTests(unittest.TestCase):
                 candidate_extent="4-2-4-25",
                 start_byte=73,
                 end_byte=96,
-                source_sha256=digest,
             )
             candidates = [
                 IdiomCandidate(
@@ -516,7 +425,6 @@ class IdiomSynthesisTests(unittest.TestCase):
                     source_infos=[info_a],
                     representative_info=info_a,
                     support_count=3,
-                    input_stage=3,
                     intent="获取资源",
                     judgment_status="accepted",
                     judgment_reason="获取资源候选已通过阶段3门禁。",
@@ -538,7 +446,6 @@ class IdiomSynthesisTests(unittest.TestCase):
                     source_infos=[info_b],
                     representative_info=info_b,
                     support_count=3,
-                    input_stage=3,
                     intent="释放资源",
                     judgment_status="accepted",
                     judgment_reason="释放资源候选已通过阶段3门禁。",
@@ -618,11 +525,6 @@ class IdiomSynthesisTests(unittest.TestCase):
             artifact = build_synthesis_artifact(
                 "sample",
                 [result],
-                input_kind="judgment",
-            )
-            self.assertEqual(
-                artifact["idiom_synthesis_schema_version"],
-                IDIOM_SYNTHESIS_SCHEMA_VERSION,
             )
             self.assertEqual(
                 artifact["artifact_semantics"],
@@ -802,7 +704,6 @@ class IdiomSynthesisTests(unittest.TestCase):
                 "}\n"
             )
             (root / "sample.cpp").write_text(source, encoding="utf-8")
-            digest = hashlib.sha256(source.encode("utf-8")).hexdigest()
             codes = ["first();", "second();", "third();"]
             candidates = [
                 IdiomCandidate(
@@ -819,7 +720,6 @@ class IdiomSynthesisTests(unittest.TestCase):
                             candidate_extent=f"{index + 1}-2-{index + 1}-10",
                             start_byte=index * 12,
                             end_byte=index * 12 + 8,
-                            source_sha256=digest,
                         )
                     ],
                     representative_info=_info(
@@ -827,10 +727,8 @@ class IdiomSynthesisTests(unittest.TestCase):
                         "sample.cpp",
                         "1-0-5-1",
                         code,
-                        source_sha256=digest,
                     ),
                     support_count=3,
-                    input_stage=3,
                     judgment_status="accepted",
                 )
                 for index, code in enumerate(codes)
@@ -883,7 +781,6 @@ class IdiomSynthesisTests(unittest.TestCase):
         artifact = build_synthesis_artifact(
             "sample",
             results,
-            input_kind="judgment",
         )
         self.assertEqual(artifact["summary"]["planning_call_count"], 1)
         self.assertEqual(
@@ -911,7 +808,6 @@ class IdiomSynthesisTests(unittest.TestCase):
             "code": "work();",
             "loc_label": "same-label",
             "support_count": 3,
-            "input_stage": 3,
             "judgment_status": "accepted",
         }
         shared_a = _info(
@@ -1022,7 +918,6 @@ class IdiomSynthesisTests(unittest.TestCase):
                 source_infos=infos,
                 representative_info=infos[0],
                 support_count=len(infos),
-                input_stage=3,
                 judgment_status="accepted",
             )
 
@@ -1054,7 +949,6 @@ class IdiomSynthesisTests(unittest.TestCase):
             root = Path(temporary_directory)
             source = "void f() {\n  acquire();\n  release();\n}\n"
             (root / "shared.cpp").write_text(source, encoding="utf-8")
-            digest = hashlib.sha256(source.encode("utf-8")).hexdigest()
             shared_infos = [
                 _info(
                     "sample",
@@ -1064,7 +958,6 @@ class IdiomSynthesisTests(unittest.TestCase):
                     candidate_extent="2-2-2-12",
                     start_byte=13,
                     end_byte=23,
-                    source_sha256=digest,
                 ),
                 _info(
                     "sample",
@@ -1074,7 +967,6 @@ class IdiomSynthesisTests(unittest.TestCase):
                     candidate_extent="3-2-3-12",
                     start_byte=26,
                     end_byte=36,
-                    source_sha256=digest,
                 ),
             ]
             candidates = [
@@ -1099,7 +991,6 @@ class IdiomSynthesisTests(unittest.TestCase):
                         code,
                     ),
                     support_count=2,
-                    input_stage=3,
                     judgment_status="accepted",
                 )
                 for index, code in enumerate(
@@ -1136,7 +1027,6 @@ class IdiomSynthesisTests(unittest.TestCase):
             source_infos=[info, info],
             representative_info=info,
             support_count=2,
-            input_stage=3,
         )
         self.assertEqual(group_related_idioms([candidate]), [])
 
@@ -1150,7 +1040,6 @@ class IdiomSynthesisTests(unittest.TestCase):
                 source_infos=[],
                 representative_info=None,
                 support_count=2,
-                input_stage=3,
             )
             for index, code in enumerate(("acquire();", "release();"))
         ]
@@ -1180,7 +1069,6 @@ class IdiomSynthesisTests(unittest.TestCase):
                     f"step_{index}();",
                 ),
                 support_count=3,
-                input_stage=3,
                 judgment_status="accepted",
             )
             for index in range(3)
@@ -1221,7 +1109,6 @@ class IdiomSynthesisTests(unittest.TestCase):
             build_synthesis_artifact(
                 "sample",
                 [result],
-                input_kind="judgment",
             )
 
     def test_missing_context_is_rejected_without_llm_calls(self):
@@ -1233,7 +1120,6 @@ class IdiomSynthesisTests(unittest.TestCase):
             source_infos=[],
             representative_info=["sample", "missing.cpp", "1-0-2-1", {}],
             support_count=3,
-            input_stage=3,
         )
 
         class NoCallClient:
@@ -1278,13 +1164,11 @@ class IdiomSynthesisTests(unittest.TestCase):
                 "}\n"
             )
             (root / "sample.cpp").write_text(source, encoding="utf-8")
-            digest = hashlib.sha256(source.encode("utf-8")).hexdigest()
             info = _info(
                 "sample",
                 "sample.cpp",
                 "1-0-4-1",
                 "auto handle = open_resource();",
-                source_sha256=digest,
             )
             candidates = [
                 IdiomCandidate(
@@ -1295,7 +1179,6 @@ class IdiomSynthesisTests(unittest.TestCase):
                     source_infos=[info],
                     representative_info=info,
                     support_count=3,
-                    input_stage=3,
                 ),
                 IdiomCandidate(
                     candidate_id="judgment:2",
@@ -1305,7 +1188,6 @@ class IdiomSynthesisTests(unittest.TestCase):
                     source_infos=[info],
                     representative_info=info,
                     support_count=3,
-                    input_stage=3,
                 ),
             ]
             client = PlanningFailureClient()
@@ -1342,7 +1224,6 @@ class IdiomSynthesisTests(unittest.TestCase):
             artifact = build_synthesis_artifact(
                 "sample",
                 [result],
-                input_kind="judgment",
             )
             self.assertEqual(
                 artifact["summary"]["technical_failure_count"],
@@ -1371,13 +1252,11 @@ class IdiomSynthesisTests(unittest.TestCase):
             root = Path(temporary_directory)
             source = "void f() {\n  first();\n  second();\n}\n"
             (root / "sample.cpp").write_text(source, encoding="utf-8")
-            digest = hashlib.sha256(source.encode("utf-8")).hexdigest()
             info = _info(
                 "sample",
                 "sample.cpp",
                 "1-0-4-1",
                 "first();",
-                source_sha256=digest,
             )
             candidates = [
                 IdiomCandidate(
@@ -1388,7 +1267,6 @@ class IdiomSynthesisTests(unittest.TestCase):
                     source_infos=[info],
                     representative_info=info,
                     support_count=3,
-                    input_stage=3,
                 )
                 for index, code in enumerate(("first();", "second();"))
             ]

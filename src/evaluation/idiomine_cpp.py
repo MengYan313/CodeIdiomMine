@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import hashlib
 import json
 from collections import defaultdict
 from pathlib import Path
@@ -46,7 +45,6 @@ from .idiom_metrics import load_idiom_artifact
 
 logger = get_logger(__name__)
 
-PROMPT_VERSION = "idiomine-cpp-v1"
 
 JUDGMENT_SCHEMA: Dict[str, Any] = {
     "type": "object",
@@ -306,7 +304,6 @@ def _accepted_judgment_record(
     *,
     candidate_id: str,
     model_name: str,
-    prompt_hash: str,
     reason: str,
 ) -> Dict[str, Any]:
     accepted = dict(record)
@@ -316,8 +313,6 @@ def _accepted_judgment_record(
         "output_kind": "independent_judgment",
         "candidate_id": candidate_id,
         "model": model_name,
-        "prompt_version": PROMPT_VERSION,
-        "prompt_hash": prompt_hash,
         "is_idiom": True,
         "judgment_reason": reason,
         "candidate_provenance": (
@@ -339,7 +334,6 @@ def _direct_synthesis_record(
     intent: str,
     reason: str,
     model_name: str,
-    prompt_hash: str,
 ) -> Dict[str, Any]:
     source_records = [group_index[source_id] for source_id in source_ids]
     infos = unique_source_infos(
@@ -363,8 +357,6 @@ def _direct_synthesis_record(
             "method": "idiomine_cpp",
             "output_kind": "direct_synthesis",
             "model": model_name,
-            "prompt_version": PROMPT_VERSION,
-            "prompt_hash": prompt_hash,
             "region": {
                 "project": region[0],
                 "file": region[1],
@@ -376,18 +368,6 @@ def _direct_synthesis_record(
             "directly_accepted_after_synthesis": True,
         },
     )
-
-
-def _prompt_hash() -> str:
-    payload = "\n".join(
-        (
-            JUDGMENT_SYSTEM_PROMPT,
-            json.dumps(JUDGMENT_SCHEMA, ensure_ascii=False, sort_keys=True),
-            SYNTHESIS_SYSTEM_PROMPT,
-            json.dumps(SYNTHESIS_SCHEMA, ensure_ascii=False, sort_keys=True),
-        )
-    )
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def _request_input_tokens(
@@ -517,7 +497,6 @@ async def _run_from_candidates(
     raw_client = model_client or create_model_client(config)
     client = _BudgetedModelClient(raw_client, token_budget)
     model_name = config.model
-    prompt_hash = _prompt_hash()
     counts: Dict[str, int] = {}
     project_manifest: List[Dict[str, Any]] = []
     judgment_calls = 0
@@ -587,7 +566,6 @@ async def _run_from_candidates(
                                     record,
                                     candidate_id=candidate_id,
                                     model_name=model_name,
-                                    prompt_hash=prompt_hash,
                                     reason=reason,
                                 ),
                             )
@@ -735,7 +713,6 @@ async def _run_from_candidates(
                             intent=intent,
                             reason=reason,
                             model_name=model_name,
-                            prompt_hash=prompt_hash,
                         )
                     )
                     synthesis_decisions.append(
@@ -853,8 +830,6 @@ async def _run_from_candidates(
         json.dumps(
             {
                 "method": "idiomine_cpp",
-                "prompt_version": PROMPT_VERSION,
-                "prompt_hash": prompt_hash,
                 "projects": decision_audit,
             },
             ensure_ascii=False,
@@ -874,8 +849,6 @@ async def _run_from_candidates(
                 [],
             ),
             "model": model_name,
-            "prompt_version": PROMPT_VERSION,
-            "prompt_hash": prompt_hash,
             "schemas": {
                 "judgment": JUDGMENT_SCHEMA,
                 "synthesis": SYNTHESIS_SCHEMA,

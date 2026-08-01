@@ -1,18 +1,24 @@
-"""AutoGen RoutedAgent 与运行时注册的共享约定。"""
+"""AutoGen Agent 的注册与结构化 LLM 调用。"""
 
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, Mapping, Optional
+import asyncio
+from dataclasses import dataclass
+from typing import Any, Awaitable, Callable, Dict, Mapping, Optional, TypeVar
 
 from autogen_core import AgentId, RoutedAgent, SingleThreadedAgentRuntime
+from autogen_ext.models.openai import OpenAIChatCompletionClient
 
 from src.common.logging import get_logger
-from src.llm import LLMClient, LLMConfig
-from src.llm.json_output import complete_json_object
+from src.llm.json_output import JsonOutputError, complete_json_object
 
 
 DEFAULT_AGENT_KEY = "default"
 AgentFactory = Callable[[], RoutedAgent]
+T = TypeVar("T")
+JSON_MAX_ATTEMPTS = 2
+JSON_RETRY_DELAY_SECONDS = 0.25
+JSON_TIMEOUT_SECONDS = 120.0
 
 
 def default_agent_id(agent_type: str) -> AgentId:
@@ -30,57 +36,98 @@ async def register_agent(
 
 
 class BaseRoutedAgent(RoutedAgent):
-    """提供共享日志和可选 LLM 封装的 RoutedAgent 基类。"""
+    def __init__(self, description: str) -> None:
+        super().__init__(description)
+        self.logger = get_logger(self.__class__.__module__)
+
+
+@dataclass(frozen=True)
+class JsonCallTrace:
+    status: str
+    attempts: int
+    failure_kind: str = ""
+
+
+def agent_trace(result: Any, failure_action: str) -> dict[str, object]:
+    return {
+        "status": result.call_status,
+        "logical_attempts": result.call_attempts,
+        "failure_kind": result.failure_kind,
+        "failure_action": (
+            failure_action if result.call_status == "failed" else "continue"
+        ),
+    }
+
+
+def not_run_trace(reason: str) -> dict[str, object]:
+    return {
+        "status": "not_run",
+        "logical_attempts": 0,
+        "failure_kind": reason,
+        "failure_action": "skip_agent",
+    }
+
+
+async def dispatch_with_fallback(call: Awaitable[T], fallback: T) -> T:
+    try:
+        return await call
+    except Exception:
+        return fallback
+
+
+class JsonLLMAgent(BaseRoutedAgent):
+    """执行单次 JSON 修复和一次请求重试。"""
 
     def __init__(
         self,
-        description: str,
-        llm_config: Optional[LLMConfig] = None,
+        agent_name: str,
+        system_message: str,
+        model_client: OpenAIChatCompletionClient,
+        response_schema: Mapping[str, Any],
     ) -> None:
-        super().__init__(description)
-        self.logger = get_logger(self.__class__.__module__)
-        self.llm_client = LLMClient(llm_config) if llm_config else None
+        super().__init__(agent_name)
+        self._model_client = model_client
+        self._system_message = system_message
+        self._response_schema = response_schema
+        self._agent_name = agent_name
+        self._last_call_trace = JsonCallTrace("not_started", 0)
 
-    async def call_llm(
-        self,
-        system_message: str,
-        user_message: str,
-        **kwargs,
-    ) -> str:
-        """使用一条系统消息和一条用户消息调用已配置的 LLM。"""
-        if self.llm_client is None:
-            raise ValueError(f"Agent {self.id.type} 未配置 LLM 客户端")
-        return await self.llm_client.create(
-            messages=[
-                {"role": "system", "content": system_message},
-                {"role": "user", "content": user_message},
-            ],
-            **kwargs,
+    @property
+    def last_call_trace(self) -> JsonCallTrace:
+        return self._last_call_trace
+
+    async def ask_json(self, user_prompt: str) -> Optional[Dict[str, Any]]:
+        failure_kind = ""
+        for attempt in range(1, JSON_MAX_ATTEMPTS + 1):
+            try:
+                data = await asyncio.wait_for(
+                    complete_json_object(
+                        self._model_client,
+                        self._system_message,
+                        user_prompt,
+                        self._response_schema,
+                        logger=self.logger,
+                    ),
+                    timeout=JSON_TIMEOUT_SECONDS,
+                )
+            except JsonOutputError:
+                failure_kind = "json_invalid_after_repair"
+            except Exception as exc:
+                failure_kind = "request_error"
+                self.logger.warning(
+                    "%s 第 %d 次请求失败: %s",
+                    self._agent_name,
+                    attempt,
+                    type(exc).__name__,
+                )
+            else:
+                self._last_call_trace = JsonCallTrace("completed", attempt)
+                return data
+
+            if attempt < JSON_MAX_ATTEMPTS:
+                await asyncio.sleep(JSON_RETRY_DELAY_SECONDS)
+
+        self._last_call_trace = JsonCallTrace(
+            "failed", JSON_MAX_ATTEMPTS, failure_kind
         )
-
-    async def call_json(
-        self,
-        system_message: str,
-        user_message: str,
-        schema: Mapping[str, Any],
-    ) -> Dict[str, Any]:
-        """请求 JSON 对象，严格校验，并在失败时最多修复一次。"""
-        if self.llm_client is None:
-            raise ValueError(f"Agent {self.id.type} 未配置 LLM 客户端")
-        return await complete_json_object(
-            self.llm_client.model_client,
-            system_message,
-            user_message,
-            schema,
-            logger=self.logger,
-            max_tokens=self.llm_client.config.max_tokens,
-        )
-
-    async def close_llm(self) -> None:
-        """关闭此 Agent 持有的可选模型客户端。"""
-        if self.llm_client is not None:
-            await self.llm_client.close()
-
-    async def close(self) -> None:
-        """在 Runtime 关闭时释放此 Agent 持有的模型客户端。"""
-        await self.close_llm()
+        return None

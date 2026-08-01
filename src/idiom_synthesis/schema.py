@@ -12,7 +12,6 @@ from ..idiom_judgment.idiom_taxonomy import (
     empty_idiom_classification,
 )
 
-IDIOM_SYNTHESIS_SCHEMA_VERSION = 9
 SYNTHESIS_ARTIFACT_SEMANTICS = "synthesis_delta"
 
 
@@ -50,7 +49,6 @@ class IdiomCandidate:
     source_infos: List[Any]
     representative_info: Any
     support_count: int
-    input_stage: int
     region_info: Any = None
     matched_source_infos: List[Any] = field(default_factory=list)
     intent: str = ""
@@ -110,9 +108,6 @@ class IdiomCandidate:
                     "candidate_extent": str(node.get("extent") or ""),
                     "start_byte": node.get("start_byte"),
                     "end_byte": node.get("end_byte"),
-                    "source_sha256": str(
-                        node.get("source_sha256") or ""
-                    ),
                     "local_code": str(node.get("code_snippet") or ""),
                 }
             )
@@ -217,12 +212,7 @@ class SynthesisResult:
         region_identity = dict(
             self.context_evidence.get("source_identity") or {}
         )
-        if self.context_evidence.get("source_sha256"):
-            region_identity["source_sha256"] = self.context_evidence[
-                "source_sha256"
-            ]
         return {
-            "idiom_synthesis_schema_version": IDIOM_SYNTHESIS_SCHEMA_VERSION,
             "project": self.project,
             "status": self.status,
             "center_point": self.merged_code,
@@ -231,9 +221,6 @@ class SynthesisResult:
                 candidate.candidate_id for candidate in self.selected
             ],
             "source_judgments": source_judgments,
-            "input_stages": sorted(
-                {candidate.input_stage for candidate in self.selected}
-            ),
             "loc_label": loc_labels[0] if len(loc_labels) == 1 else "",
             "source_loc_labels": loc_labels,
             "info": matched_infos[0] if matched_infos else (
@@ -294,7 +281,6 @@ def build_synthesis_artifact(
     project: str,
     results: Sequence[SynthesisResult],
     *,
-    input_kind: str,
     input_candidate_count: int | None = None,
     related_group_count: int | None = None,
     grouped_candidate_count: int | None = None,
@@ -340,9 +326,7 @@ def build_synthesis_artifact(
     return {
         "artifact_type": "idiom_synthesis",
         "stage": 4,
-        "idiom_synthesis_schema_version": IDIOM_SYNTHESIS_SCHEMA_VERSION,
         "project": project,
-        "input_kind": input_kind,
         "artifact_semantics": SYNTHESIS_ARTIFACT_SEMANTICS,
         "passthrough_included": False,
         "accepted": accepted,

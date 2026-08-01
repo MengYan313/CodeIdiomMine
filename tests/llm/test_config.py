@@ -2,9 +2,8 @@ import os
 import unittest
 from unittest.mock import patch
 
-from src.common.model_config import load_project_env
 from src.llm.client import LLMClient
-from src.llm.config import LLMConfig
+from src.llm.config import LLMConfig, load_project_env
 
 
 class LLMConfigTests(unittest.TestCase):

@@ -1,16 +1,23 @@
 {
-  "schema_version": 1,
   "retrieved_at": "2026-07-24",
   "screened_at": "2026-07-29",
   "selection_policy": {
     "sampling_method": "有明确约束的目的性最大差异抽样",
-    "probability_sample": false,
     "formal_statuses": [
       "保留",
       "条件保留"
     ],
-    "historical_status": "阶段2后排除",
-    "excluded_status": "淘汰",
+    "candidate_criteria": [
+      "公开且许可可核验的真实生产项目",
+      "C++ 主体且核心源码可按统一入口读取",
+      "非归档并在元数据快照日前365天内有上游push",
+      "与已有候选在领域、规模或习语重点上形成互补"
+    ],
+    "non_selection_signals": [
+      "star与fork不作为硬阈值",
+      "低AST覆盖率本身不作为淘汰理由",
+      "真实LLM结果和最终IC、ISP、F1不参与项目去留"
+    ],
     "standard_extensions": [
       ".c",
       ".cc",
@@ -22,35 +29,13 @@
       ".hpp",
       ".hxx"
     ],
-    "candidate_criteria": [
-      "公开且许可可核验的真实生产项目",
-      "C++ 主体且核心源码可按统一入口读取",
-      "非归档并在元数据快照日前365天内有上游push",
-      "与已有候选在领域、规模或习语重点上形成互补"
-    ],
-    "stage1_eligibility": [
-      "固定完整commit和源码范围",
-      "统一扩展名、目录与文件排除规则",
-      "每个扫描文件都有零构建解析或诊断记录",
-      "路径、项目身份和产物可复算"
-    ],
-    "stage2_suitability": [
-      "冻结DBSCAN产物不被聚合发行副本或依赖镜像主导",
-      "聚类支持与跨文件复现足以支持后续LLM和主评价",
-      "定量代理必须结合具体代表簇语义复核"
-    ],
-    "non_selection_signals": [
-      "star与fork不作为硬阈值",
-      "低AST覆盖率本身不作为淘汰理由",
-      "真实LLM结果和最终IC、ISP、F1不参与项目去留"
-    ],
-    "notes": "“保留”和“条件保留”构成23仓正式论文主数据集；“阶段2后排除”不进入后续LLM判断、合成或主结果统计，但保留固定源码和阶段1/2产物作为筛选前证据；“淘汰”不保留本地仓库。定量字段由 scripts/analyze_cpp_dataset.py 从固定本地仓库与解析产物重算。"
+    "notes": "当前清单仅包含正式实验项目。"
   },
   "classification_policy": {
     "scope": "仅对“保留”和“条件保留”的正式项目分类",
     "primary_domain": {
       "field": "primary_domain",
-      "assignment_basis": "按固定 commit 中项目核心生产用途人工指定一个互斥主领域；跨领域能力继续由 project_type 与 idiom_focus 保留，不因分类而丢失。",
+      "assignment_basis": "按项目核心生产用途人工指定一个互斥主领域；跨领域能力继续由 project_type 与 idiom_focus 表达。",
       "categories": [
         "数据表示与泛型基础库",
         "开发工具与工程基础设施",
@@ -80,9 +65,18 @@
       "project_type": "命令行系统监控应用",
       "primary_domain": "应用与跨平台界面",
       "cpp_standard": "C++20",
-      "build_systems": ["CMake", "Make"],
+      "build_systems": [
+        "CMake",
+        "Make"
+      ],
       "license_spdx": "Apache-2.0",
-      "idiom_focus": ["RAII", "STL 容器", "并发", "系统资源封装", "错误处理"],
+      "idiom_focus": [
+        "RAII",
+        "STL 容器",
+        "并发",
+        "系统资源封装",
+        "错误处理"
+      ],
       "rationale": "真实跨平台应用，包含并发、系统接口封装和现代 C++ 工程模式。",
       "limitations": []
     },
@@ -94,11 +88,23 @@
       "project_type": "测试框架",
       "primary_domain": "开发工具与工程基础设施",
       "cpp_standard": "C++14",
-      "build_systems": ["CMake", "Meson", "Bazel"],
+      "build_systems": [
+        "CMake",
+        "Meson",
+        "Bazel"
+      ],
       "license_spdx": "BSL-1.0",
-      "idiom_focus": ["模板", "宏接口", "异常处理", "类型擦除", "STL 容器"],
+      "idiom_focus": [
+        "模板",
+        "宏接口",
+        "异常处理",
+        "类型擦除",
+        "STL 容器"
+      ],
       "rationale": "框架本体是长期维护的生产库，可补充宏密集、模板与类型擦除习语。",
-      "limitations": ["领域是测试基础设施；仅保留框架核心源码，排除其自测与基准目录。"]
+      "limitations": [
+        "领域是测试基础设施；仅保留框架核心源码，排除其自测与基准目录。"
+      ]
     },
     {
       "slug": "cereal",
@@ -108,11 +114,21 @@
       "project_type": "头文件型序列化库",
       "primary_domain": "数据表示与泛型基础库",
       "cpp_standard": "C++11",
-      "build_systems": ["CMake"],
+      "build_systems": [
+        "CMake"
+      ],
       "license_spdx": "BSD-3-Clause",
-      "idiom_focus": ["模板元编程", "类型特征", "RAII", "泛型序列化", "SFINAE"],
+      "idiom_focus": [
+        "模板元编程",
+        "类型特征",
+        "RAII",
+        "泛型序列化",
+        "SFINAE"
+      ],
       "rationale": "成熟泛型库，能覆盖模板元编程、类型特征和归档对象生命周期。",
-      "limitations": ["头文件型项目，函数与模板定义密度高。"]
+      "limitations": [
+        "头文件型项目，函数与模板定义密度高。"
+      ]
     },
     {
       "slug": "cli11",
@@ -122,11 +138,23 @@
       "project_type": "头文件型命令行解析库",
       "primary_domain": "开发工具与工程基础设施",
       "cpp_standard": "C++11",
-      "build_systems": ["CMake", "Meson", "Bazel"],
+      "build_systems": [
+        "CMake",
+        "Meson",
+        "Bazel"
+      ],
       "license_spdx": "BSD-3-Clause",
-      "idiom_focus": ["模板", "回调", "异常处理", "STL 容器", "流式接口"],
+      "idiom_focus": [
+        "模板",
+        "回调",
+        "异常处理",
+        "STL 容器",
+        "流式接口"
+      ],
       "rationale": "规模适中且 API 风格清晰，适合验证头文件、回调与配置解析习语。",
-      "limitations": ["头文件型项目。"]
+      "limitations": [
+        "头文件型项目。"
+      ]
     },
     {
       "slug": "concurrentqueue",
@@ -136,26 +164,21 @@
       "project_type": "头文件型无锁并发队列",
       "primary_domain": "存储与并发基础设施",
       "cpp_standard": "C++11",
-      "build_systems": ["CMake", "Make"],
+      "build_systems": [
+        "CMake",
+        "Make"
+      ],
       "license_spdx": "BSD-2-Clause",
-      "idiom_focus": ["原子操作", "无锁并发", "模板", "内存序", "RAII"],
+      "idiom_focus": [
+        "原子操作",
+        "无锁并发",
+        "模板",
+        "内存序",
+        "RAII"
+      ],
       "rationale": "核心源码虽小，但无锁并发与内存序习语具有不可替代性。",
-      "limitations": ["核心语料仅有少量大型头文件；示例、基准与测试被排除。"]
-    },
-    {
-      "slug": "cpp-httplib",
-      "github_full_name": "yhirose/cpp-httplib",
-      "status": "阶段2后排除",
-      "seed_project": false,
-      "project_type": "单头文件 HTTP/HTTPS 库",
-      "cpp_standard": "C++11",
-      "build_systems": ["CMake", "Meson"],
-      "license_spdx": "MIT",
-      "idiom_focus": ["网络 I/O", "RAII", "回调", "并发", "错误处理"],
-      "rationale": "阶段1纳入后完成阶段2聚类；因结果几乎完全局限于单文件，无法支撑论文主评价所需的跨文件复现，故不进入后续LLM与主结果统计。",
       "limitations": [
-        "阶段2的588个簇中582个为单文件簇，跨文件簇仅6个（1.02%）；每仓Top100强结构代理率仅1%。",
-        "固定源码与阶段1/2产物仅作为单头文件边界案例和筛选前证据保留。"
+        "核心语料仅有少量大型头文件；示例、基准与测试被排除。"
       ]
     },
     {
@@ -166,27 +189,19 @@
       "project_type": "异步 Web 框架",
       "primary_domain": "网络与分布式系统",
       "cpp_standard": "C++17",
-      "build_systems": ["CMake"],
+      "build_systems": [
+        "CMake"
+      ],
       "license_spdx": "MIT",
-      "idiom_focus": ["异步回调", "智能指针", "网络 I/O", "模板", "工程分层"],
+      "idiom_focus": [
+        "异步回调",
+        "智能指针",
+        "网络 I/O",
+        "模板",
+        "工程分层"
+      ],
       "rationale": "大型真实框架，覆盖异步网络、对象生命周期和模块化工程结构。",
       "limitations": []
-    },
-    {
-      "slug": "entt",
-      "github_full_name": "skypjack/entt",
-      "status": "阶段2后排除",
-      "seed_project": false,
-      "project_type": "头文件型实体组件系统库",
-      "cpp_standard": "C++17",
-      "build_systems": ["CMake", "Bazel"],
-      "license_spdx": "MIT",
-      "idiom_focus": ["模板元编程", "类型擦除", "迭代器", "移动语义", "泛型算法"],
-      "rationale": "阶段1纳入后完成阶段2聚类；聚类主要复现同仓库的聚合分发副本，而不是独立源码位置中的稳定变化模式，故不进入后续LLM与主结果统计。",
-      "limitations": [
-        "942个簇中719个为源码完全重复簇（76.33%）；9,100个簇内成员中7,188个来自 single_include/（79.0%）。",
-        "固定源码与阶段1/2产物作为筛选前证据保留。"
-      ]
     },
     {
       "slug": "envoy",
@@ -196,12 +211,28 @@
       "project_type": "大型网络代理",
       "primary_domain": "网络与分布式系统",
       "cpp_standard": "C++17",
-      "build_systems": ["Bazel"],
+      "build_systems": [
+        "Bazel"
+      ],
       "license_spdx": "Apache-2.0",
-      "sparse_paths": ["source", "envoy", "contrib", "mobile/library/common"],
-      "idiom_focus": ["网络协议", "RAII", "智能指针", "回调", "工程分层", "并发"],
+      "sparse_paths": [
+        "source",
+        "envoy",
+        "contrib",
+        "mobile/library/common"
+      ],
+      "idiom_focus": [
+        "网络协议",
+        "RAII",
+        "智能指针",
+        "回调",
+        "工程分层",
+        "并发"
+      ],
       "rationale": "保留原有种子项目，并以固定稀疏源码范围提供大型工程与网络代理代表。",
-      "limitations": ["采用稀疏克隆，仅包含 source、envoy、contrib 与 mobile/library/common；不代表完整仓库。"]
+      "limitations": [
+        "采用稀疏克隆，仅包含 source、envoy、contrib 与 mobile/library/common；不代表完整仓库。"
+      ]
     },
     {
       "slug": "fmt",
@@ -211,24 +242,19 @@
       "project_type": "格式化基础库",
       "primary_domain": "数据表示与泛型基础库",
       "cpp_standard": "C++11",
-      "build_systems": ["CMake"],
+      "build_systems": [
+        "CMake"
+      ],
       "license_spdx": "MIT",
-      "idiom_focus": ["模板", "类型安全", "编译期计算", "错误处理", "自定义类型"],
+      "idiom_focus": [
+        "模板",
+        "类型安全",
+        "编译期计算",
+        "错误处理",
+        "自定义类型"
+      ],
       "rationale": "成熟基础库，规模适中并覆盖模板、类型安全和编译期格式化模式。",
       "limitations": []
-    },
-    {
-      "slug": "gsl",
-      "github_full_name": "microsoft/GSL",
-      "status": "淘汰",
-      "seed_project": false,
-      "project_type": "核心指南支持库",
-      "cpp_standard": "C++14",
-      "build_systems": ["CMake"],
-      "license_spdx": "MIT",
-      "idiom_focus": ["所有权标注", "边界检查", "类型安全"],
-      "rationale": "仓库成熟且许可明确，但不满足本轮标准扩展名源码入口约束。",
-      "limitations": ["核心公开头文件使用无扩展名文件；排除 tests 后标准 C/C++ 扩展名核心文件数为零。"]
     },
     {
       "slug": "json",
@@ -238,11 +264,24 @@
       "project_type": "头文件型 JSON 库",
       "primary_domain": "数据表示与泛型基础库",
       "cpp_standard": "C++11",
-      "build_systems": ["CMake", "Meson", "Make", "Bazel"],
+      "build_systems": [
+        "CMake",
+        "Meson",
+        "Make",
+        "Bazel"
+      ],
       "license_spdx": "MIT",
-      "idiom_focus": ["模板", "泛型序列化", "异常处理", "STL 容器", "自定义迭代器"],
+      "idiom_focus": [
+        "模板",
+        "泛型序列化",
+        "异常处理",
+        "STL 容器",
+        "自定义迭代器"
+      ],
       "rationale": "高知名度通用库，补充序列化、泛型容器和异常处理习语。",
-      "limitations": ["头文件型项目；宏与泛型语法使可靠 AST 字节覆盖率低于 0.5，使用时应结合逐文件诊断。"]
+      "limitations": [
+        "头文件型项目；宏与泛型语法使可靠 AST 字节覆盖率低于 0.5，使用时应结合逐文件诊断。"
+      ]
     },
     {
       "slug": "leveldb",
@@ -252,9 +291,17 @@
       "project_type": "嵌入式键值存储库",
       "primary_domain": "存储与并发基础设施",
       "cpp_standard": "C++11",
-      "build_systems": ["CMake"],
+      "build_systems": [
+        "CMake"
+      ],
       "license_spdx": "BSD-3-Clause",
-      "idiom_focus": ["RAII", "缓存", "迭代器", "错误状态", "存储引擎"],
+      "idiom_focus": [
+        "RAII",
+        "缓存",
+        "迭代器",
+        "错误状态",
+        "存储引擎"
+      ],
       "rationale": "成熟存储系统，覆盖资源管理、缓存、迭代器和状态对象模式。",
       "limitations": []
     },
@@ -266,9 +313,18 @@
       "project_type": "消息通信库",
       "primary_domain": "网络与分布式系统",
       "cpp_standard": "C++11",
-      "build_systems": ["CMake", "Autotools"],
+      "build_systems": [
+        "CMake",
+        "Autotools"
+      ],
       "license_spdx": "MPL-2.0",
-      "idiom_focus": ["网络 I/O", "并发", "状态机", "RAII", "平台抽象"],
+      "idiom_focus": [
+        "网络 I/O",
+        "并发",
+        "状态机",
+        "RAII",
+        "平台抽象"
+      ],
       "rationale": "成熟跨平台通信核心，覆盖状态机、线程与平台抽象。",
       "limitations": []
     },
@@ -280,11 +336,22 @@
       "project_type": "头文件型枚举反射库",
       "primary_domain": "数据表示与泛型基础库",
       "cpp_standard": "C++17",
-      "build_systems": ["CMake", "Meson", "Bazel"],
+      "build_systems": [
+        "CMake",
+        "Meson",
+        "Bazel"
+      ],
       "license_spdx": "MIT",
-      "idiom_focus": ["编译期计算", "模板元编程", "类型特征", "字符串视图"],
+      "idiom_focus": [
+        "编译期计算",
+        "模板元编程",
+        "类型特征",
+        "字符串视图"
+      ],
       "rationale": "规模较小但编译期反射与模板技巧独特，可改善现代 C++ 习语覆盖。",
-      "limitations": ["核心文件数较少，不用于规模代表性。"]
+      "limitations": [
+        "核心文件数较少，不用于规模代表性。"
+      ]
     },
     {
       "slug": "mosh",
@@ -294,9 +361,17 @@
       "project_type": "移动网络终端",
       "primary_domain": "网络与分布式系统",
       "cpp_standard": "C++11",
-      "build_systems": ["Autotools"],
+      "build_systems": [
+        "Autotools"
+      ],
       "license_spdx": "GPL-3.0",
-      "idiom_focus": ["网络协议", "状态同步", "加密封装", "RAII", "错误处理"],
+      "idiom_focus": [
+        "网络协议",
+        "状态同步",
+        "加密封装",
+        "RAII",
+        "错误处理"
+      ],
       "rationale": "真实网络命令行应用，补充状态同步、协议与系统接口习语。",
       "limitations": []
     },
@@ -308,11 +383,21 @@
       "project_type": "构建系统命令行工具",
       "primary_domain": "开发工具与工程基础设施",
       "cpp_standard": "C++17",
-      "build_systems": ["CMake"],
+      "build_systems": [
+        "CMake"
+      ],
       "license_spdx": "Apache-2.0",
-      "idiom_focus": ["图算法", "字符串处理", "文件系统", "错误传播", "工程模式"],
+      "idiom_focus": [
+        "图算法",
+        "字符串处理",
+        "文件系统",
+        "错误传播",
+        "工程模式"
+      ],
       "rationale": "成熟工具型项目，结构紧凑且覆盖图、解析器和文件系统模式。",
-      "limitations": ["仓库包含生成脚本，但本任务未执行任何目标仓库脚本。"]
+      "limitations": [
+        "仓库包含生成脚本，但本任务未执行任何目标仓库脚本。"
+      ]
     },
     {
       "slug": "polybar",
@@ -322,9 +407,17 @@
       "project_type": "桌面状态栏应用",
       "primary_domain": "应用与跨平台界面",
       "cpp_standard": "C++17",
-      "build_systems": ["CMake"],
+      "build_systems": [
+        "CMake"
+      ],
       "license_spdx": "MIT",
-      "idiom_focus": ["事件驱动", "RAII", "并发", "模块化", "系统资源封装"],
+      "idiom_focus": [
+        "事件驱动",
+        "RAII",
+        "并发",
+        "模块化",
+        "系统资源封装"
+      ],
       "rationale": "真实桌面应用，补充事件、模块、系统服务与资源生命周期模式。",
       "limitations": []
     },
@@ -336,9 +429,17 @@
       "project_type": "大型桌面网络应用",
       "primary_domain": "应用与跨平台界面",
       "cpp_standard": "C++17",
-      "build_systems": ["CMake"],
+      "build_systems": [
+        "CMake"
+      ],
       "license_spdx": "GPL-2.0-or-later",
-      "idiom_focus": ["Qt 对象模型", "网络", "智能指针", "回调", "工程分层"],
+      "idiom_focus": [
+        "Qt 对象模型",
+        "网络",
+        "智能指针",
+        "回调",
+        "工程分层"
+      ],
       "rationale": "保留原有种子项目，并补充大型 Qt 桌面网络应用代表。",
       "limitations": []
     },
@@ -350,27 +451,24 @@
       "project_type": "跨平台运行时的 C++ 子系统",
       "primary_domain": "应用与跨平台界面",
       "cpp_standard": "C++20",
-      "build_systems": ["CMake", "Buck"],
+      "build_systems": [
+        "CMake",
+        "Buck"
+      ],
       "license_spdx": "MIT",
-      "sparse_paths": ["packages/react-native/ReactCommon"],
-      "idiom_focus": ["跨语言桥接", "智能指针", "移动语义", "并发", "类型擦除"],
+      "sparse_paths": [
+        "packages/react-native/ReactCommon"
+      ],
+      "idiom_focus": [
+        "跨语言桥接",
+        "智能指针",
+        "移动语义",
+        "并发",
+        "类型擦除"
+      ],
       "rationale": "保留原有种子项目，以固定 ReactCommon 稀疏范围覆盖跨语言运行时与平台抽象。",
-      "limitations": ["采用稀疏克隆，仅包含 packages/react-native/ReactCommon；不代表完整仓库。"]
-    },
-    {
-      "slug": "simdjson",
-      "github_full_name": "simdjson/simdjson",
-      "status": "阶段2后排除",
-      "seed_project": false,
-      "project_type": "高性能 JSON 解析库",
-      "cpp_standard": "C++17",
-      "build_systems": ["CMake"],
-      "license_spdx": "Apache-2.0",
-      "idiom_focus": ["SIMD", "模板", "错误码", "迭代器", "平台分派"],
-      "rationale": "阶段1纳入后完成阶段2聚类；聚类被聚合头文件、分发副本和依赖镜像的逐字重复主导，语义候选有效率过低，故不进入后续LLM与主结果统计。",
       "limitations": [
-        "1,031个簇中956个为源码完全重复簇（92.73%）；11,554个簇内成员中9,697个来自 singleheader/（83.9%）；每仓Top100强结构代理率仅7%。",
-        "固定源码与阶段1/2产物作为筛选前证据保留。"
+        "采用稀疏克隆，仅包含 packages/react-native/ReactCommon；不代表完整仓库。"
       ]
     },
     {
@@ -381,9 +479,17 @@
       "project_type": "日志基础库",
       "primary_domain": "开发工具与工程基础设施",
       "cpp_standard": "C++11",
-      "build_systems": ["CMake"],
+      "build_systems": [
+        "CMake"
+      ],
       "license_spdx": "MIT",
-      "idiom_focus": ["并发", "模板", "RAII", "策略对象", "格式化"],
+      "idiom_focus": [
+        "并发",
+        "模板",
+        "RAII",
+        "策略对象",
+        "格式化"
+      ],
       "rationale": "成熟通用基础库，覆盖同步、异步日志、策略与资源管理。",
       "limitations": []
     },
@@ -395,11 +501,21 @@
       "project_type": "并行任务图编程库",
       "primary_domain": "存储与并发基础设施",
       "cpp_standard": "C++17",
-      "build_systems": ["CMake"],
+      "build_systems": [
+        "CMake"
+      ],
       "license_spdx": "MIT",
-      "idiom_focus": ["任务图", "并发", "模板", "移动语义", "工作窃取"],
+      "idiom_focus": [
+        "任务图",
+        "并发",
+        "模板",
+        "移动语义",
+        "工作窃取"
+      ],
       "rationale": "并行领域代表项目，可补充任务图、调度和现代并发习语。",
-      "limitations": ["示例、测试和基准目录被排除。"]
+      "limitations": [
+        "示例、测试和基准目录被排除。"
+      ]
     },
     {
       "slug": "tomlplusplus",
@@ -409,11 +525,22 @@
       "project_type": "头文件型 TOML 库",
       "primary_domain": "数据表示与泛型基础库",
       "cpp_standard": "C++17",
-      "build_systems": ["CMake", "Meson"],
+      "build_systems": [
+        "CMake",
+        "Meson"
+      ],
       "license_spdx": "MIT",
-      "idiom_focus": ["模板", "解析器", "类型安全", "访问器", "异常处理"],
+      "idiom_focus": [
+        "模板",
+        "解析器",
+        "类型安全",
+        "访问器",
+        "异常处理"
+      ],
       "rationale": "现代配置解析库，补充泛型访问、解析器与值类型习语。",
-      "limitations": ["头文件型项目。"]
+      "limitations": [
+        "头文件型项目。"
+      ]
     },
     {
       "slug": "uwebsockets",
@@ -423,11 +550,21 @@
       "project_type": "高性能异步网络库",
       "primary_domain": "网络与分布式系统",
       "cpp_standard": "C++17",
-      "build_systems": ["Make"],
+      "build_systems": [
+        "Make"
+      ],
       "license_spdx": "Apache-2.0",
-      "idiom_focus": ["异步网络", "回调", "模板", "RAII", "事件循环"],
+      "idiom_focus": [
+        "异步网络",
+        "回调",
+        "模板",
+        "RAII",
+        "事件循环"
+      ],
       "rationale": "高性能网络库，可补充事件循环、回调与资源生命周期模式。",
-      "limitations": ["部分低层依赖作为外部组件存在，本任务不构建或链接目标项目。"]
+      "limitations": [
+        "部分低层依赖作为外部组件存在，本任务不构建或链接目标项目。"
+      ]
     },
     {
       "slug": "yaml-cpp",
@@ -437,9 +574,18 @@
       "project_type": "YAML 解析与序列化库",
       "primary_domain": "数据表示与泛型基础库",
       "cpp_standard": "C++11",
-      "build_systems": ["CMake", "Bazel"],
+      "build_systems": [
+        "CMake",
+        "Bazel"
+      ],
       "license_spdx": "MIT",
-      "idiom_focus": ["解析器", "迭代器", "异常处理", "节点树", "STL 容器"],
+      "idiom_focus": [
+        "解析器",
+        "迭代器",
+        "异常处理",
+        "节点树",
+        "STL 容器"
+      ],
       "rationale": "成熟解析库，覆盖节点树、迭代器与序列化错误处理。",
       "limitations": []
     },
@@ -451,11 +597,21 @@
       "project_type": "跨平台布局引擎",
       "primary_domain": "应用与跨平台界面",
       "cpp_standard": "C++20",
-      "build_systems": ["CMake"],
+      "build_systems": [
+        "CMake"
+      ],
       "license_spdx": "MIT",
-      "idiom_focus": ["树遍历", "值类型", "缓存", "布局算法", "跨平台接口"],
+      "idiom_focus": [
+        "树遍历",
+        "值类型",
+        "缓存",
+        "布局算法",
+        "跨平台接口"
+      ],
       "rationale": "算法型跨平台库，补充树结构、缓存和布局计算习语。",
-      "limitations": ["宏与平台条件语法使可靠 AST 字节覆盖率低于 0.5，使用时应结合逐文件诊断。"]
+      "limitations": [
+        "宏与平台条件语法使可靠 AST 字节覆盖率低于 0.5，使用时应结合逐文件诊断。"
+      ]
     }
   ]
 }

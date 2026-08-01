@@ -1,5 +1,4 @@
 import asyncio
-import hashlib
 import json
 import math
 import pickle
@@ -17,7 +16,6 @@ from src.idiom_judgment.abstraction import (
 )
 from src.idiom_judgment.judge_clusters import judge_clusters
 from src.idiom_judgment.idiom_taxonomy import (
-    IDIOM_TAXONOMY_VERSION,
     KNOWN_IDIOM_TYPES,
     REPOSITORY_SPECIFIC_IDIOM_LABEL,
     normalize_idiom_classification,
@@ -28,7 +26,6 @@ from src.idiom_judgment.pipeline import (
 )
 from src.idiom_judgment.rules import evaluate_cluster_rules
 from src.idiom_judgment.schema import (
-    IDIOM_JUDGMENT_SCHEMA_VERSION,
     ClusterCandidate,
     IdiomJudgmentResult,
     build_judgment_artifact,
@@ -99,7 +96,6 @@ class IdiomJudgmentTests(unittest.TestCase):
             is_idiom=True,
         )
         self.assertFalse(invalid)
-        self.assertEqual(known.taxonomy_version, IDIOM_TAXONOMY_VERSION)
         self.assertEqual(known.catalog_ids, ["raii"])
         self.assertIn("RAII", known.label)
 
@@ -164,7 +160,6 @@ class IdiomJudgmentTests(unittest.TestCase):
                 )
             load_env.assert_called_once_with()
             self.assertEqual(report["summary"]["input_cluster_count"], 0)
-            self.assertIn("prompt_contracts", report["run"])
 
     def test_rule_only_checkpoint_can_resume_without_reprocessing(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -267,7 +262,6 @@ class IdiomJudgmentTests(unittest.TestCase):
                 "}\n"
             )
             (root / "sample.cpp").write_text(source, encoding="utf-8")
-            digest = hashlib.sha256(source.encode("utf-8")).hexdigest()
             base = _candidate(
                 [
                     "int result = load(a); consume(result);",
@@ -284,7 +278,6 @@ class IdiomJudgmentTests(unittest.TestCase):
                     "kind": "compound_statement",
                     "ast_num": 12,
                     "subtree_size": 12,
-                    "source_sha256": digest,
                 },
             ]
             candidate = ClusterCandidate(
@@ -355,13 +348,9 @@ class IdiomJudgmentTests(unittest.TestCase):
         artifact = build_judgment_artifact("sample", [], rule_only=True)
         self.assertEqual(artifact["artifact_type"], "idiom_judgment")
         self.assertEqual(artifact["stage"], 3)
-        self.assertEqual(
-            artifact["idiom_judgment_schema_version"],
-            IDIOM_JUDGMENT_SCHEMA_VERSION,
-        )
         self.assertNotIn("manual_review", artifact)
 
-    def test_cluster_candidate_uses_complete_stage2_member_sources(self):
+    def test_cluster_candidate_uses_complete_member_sources(self):
         candidate = ClusterCandidate.from_cluster_row(
             "sample",
             {
@@ -375,7 +364,6 @@ class IdiomJudgmentTests(unittest.TestCase):
                     "1-0-1-15",
                     {"code_snippet": "consume(alpha);"},
                 ],
-                # 模拟旧产物中部分 info 缺少 code_snippet；成员源码仍须完整。
                 "infos": [
                     [
                         "sample",

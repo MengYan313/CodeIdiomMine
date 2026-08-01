@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import math
 from dataclasses import dataclass
@@ -11,7 +10,7 @@ from typing import List
 from autogen_core import MessageContext, message_handler
 from autogen_ext.models.openai import OpenAIChatCompletionClient
 
-from ..agents._base import JsonLLMAgent
+from ..agents.base import JsonLLMAgent
 from ..llm.prompting import build_json_system_prompt
 from .smell_taxonomy import (
     SEVERITY_BASE_RISK,
@@ -51,11 +50,6 @@ _SYSTEM_MESSAGE = build_json_system_prompt(
     ),
     stop_rules=("没有可定位异味时 findings 返回空数组，并简要说明未发现可见异味。",),
 )
-SMELL_REVIEW_PROMPT_VERSION = 3
-SMELL_REVIEW_PROMPT_SHA256 = hashlib.sha256(
-    _SYSTEM_MESSAGE.encode("utf-8")
-).hexdigest()
-
 _RESPONSE_SCHEMA = {
     "type": "object",
     "properties": {

@@ -6,9 +6,6 @@ from dataclasses import dataclass
 from typing import Any, List, Mapping, Optional, Sequence
 
 
-TOKEN_BUDGET_POLICY_VERSION = "parser-token-budget-v1"
-
-
 def resolve_max_input_tokens(
     configured_limit: int,
     requested_limit: Optional[int],
@@ -107,7 +104,6 @@ class TokenBudget:
         degraded_from: Optional[str] = None,
     ) -> dict[str, Any]:
         value: dict[str, Any] = {
-            "policy_version": TOKEN_BUDGET_POLICY_VERSION,
             "decision_stage": "parser",
             "model_name": self.model_name,
             "token_budget": self.max_input_tokens,

@@ -165,13 +165,11 @@ def _idiomine_embedding_fixture(data):
             **ast_a[1],
             "candidate_level": "region",
             "candidate_origin": "semantic_def_use",
-            "analysis_version": "def-use-v1",
         }
         semantic_b = {
             **ast_b[1],
             "candidate_level": "region",
             "candidate_origin": "semantic_def_use",
-            "analysis_version": "def-use-v1",
         }
         infos = [
             [project, files[0], ast_a[0]["extent"], semantic_a],
@@ -210,7 +208,7 @@ class _QueuedJsonClient:
 
 
 class BaselineEndToEndTests(unittest.TestCase):
-    def test_output_contract_rejects_legacy_caps(self):
+    def test_output_contract_rejects_invalid_caps(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
             manifest_path = root / "baseline-manifest.json"
@@ -254,7 +252,6 @@ class BaselineEndToEndTests(unittest.TestCase):
                     {
                         "parameters": {
                             "candidate_origin": "semantic_def_use",
-                            "analysis_version": "def-use-v1",
                             "embedding_model": "synthetic",
                             "eps": 0.25,
                             "min_samples": 2,
@@ -311,7 +308,6 @@ class BaselineEndToEndTests(unittest.TestCase):
                     {
                         "parameters": {
                             "candidate_origin": "semantic_def_use",
-                            "analysis_version": "def-use-v1",
                             "embedding_model": "synthetic",
                             "eps": 0.25,
                             "min_samples": 2,
@@ -665,14 +661,14 @@ class BaselineEndToEndTests(unittest.TestCase):
             )
 
             with (rules_dir / "alpha_idiom.pkl").open("rb") as file:
-                rules_idioms = pickle.load(file)
+                rules_idioms = pickle.load(file)["accepted"]
             self.assertNotIn("mock_provenance", rules_idioms[0])
             self.assertEqual(
                 rules_idioms[0]["baseline_provenance"]["method"],
                 "rules_embedding_clustering",
             )
             with (idiomine_dir / "alpha_idiom.pkl").open("rb") as file:
-                idiomine_idioms = pickle.load(file)
+                idiomine_idioms = pickle.load(file)["accepted"]
             self.assertEqual(
                 idiomine_idioms[0]["baseline_provenance"]["method"],
                 "idiomine_cpp",

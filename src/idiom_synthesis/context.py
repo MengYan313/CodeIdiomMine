@@ -11,7 +11,6 @@ from ..idiom_judgment.abstraction import sanitize_template_for_parser
 from ..idiom_judgment.source_context import (
     load_verified_source_context,
     representative_source_identity,
-    representative_source_sha256,
 )
 from .schema import IdiomCandidate
 
@@ -43,7 +42,7 @@ def load_group_context_with_evidence(
     max_lines: int = 300,
     max_chars: int = 12000,
 ) -> tuple[str, dict[str, object]]:
-    """读取成员共同出现的源码范围，并返回可审计的身份与哈希证据。"""
+    """读取成员共同出现的源码范围及位置证据。"""
 
     evidence: dict[str, object] = {
         "mode": SYNTHESIS_CONTEXT_MODE,
@@ -67,11 +66,6 @@ def load_group_context_with_evidence(
     if expected_identity is None:
         evidence["failure_kind"] = "invalid_representative_source_identity"
         return "", evidence
-    expected_hash = representative_source_sha256(first.context_info)
-    if not expected_hash:
-        evidence["failure_kind"] = "source_hash_missing"
-        return "", evidence
-
     matched_occurrences: list[dict[str, object]] = []
     for candidate in candidates:
         for info in candidate.region_source_infos:
@@ -80,9 +74,6 @@ def load_group_context_with_evidence(
                 != expected_identity
             ):
                 evidence["failure_kind"] = "member_region_mismatch"
-                return "", evidence
-            if representative_source_sha256(info) != expected_hash:
-                evidence["failure_kind"] = "member_source_hash_mismatch"
                 return "", evidence
             node = info[3]
             matched_occurrences.append(

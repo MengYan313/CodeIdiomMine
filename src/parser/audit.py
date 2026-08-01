@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import math
 import re
@@ -17,26 +16,15 @@ import pandas as pd
 import tree_sitter
 
 from .ast_parser import ASTParser
-from .candidates import (
-    QUALITY_PROFILE,
-    SUPPORTED_PROFILES,
-    select_candidates,
-)
+from .candidates import select_candidates
 from .file_scanner import FileScanner
 from .cpp_adapter import CPP_ADAPTER
 from ..common.logging import get_logger
-from ..common.node_kinds import BLOCK_KINDS, FUNCTION_KINDS, STATEMENT_KINDS
 
 
 logger = get_logger(__name__)
 
-AUDIT_SCHEMA_VERSION = 1
 WHITESPACE_BYTES = frozenset(b" \t\r\n\v\f")
-
-
-def _sha256_file(path: Path) -> str:
-    with path.open("rb") as stream:
-        return hashlib.file_digest(stream, "sha256").hexdigest()
 
 
 def _decode_bytes(data: bytes) -> str:
@@ -48,12 +36,6 @@ def _decode_bytes(data: bytes) -> str:
         return data.decode("latin-1")
 
 
-def _legacy_clean(code: str) -> str:
-    code = re.sub(r"//.*?$", "", code, flags=re.MULTILINE)
-    code = re.sub(r"/\*.*?\*/", "", code, flags=re.DOTALL)
-    return re.sub(r"\n\s*\n", "\n", code).strip()
-
-
 def _normalized_text(code: str) -> str:
     return re.sub(r"\s+", " ", code).strip()
 
@@ -63,16 +45,6 @@ def _extent_tuple(extent: str) -> Optional[Tuple[int, int, int, int]]:
     if not match:
         return None
     return tuple(map(int, match.groups()))  # type: ignore[return-value]
-
-
-def _contains_extent(outer: str, inner: str) -> bool:
-    outer_value = _extent_tuple(outer)
-    inner_value = _extent_tuple(inner)
-    if outer_value is None or inner_value is None:
-        return False
-    osl, osc, oel, oec = outer_value
-    isl, isc, iel, iec = inner_value
-    return (osl, osc) <= (isl, isc) and (iel, iec) <= (oel, oec)
 
 
 def _line_offsets(source: bytes) -> List[int]:
@@ -207,8 +179,8 @@ class CandidateAccumulator:
     count: int = 0
     byte_lengths: List[int] = field(default_factory=list)
     line_lengths: List[int] = field(default_factory=list)
-    content_hashes: Counter[str] = field(default_factory=Counter)
-    normalized_hashes: Counter[str] = field(default_factory=Counter)
+    contents: Counter[str] = field(default_factory=Counter)
+    normalized_contents: Counter[str] = field(default_factory=Counter)
     source_ranges: Counter[str] = field(default_factory=Counter)
     structurally_complete: int = 0
     exact_mapping_matches: int = 0
@@ -239,9 +211,8 @@ class CandidateAccumulator:
         line_length = code.count("\n") + 1 if code else 0
         self.byte_lengths.append(byte_length)
         self.line_lengths.append(line_length)
-        self.content_hashes[hashlib.sha256(encoded).hexdigest()] += 1
-        normalized = _normalized_text(code).encode("utf-8", errors="surrogatepass")
-        self.normalized_hashes[hashlib.sha256(normalized).hexdigest()] += 1
+        self.contents[code] += 1
+        self.normalized_contents[_normalized_text(code)] += 1
         extent = str(node_info.get("extent") or "")
         self.source_ranges[f"{project}\0{source_path}\0{extent}"] += 1
         self.kinds[str(node_info.get("kind") or "")] += 1
@@ -281,19 +252,19 @@ class CandidateAccumulator:
         del self.longest_samples[10:]
 
     def to_dict(self) -> Dict[str, Any]:
-        duplicate_instances = sum(value - 1 for value in self.content_hashes.values())
+        duplicate_instances = sum(value - 1 for value in self.contents.values())
         normalized_duplicate_instances = sum(
-            value - 1 for value in self.normalized_hashes.values()
+            value - 1 for value in self.normalized_contents.values()
         )
         duplicate_ranges = sum(value - 1 for value in self.source_ranges.values())
         return {
             "count": self.count,
             "byte_length": _distribution(self.byte_lengths),
             "line_length": _distribution(self.line_lengths),
-            "exact_content_unique": len(self.content_hashes),
+            "exact_content_unique": len(self.contents),
             "exact_content_duplicate_instances": duplicate_instances,
             "exact_content_duplicate_rate": duplicate_instances / self.count if self.count else 0.0,
-            "normalized_content_unique": len(self.normalized_hashes),
+            "normalized_content_unique": len(self.normalized_contents),
             "normalized_content_duplicate_instances": normalized_duplicate_instances,
             "normalized_content_duplicate_rate": (
                 normalized_duplicate_instances / self.count if self.count else 0.0
@@ -474,28 +445,6 @@ def _source_evidence_dict(evidence: SourceEvidence) -> Dict[str, Any]:
     }
 
 
-def _legacy_candidates(
-    function_ast: Sequence[Mapping[str, Any]],
-) -> Iterator[Tuple[str, int, Mapping[str, Any]]]:
-    if len(function_ast) < 10:
-        return
-    extent_valid = "0-0-0-0"
-    for index, node_info in enumerate(function_ast):
-        code = str(node_info.get("code_snippet") or "")
-        kind = str(node_info.get("kind") or "")
-        extent = str(node_info.get("extent") or "")
-        ast_num = int(node_info.get("ast_num", 0) or 0)
-        if not code or ast_num < 5:
-            continue
-        if kind in FUNCTION_KINDS:
-            yield "function", index, node_info
-        elif kind in BLOCK_KINDS:
-            yield "region", index, node_info
-        elif kind in STATEMENT_KINDS and not _contains_extent(extent_valid, extent):
-            extent_valid = extent
-            yield "statement", index, node_info
-
-
 def _subtree_has_error(
     function_ast: Sequence[Mapping[str, Any]],
     root_index: int,
@@ -561,7 +510,6 @@ def audit_parser(
     elapsed_seconds: Optional[float] = None,
     peak_rss_bytes: Optional[int] = None,
     repeat_dataset_path: Optional[Path] = None,
-    candidate_profile: str = QUALITY_PROFILE,
     long_line_threshold: int = 80,
     long_byte_threshold: int = 4000,
 ) -> Dict[str, Any]:
@@ -593,7 +541,6 @@ def audit_parser(
     mapping_total = 0
     mapping_range_resolved = 0
     mapping_exact = 0
-    mapping_legacy_transform = 0
     mapping_explicit = 0
     mapping_explicit_byte_range = 0
     mapping_explicit_file_identity = 0
@@ -645,15 +592,8 @@ def audit_parser(
                         code = str(node_info.get("code_snippet") or "")
                         if node_info.get("start_byte") is not None:
                             mapping_exact += int(code == raw_text)
-                            mapping_legacy_transform += int(
-                                code == _legacy_clean(raw_text)
-                            )
                         else:
-                            legacy_text = raw_text.strip()
-                            mapping_exact += int(code == legacy_text)
-                            mapping_legacy_transform += int(
-                                code == _legacy_clean(legacy_text)
-                            )
+                            mapping_exact += int(code == raw_text.strip())
                     mapping_explicit += int(
                         node_info.get("source_file_id") is not None
                         and node_info.get("start_byte") is not None
@@ -667,10 +607,7 @@ def audit_parser(
                         node_info.get("source_file_id") is not None
                     )
 
-                for candidate in select_candidates(
-                    function_ast,
-                    profile=candidate_profile,
-                ):
+                for candidate in select_candidates(function_ast):
                     level = candidate.level
                     node_info = candidate.node_info
                     extent = str(node_info.get("extent") or "")
@@ -752,35 +689,28 @@ def audit_parser(
         for project in projects
     }
     source_summary = _aggregate_sources(source_evidence.values())
-    dataset_digest = _sha256_file(dataset_path)
-    repeat_digest = (
-        _sha256_file(repeat_dataset_path)
+    repeat_matches = (
+        dataset_path.read_bytes() == repeat_dataset_path.read_bytes()
         if repeat_dataset_path is not None and repeat_dataset_path.exists()
         else None
     )
     result: Dict[str, Any] = {
-        "schema_version": AUDIT_SCHEMA_VERSION,
         "configuration": {
-            "candidate_profile": candidate_profile,
             "long_line_threshold": long_line_threshold,
             "long_byte_threshold": long_byte_threshold,
         },
         "inputs": {
             "source_root": source_root.as_posix(),
             "dataset": dataset_path.as_posix(),
-            "dataset_sha256": dataset_digest,
             "dataset_bytes": dataset_path.stat().st_size,
             "repeat_dataset": (
                 repeat_dataset_path.as_posix() if repeat_dataset_path else None
             ),
-            "repeat_dataset_sha256": repeat_digest,
         },
         "performance": {
             "elapsed_seconds": elapsed_seconds,
             "peak_rss_bytes": peak_rss_bytes,
-            "byte_identical_repeat": (
-                dataset_digest == repeat_digest if repeat_digest is not None else None
-            ),
+            "byte_identical_repeat": repeat_matches,
         },
         "source_summary": source_summary,
         "source_projects": source_projects,
@@ -800,10 +730,6 @@ def audit_parser(
             ),
             "verbatim_match_count": mapping_exact,
             "verbatim_match_rate": mapping_exact / mapping_total if mapping_total else 0.0,
-            "legacy_transform_match_count": mapping_legacy_transform,
-            "legacy_transform_match_rate": (
-                mapping_legacy_transform / mapping_total if mapping_total else 0.0
-            ),
             "explicit_byte_mapping_count": mapping_explicit,
             "explicit_byte_mapping_rate": (
                 mapping_explicit / mapping_total if mapping_total else 0.0
@@ -849,12 +775,6 @@ def main() -> None:
     argument_parser.add_argument("--elapsed-seconds", type=float)
     argument_parser.add_argument("--peak-rss-bytes", type=int)
     argument_parser.add_argument("--repeat-dataset")
-    argument_parser.add_argument(
-        "--candidate-profile",
-        choices=SUPPORTED_PROFILES,
-        default=QUALITY_PROFILE,
-        help="候选统计策略（默认: quality-v2；legacy 用于历史基线）",
-    )
     argument_parser.add_argument("--long-line-threshold", type=int, default=80)
     argument_parser.add_argument("--long-byte-threshold", type=int, default=4000)
     args = argument_parser.parse_args()
@@ -868,7 +788,6 @@ def main() -> None:
         repeat_dataset_path=(
             Path(args.repeat_dataset) if args.repeat_dataset else None
         ),
-        candidate_profile=args.candidate_profile,
         long_line_threshold=args.long_line_threshold,
         long_byte_threshold=args.long_byte_threshold,
     )

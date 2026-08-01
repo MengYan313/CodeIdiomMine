@@ -3,40 +3,33 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
-import json
 from dataclasses import asdict
 from typing import Optional, Sequence
 
 from autogen_core import SingleThreadedAgentRuntime
 from autogen_ext.models.openai import OpenAIChatCompletionClient
 
-from ..agents._base import (
+from ..agents.base import (
     agent_trace,
-    create_model_client,
     dispatch_with_fallback,
     not_run_trace,
 )
 from ..agents.base import default_agent_id, register_agent
 from ..common.logging import get_logger
+from ..llm.client import create_model_client
 from ..idiom_judgment.smell_review_agent import (
     SMELL_REVIEW_AGENT_TYPE,
-    SMELL_REVIEW_PROMPT_SHA256,
-    SMELL_REVIEW_PROMPT_VERSION,
     SmellReviewAgent,
     SmellReviewRequest,
     SmellReviewResult,
 )
 from ..idiom_judgment.smell_taxonomy import build_smell_gate
 from ..idiom_judgment.idiom_taxonomy import (
-    IDIOM_TAXONOMY_VERSION,
     KNOWN_IDIOM_TYPES,
     REPOSITORY_SPECIFIC_IDIOM_LABEL,
     empty_idiom_classification,
 )
 from .assembly_agent import (
-    IDIOM_ASSEMBLY_PROMPT_SHA256,
-    IDIOM_ASSEMBLY_PROMPT_VERSION,
     IdiomAssemblyAgent,
     IdiomAssemblyRequest,
     IdiomAssemblyResult,
@@ -49,16 +42,12 @@ from .context import (
 )
 from .planning_agent import (
     DEFAULT_MAX_PLANS_PER_REGION,
-    SYNTHESIS_PLANNING_PROMPT_SHA256,
-    SYNTHESIS_PLANNING_PROMPT_VERSION,
     SynthesisPlan,
     SynthesisPlanningAgent,
     SynthesisPlanningRequest,
     SynthesisPlanningResult,
 )
 from .review_agent import (
-    SYNTHESIS_REVIEW_PROMPT_SHA256,
-    SYNTHESIS_REVIEW_PROMPT_VERSION,
     SynthesisReviewAgent,
     SynthesisReviewRequest,
     SynthesisReviewResult,
@@ -67,7 +56,6 @@ from .schema import SynthesisResult, IdiomCandidate
 
 
 SYNTHESIS_ACCEPTANCE_SCORE = 70.0
-STAGE2_SYNTHESIS_ACCEPTANCE_SCORE = 80.0
 _SYNTHESIS_AGENT_STAGES = (
     "planning",
     "assembly",
@@ -84,14 +72,12 @@ def _not_run_traces(reason: str) -> dict[str, dict[str, object]]:
     }
 
 
-def _stable_key(kind: str, value: object) -> str:
-    encoded = json.dumps(
-        value,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode("utf-8")
-    return f"{kind}:{hashlib.sha256(encoded).hexdigest()}"
+def _combination_key(candidate_ids: Sequence[str]) -> str:
+    return "combination:" + "+".join(sorted(candidate_ids))
+
+
+def _region_key(context_key: tuple[str, str, str]) -> str:
+    return "region:" + "|".join(context_key)
 
 
 def normalize_synthesis_plans(
@@ -117,7 +103,6 @@ def normalize_synthesis_plans(
             ],
         }
 
-    region_key = _stable_key("region", candidates[0].context_key)
     seen: set[tuple[int, ...]] = set()
     normalized: list[dict[str, object]] = []
     for position, plan in enumerate(plans):
@@ -169,13 +154,7 @@ def normalize_synthesis_plans(
                     plan.expected_improvement.strip()
                 ),
                 "reason": plan.reason.strip(),
-                "combination_key": _stable_key(
-                    "combination",
-                    {
-                        "region_key": region_key,
-                        "candidate_ids": sorted(candidate_ids),
-                    },
-                ),
+                "combination_key": _combination_key(candidate_ids),
             }
         )
     return normalized, {
@@ -189,26 +168,19 @@ def normalize_synthesis_plans(
 
 def build_synthesis_scorecard(
     *,
-    contains_stage2_input: bool,
     quality_score: float,
 ) -> dict[str, float]:
     """只记录合成质量门槛，不混入代码异味风险。"""
 
-    threshold = (
-        STAGE2_SYNTHESIS_ACCEPTANCE_SCORE
-        if contains_stage2_input
-        else SYNTHESIS_ACCEPTANCE_SCORE
-    )
     return {
         "quality_score": round(quality_score, 4),
         "final_score": round(quality_score, 4),
-        "acceptance_threshold": threshold,
+        "acceptance_threshold": SYNTHESIS_ACCEPTANCE_SCORE,
     }
 
 
 def decide_synthesis_status(
     *,
-    contains_stage2_input: bool,
     merged_code_present: bool,
     syntax_valid: bool,
     unsupported_calls: Sequence[str],
@@ -237,15 +209,10 @@ def decide_synthesis_status(
         return "rejected", "合成结果相较来源习语没有明确质量增益。"
 
     scorecard = build_synthesis_scorecard(
-        contains_stage2_input=contains_stage2_input,
         quality_score=quality_score,
     )
     if scorecard["final_score"] >= scorecard["acceptance_threshold"]:
-        return "accepted", (
-            "阶段2合同输入满足严格质量阈值（正式流程不执行）。"
-            if contains_stage2_input
-            else "已判断习语合成后产生明确质量增益。"
-        )
+        return "accepted", "已判断习语合成后产生明确质量增益。"
     return (
         "rejected",
         f"合成总分 {scorecard['final_score']:.2f} 未达到自动接受门槛。",
@@ -280,9 +247,6 @@ class IdiomSynthesisPipeline:
             "region_grouping": "member_source_region_cooccurrence",
             "decision_policy": {
                 "acceptance_score": SYNTHESIS_ACCEPTANCE_SCORE,
-                "stage2_contract_score": (
-                    STAGE2_SYNTHESIS_ACCEPTANCE_SCORE
-                ),
                 "calibration_status": (
                     "synthetic_smoke_only_pilot_required"
                 ),
@@ -291,29 +255,10 @@ class IdiomSynthesisPipeline:
             "max_plans_per_region": self.max_plans_per_region,
             "planning_mode": "single_region_call_batched_plans",
             "idiom_taxonomy": {
-                "version": IDIOM_TAXONOMY_VERSION,
                 "known_type_count": len(KNOWN_IDIOM_TYPES),
                 "repository_specific_label": (
                     REPOSITORY_SPECIFIC_IDIOM_LABEL
                 ),
-            },
-            "prompt_contracts": {
-                "planning": {
-                    "version": SYNTHESIS_PLANNING_PROMPT_VERSION,
-                    "sha256": SYNTHESIS_PLANNING_PROMPT_SHA256,
-                },
-                "assembly": {
-                    "version": IDIOM_ASSEMBLY_PROMPT_VERSION,
-                    "sha256": IDIOM_ASSEMBLY_PROMPT_SHA256,
-                },
-                "quality_review": {
-                    "version": SYNTHESIS_REVIEW_PROMPT_VERSION,
-                    "sha256": SYNTHESIS_REVIEW_PROMPT_SHA256,
-                },
-                "smell_review": {
-                    "version": SMELL_REVIEW_PROMPT_VERSION,
-                    "sha256": SMELL_REVIEW_PROMPT_SHA256,
-                },
             },
         }
 
@@ -366,7 +311,6 @@ class IdiomSynthesisPipeline:
             "matched_occurrences": candidate.occurrence_records(),
             "source_order_byte": candidate.first_source_byte,
             "support_count": candidate.support_count,
-            "input_stage": candidate.input_stage,
             "intent": candidate.intent,
             "judgment_status": candidate.judgment_status,
             "judgment_reason": candidate.judgment_reason,
@@ -412,10 +356,7 @@ class IdiomSynthesisPipeline:
                     selected=list(candidates),
                     context_evidence=context_evidence,
                     region_planning={
-                        "region_key": _stable_key(
-                            "region",
-                            context_key,
-                        ),
+                        "region_key": _region_key(context_key),
                         "candidate_ids": [
                             candidate.candidate_id
                             for candidate in candidates
@@ -429,10 +370,6 @@ class IdiomSynthesisPipeline:
                         "candidate_limit_exceeded"
                     ),
                     scorecard=build_synthesis_scorecard(
-                        contains_stage2_input=any(
-                            candidate.input_stage == 2
-                            for candidate in candidates
-                        ),
                         quality_score=0.0,
                     ),
                     deterministic_checks={
@@ -452,9 +389,6 @@ class IdiomSynthesisPipeline:
             available_context,
             context_evidence,
         ) = load_group_context_with_evidence(group_candidates, source_root)
-        contains_stage2_input = any(
-            candidate.input_stage == 2 for candidate in group_candidates
-        )
         context_evidence.update(
             {
                 "source_root_supplied": source_root is not None,
@@ -468,10 +402,7 @@ class IdiomSynthesisPipeline:
                     status="rejected",
                     context_evidence=context_evidence,
                     region_planning={
-                        "region_key": _stable_key(
-                            "region",
-                            context_key,
-                        ),
+                        "region_key": _region_key(context_key),
                         "candidate_ids": [
                             candidate.candidate_id
                             for candidate in group_candidates
@@ -483,7 +414,6 @@ class IdiomSynthesisPipeline:
                     },
                     agent_trace=_not_run_traces("context_gate_rejected"),
                     scorecard=build_synthesis_scorecard(
-                        contains_stage2_input=contains_stage2_input,
                         quality_score=0.0,
                     ),
                     deterministic_checks={
@@ -525,7 +455,7 @@ class IdiomSynthesisPipeline:
             max_plans_per_region=self.max_plans_per_region,
         )
         region_planning = {
-            "region_key": _stable_key("region", context_key),
+            "region_key": _region_key(context_key),
             "candidate_ids": [
                 candidate.candidate_id for candidate in group_candidates
             ],
@@ -563,7 +493,6 @@ class IdiomSynthesisPipeline:
                         },
                     },
                     scorecard=build_synthesis_scorecard(
-                        contains_stage2_input=contains_stage2_input,
                         quality_score=0.0,
                     ),
                     deterministic_checks={
@@ -615,10 +544,6 @@ class IdiomSynthesisPipeline:
                         },
                     },
                     scorecard=build_synthesis_scorecard(
-                        contains_stage2_input=any(
-                            candidate.input_stage == 2
-                            for candidate in selected
-                        ),
                         quality_score=0.0,
                     ),
                     deterministic_checks={
@@ -679,9 +604,6 @@ class IdiomSynthesisPipeline:
             "unsupported_call_targets": unsupported_calls,
             "context_contract_valid": context_contract_valid,
         }
-        selected_contains_stage2 = any(
-            candidate.input_stage == 2 for candidate in selected
-        )
         if not merged or not syntax_valid or unsupported_calls:
             if not merged:
                 reason = (
@@ -722,7 +644,6 @@ class IdiomSynthesisPipeline:
                     ),
                 },
                 scorecard=build_synthesis_scorecard(
-                    contains_stage2_input=selected_contains_stage2,
                     quality_score=0.0,
                 ),
                 deterministic_checks=deterministic,
@@ -809,7 +730,6 @@ class IdiomSynthesisPipeline:
         review_data = asdict(review_result)
         smell_data = asdict(smell_result)
         status, reason = decide_synthesis_status(
-            contains_stage2_input=selected_contains_stage2,
             merged_code_present=bool(merged),
             syntax_valid=syntax_valid,
             unsupported_calls=unsupported_calls,
@@ -821,7 +741,6 @@ class IdiomSynthesisPipeline:
             review_unsupported_additions=review_result.unsupported_additions,
         )
         scorecard = build_synthesis_scorecard(
-            contains_stage2_input=selected_contains_stage2,
             quality_score=review_result.quality_score,
         )
         smell_gate = build_smell_gate(

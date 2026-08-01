@@ -240,7 +240,6 @@ def save_parse_audit(
         "status_counts": status_counts,
     }
     payload = {
-        "schema_version": 2,
         "parser_backend": "tree-sitter-cpp",
         "dataset_schema": ["project", "cppFile", "func_ast", "func_src"],
         "input_path": input_path,

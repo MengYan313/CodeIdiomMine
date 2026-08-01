@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import math
 import pickle
@@ -16,12 +15,10 @@ from .smell_taxonomy import (
     SMELL_CATEGORY_BY_ID,
     SMELL_REJECTION_THRESHOLD,
     SMELL_TAXONOMY_SOURCES,
-    SMELL_TAXONOMY_VERSION,
 )
 
 
 logger = get_logger(__name__)
-SMELL_AUDIT_SCHEMA_VERSION = 1
 
 
 def _json_safe(value: Any) -> Any:
@@ -34,10 +31,6 @@ def _json_safe(value: Any) -> Any:
     if isinstance(value, (list, tuple)):
         return [_json_safe(item) for item in value]
     return str(value)
-
-
-def _stable_digest(value: str) -> str:
-    return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
 def _candidate_id(stage: int, record: Mapping[str, Any]) -> str:
@@ -54,24 +47,8 @@ def _audit_id(
     candidate_id: str,
     review_input: Mapping[str, Any],
 ) -> str:
-    safe_review_input = _json_safe(review_input)
-    identity = json.dumps(
-        {
-            "stage": stage,
-            "project": project,
-            "candidate_id": candidate_id,
-            "review_input_sha256": _stable_digest(
-                json.dumps(
-                    safe_review_input,
-                    ensure_ascii=False,
-                    sort_keys=True,
-                )
-            ),
-        },
-        ensure_ascii=False,
-        sort_keys=True,
-    )
-    return _stable_digest(identity)[:24]
+    del review_input
+    return f"{stage}:{project}:{candidate_id}"
 
 
 def extract_smell_audit_samples(
@@ -170,7 +147,7 @@ def extract_smell_audit_samples(
 
 
 def _sample_order(sample: Mapping[str, Any], seed: str) -> str:
-    return _stable_digest(f"{seed}:{sample['audit_id']}")
+    return f"{seed}:{sample['audit_id']}"
 
 
 def _category_diverse_samples(
@@ -265,7 +242,7 @@ def build_smell_audit_payload(
     artifact_paths: Iterable[str | Path],
     *,
     limit: int = 200,
-    seed: str = "smell-audit-v1",
+    seed: str = "smell-audit",
 ) -> Dict[str, Any]:
     """生成可盲审的分层样本与人工标签模板。"""
 
@@ -290,8 +267,6 @@ def build_smell_audit_payload(
         for category in SMELL_CATEGORY_BY_ID
     }
     return {
-        "smell_audit_schema_version": SMELL_AUDIT_SCHEMA_VERSION,
-        "taxonomy_version": SMELL_TAXONOMY_VERSION,
         "smell_threshold": SMELL_REJECTION_THRESHOLD,
         "sampling": {
             "seed": seed,
@@ -476,8 +451,6 @@ def evaluate_smell_audit(
             "categories": _category_metrics(stage_pairs),
         }
     return {
-        "smell_audit_schema_version": SMELL_AUDIT_SCHEMA_VERSION,
-        "taxonomy_version": SMELL_TAXONOMY_VERSION,
         "smell_threshold": samples_payload.get("smell_threshold"),
         "sample_count": len(samples),
         "provided_label_count": len(label_by_id),
@@ -534,7 +507,7 @@ def main() -> None:
     )
     prepare.add_argument("--output", required=True, help="审计样本 JSON")
     prepare.add_argument("--limit", type=int, default=200)
-    prepare.add_argument("--seed", default="smell-audit-v1")
+    prepare.add_argument("--seed", default="smell-audit")
 
     evaluate = subparsers.add_parser("evaluate", help="评价人工标签")
     evaluate.add_argument("--samples", required=True, help="prepare 生成的 JSON")

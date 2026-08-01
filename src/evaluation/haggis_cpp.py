@@ -10,7 +10,6 @@ Haggis。解析器、符号编码和采样器差异会写入每个产物的 prov
 from __future__ import annotations
 
 import argparse
-import hashlib
 import math
 import random
 from collections import Counter, defaultdict
@@ -27,7 +26,6 @@ from .baseline_common import make_idiom_record, write_project_idioms, write_run_
 
 logger = get_logger(__name__)
 
-HAGGIS_REFERENCE_COMMIT = "8b241a195fe860713c8dbbee387710533b97258c"
 CANDIDATE_KINDS = FUNCTION_KINDS | BLOCK_KINDS | STATEMENT_KINDS
 FragmentKey = Tuple[str, Tuple[Any, ...]]
 
@@ -372,8 +370,9 @@ def mine_haggis_cpp(
     for project_idx in range(len(data)):
         row = data.iloc[project_idx]
         project_name = str(row["project"])
-        project_seed = seed + int(
-            hashlib.sha256(project_name.encode("utf-8")).hexdigest()[:8], 16
+        project_seed = seed + sum(
+            (index + 1) * ord(char)
+            for index, char in enumerate(project_name)
         )
         rng = random.Random(project_seed)
         trees = _project_trees(
@@ -441,7 +440,6 @@ def mine_haggis_cpp(
                     provenance={
                         "method": "haggis_cpp",
                         "algorithm": "dp_ptsg_pointwise_collapsed_gibbs",
-                        "reference_commit": HAGGIS_REFERENCE_COMMIT,
                         "fragment_template": template,
                         "posterior_sample_support": posterior_support,
                         "mean_sample_occurrences": (
@@ -498,7 +496,6 @@ def mine_haggis_cpp(
             "reference": {
                 "paper": "Mining Idioms from Source Code (FSE 2014)",
                 "repository": "https://github.com/mast-group/codemining-treelm",
-                "commit": HAGGIS_REFERENCE_COMMIT,
             },
             "dataset": str(dataset_path),
             "parameters": {

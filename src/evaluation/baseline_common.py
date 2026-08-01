@@ -1,8 +1,4 @@
-"""Baseline 产物的统一习语记录与指标合同。
-
-各 baseline 都写出与现有判断阶段相同的 ``*_idiom.pkl`` 文件。这样评价器
-只负责计算已经固定的九项指标，不需要按方法维护不同公式或数据分支。
-"""
+"""Baseline 产物的统一习语记录与指标合同。"""
 
 from __future__ import annotations
 
@@ -64,7 +60,7 @@ def make_idiom_record(
     template: str | None = None,
     intent: str | None = None,
 ) -> Dict[str, Any]:
-    """构造所有 baseline 共用的向后兼容判断阶段记录。"""
+    """构造所有 baseline 共用的判断阶段记录。"""
     infos = unique_source_infos(source_infos)
     if not center_point.strip():
         raise ValueError("center_point 不能为空")
@@ -102,7 +98,14 @@ def write_project_idioms(
     output_root.mkdir(parents=True, exist_ok=True)
     output_path = output_root / f"{project_name}_idiom.pkl"
     with output_path.open("wb") as file:
-        pickle.dump(list(idioms), file)
+        pickle.dump(
+            {
+                "artifact_type": "idiom_judgment",
+                "project": project_name,
+                "accepted": list(idioms),
+            },
+            file,
+        )
     return output_path
 
 
