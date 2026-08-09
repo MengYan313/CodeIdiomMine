@@ -4,10 +4,9 @@
 轮转为五折，每折只用其余文件中的已发现实例构造参考库，并在当前折上测量
 IC 与 ISP。该分区不触发重新解析、嵌入或聚类：
 
-* IC_macro：逐测量函数候选域 AST 节点覆盖率的宏平均；
-* IC_micro：所有测量函数候选域 AST 节点的总体覆盖率；
-* IC_raw：IC_macro 与 IC_micro 的算术平均；
-* IC：``sqrt(IC_raw)``，用于展开稀疏覆盖区间且保持排序、0 和 1 不变；
+* IC_macro：逐测量函数聚类机会域 AST 节点覆盖率的宏平均；
+* IC_micro：所有测量函数聚类机会域 AST 节点的总体覆盖率；
+* IC_raw/IC：IC_macro 与 IC_micro 的算术平均，不执行数值变换；
 * ISP：具有至少两个独立来源函数域的习语比例；
 * F1：最终 IC 与 ISP 的调和平均；
 * 习语库结构：种类数、簇成员数、跨函数域支持数和完整子树 AvgAST。
@@ -22,7 +21,6 @@ IC 与 ISP。该分区不触发重新解析、嵌入或聚类：
 from __future__ import annotations
 
 import json
-import math
 import os
 import pickle
 import re
@@ -37,7 +35,6 @@ import pandas as pd
 from ..common.logging import get_logger
 from ..common.progress import progress
 from ..parser.candidates import SelectedCandidate, select_candidates
-from ..parser.cpp_adapter import CPP_ADAPTER
 
 logger = get_logger(__name__)
 
@@ -45,6 +42,8 @@ CPP_LANGUAGE = "cpp"
 DEFAULT_EVALUATION_MODE = "within_project_kfold"
 SYNTHESIZED_SEQUENCE_KIND = "synthesized_sequence"
 STRUCTURAL_MATCH_THRESHOLD = 0.72
+OpportunityFunctionDomain = Tuple[str, str]
+OpportunityDomain = Dict[OpportunityFunctionDomain, set[int]]
 
 _CONTROL_TOKENS = {
     "break", "case", "catch", "continue", "co_await", "co_return",
@@ -57,10 +56,6 @@ _SEMANTIC_OPERATORS = {
     "-", "*", "/", "%", "++", "--", "<<", ">>", "&", "|", "^",
 }
 
-
-def _normalize_sparse_coverage(value: float) -> float:
-    """用无参数单调变换展开接近零的 AST 覆盖差异。"""
-    return math.sqrt(max(0.0, min(1.0, float(value))))
 
 _CPP_KEYWORDS = {
     "alignas", "alignof", "and", "and_eq", "asm", "auto", "bitand",
@@ -353,6 +348,51 @@ def load_dataset(dataset_path: str) -> pd.DataFrame:
     return pd.read_pickle(dataset_path)
 
 
+def load_stage2_clusters(cluster_path: str) -> Dict[str, Dict[str, Any]]:
+    """读取 Stage 3 实际消费的 Stage 2 非噪声聚类成员。"""
+
+    with open(cluster_path, "rb") as file:
+        payload = pickle.load(file)
+    if not isinstance(payload, list):
+        raise TypeError("Stage 2 聚类产物顶层必须是项目列表")
+
+    projects: Dict[str, Dict[str, Any]] = {}
+    for item in payload:
+        if not isinstance(item, Mapping):
+            raise TypeError("Stage 2 聚类项目必须是对象")
+        project = str(item.get("pros_name") or "")
+        frame = item.get("clusters")
+        if not project or project in projects:
+            raise ValueError("Stage 2 聚类项目身份为空或重复")
+        if not isinstance(frame, pd.DataFrame):
+            raise TypeError(f"{project} 的 clusters 必须是 DataFrame")
+        missing = {"label", "infos"} - set(frame.columns)
+        if missing:
+            raise ValueError(f"{project} 聚类缺少字段: {sorted(missing)}")
+
+        members: List[Sequence[Any]] = []
+        labels: set[int] = set()
+        for _, cluster in frame.iterrows():
+            label = int(cluster["label"])
+            if label < 0:
+                continue
+            if label in labels:
+                raise ValueError(f"{project} 存在重复聚类标签 {label}")
+            labels.add(label)
+            infos = cluster["infos"]
+            if not isinstance(infos, list) or not all(
+                _is_source_info(info) for info in infos
+            ):
+                raise TypeError(f"{project} 聚类 {label} 的 infos 格式错误")
+            members.extend(infos)
+        projects[project] = {
+            "cluster_count": len(labels),
+            "member_count": len(members),
+            "members": members,
+        }
+    return projects
+
+
 def _build_project_index(data: pd.DataFrame) -> Dict[str, int]:
     index: Dict[str, int] = {}
     for i in range(len(data)):
@@ -496,20 +536,6 @@ def _subtree_end(func_ast: Sequence[Dict[str, Any]], root_idx: int) -> int:
     return end
 
 
-def _covered_interval_size(intervals: List[Tuple[int, int]]) -> int:
-    if not intervals:
-        return 0
-    covered = 0
-    start, end = sorted(intervals)[0]
-    for next_start, next_end in sorted(intervals)[1:]:
-        if next_start > end:
-            covered += end - start
-            start, end = next_start, next_end
-        else:
-            end = max(end, next_end)
-    return covered + end - start
-
-
 def _covered_node_indices(
     intervals: Sequence[Tuple[int, int]],
 ) -> set[int]:
@@ -608,6 +634,65 @@ def _source_info_intervals(
     )
 
 
+def build_cluster_opportunity_domain(
+    project_name: str,
+    data: pd.DataFrame,
+    project_idx: int,
+    cluster_members: Sequence[Sequence[Any]],
+) -> OpportunityDomain:
+    """把冻结的 Stage 2 聚类成员严格映射为函数级 AST 机会域。"""
+
+    row = data.iloc[project_idx]
+    files = [str(path).replace("\\", "/") for path in row.get("cppFile", [])]
+    if len(files) != len(set(files)):
+        raise ValueError(f"{project_name} 数据集包含重复仓库相对路径")
+    file_indices = {path: index for index, path in enumerate(files)}
+    function_asts: Dict[
+        OpportunityFunctionDomain,
+        Sequence[Dict[str, Any]],
+    ] = {}
+    for file_idx, file_functions in enumerate(row.get("func_ast", [])):
+        for func_ast in file_functions:
+            if not func_ast:
+                continue
+            domain = (files[file_idx], str(func_ast[0].get("extent") or ""))
+            if not domain[1] or domain in function_asts:
+                raise ValueError(f"{project_name} 数据集函数身份为空或重复: {domain}")
+            function_asts[domain] = func_ast
+
+    opportunity: OpportunityDomain = {}
+    for member_index, info in enumerate(cluster_members):
+        if not _is_source_info(info) or str(info[0]) != project_name:
+            raise ValueError(
+                f"{project_name} 聚类成员 {member_index} 的项目或来源格式无效"
+            )
+        relative_path = str(info[1]).replace("\\", "/")
+        file_idx = file_indices.get(relative_path)
+        if file_idx is None:
+            raise ValueError(
+                f"{project_name} 聚类成员 {member_index} 无法精确映射文件: "
+                f"{relative_path}"
+            )
+        domain = (relative_path, str(info[2] or ""))
+        func_ast = function_asts.get(domain)
+        if func_ast is None:
+            raise ValueError(
+                f"{project_name} 聚类成员 {member_index} 无法精确映射函数: "
+                f"{relative_path}:{domain[1]}"
+            )
+        intervals = _source_info_intervals(func_ast, info)
+        if not intervals:
+            node = info[3]
+            raise ValueError(
+                f"{project_name} 聚类成员 {member_index} 无法精确映射 AST 节点: "
+                f"{relative_path}:{domain[1]}:{node.get('kind')}:{node.get('extent')}"
+            )
+        opportunity.setdefault(domain, set()).update(
+            _covered_node_indices(intervals)
+        )
+    return opportunity
+
+
 def _measurement_evidence(
     idioms: Sequence[Dict[str, Any]],
     dataset_files: Sequence[str],
@@ -627,21 +712,23 @@ def compute_coverage_stats(
     data: pd.DataFrame,
     project_name: str,
     project_idx: int,
+    opportunity_domain: Mapping[OpportunityFunctionDomain, set[int]],
     included_file_indices: Optional[set[int]] = None,
     evidence_by_file: Optional[
         Mapping[int, Sequence[Tuple[int, Sequence[Any]]]]
     ] = None,
 ) -> Dict[str, Any]:
-    """计算候选域 IC，并同时返回完整函数 AST 的严格覆盖率。"""
+    """计算冻结聚类机会域 IC，并同时返回完整函数 AST 敏感性。"""
     empty = {
         "IC_macro": 0.0,
         "IC_micro": 0.0,
+        "IC_raw": 0.0,
         "IC": 0.0,
         "matched_idiom_indices": set(),
-        "matched_node_count": 0,
-        "total_node_count": 0,
-        "function_count": 0,
-        "function_coverage_sum": 0.0,
+        "covered_node_count": 0,
+        "opportunity_node_count": 0,
+        "opportunity_function_count": 0,
+        "opportunity_function_coverage_sum": 0.0,
         "match_count": 0,
         "IC_all_macro": 0.0,
         "IC_all_micro": 0.0,
@@ -653,7 +740,7 @@ def compute_coverage_stats(
         "IC_generalization_macro": 0.0,
         "IC_generalization_micro": 0.0,
         "IC_generalization": 0.0,
-        "generalization_matched_node_count": 0,
+        "generalization_covered_node_count": 0,
         "generalization_function_coverage_sum": 0.0,
         "evidence_matched_idiom_ids": set(),
     }
@@ -664,6 +751,7 @@ def compute_coverage_stats(
     if str(row.get("project", row.get("pros_name", ""))) != str(project_name):
         return empty
     func_asts = row.get("func_ast", [])
+    files = [str(path).replace("\\", "/") for path in row.get("cppFile", [])]
     pattern_index = _build_pattern_index(idioms)
 
     coverage_values: List[float] = []
@@ -684,24 +772,12 @@ def compute_coverage_stats(
         for func_ast in file_functions:
             if not func_ast:
                 continue
+            function_domain = (
+                files[file_idx],
+                str(func_ast[0].get("extent") or ""),
+            )
             intervals: List[Tuple[int, int]] = []
             candidates = select_candidates(func_ast)
-            candidate_domain_intervals = [
-                interval
-                for candidate in candidates
-                if candidate.level != "function"
-                for interval in _quality_candidate_intervals(func_ast, candidate)
-            ]
-            eligible_kinds = (
-                CPP_ADAPTER.quality_region_kinds
-                | CPP_ADAPTER.quality_statement_kinds
-                | CPP_ADAPTER.core_operation_kinds
-            )
-            candidate_domain_intervals.extend(
-                (index, _subtree_end(func_ast, index))
-                for index, node in enumerate(func_ast)
-                if str(node.get("kind") or "") in eligible_kinds
-            )
             evidence_intervals: List[Tuple[int, int]] = []
             for idiom_id, info in (evidence_by_file or {}).get(file_idx, ()):
                 source_intervals = _source_info_intervals(func_ast, info)
@@ -763,19 +839,23 @@ def compute_coverage_stats(
             covered_indices = generalization_indices | _covered_node_indices(
                 evidence_intervals
             )
-            eligible_indices = _covered_node_indices(candidate_domain_intervals)
-            eligible_covered = len(covered_indices & eligible_indices)
-            if eligible_indices:
-                coverage_values.append(eligible_covered / len(eligible_indices))
+            opportunity_indices = opportunity_domain.get(function_domain)
+            if opportunity_indices:
+                opportunity_covered = len(
+                    covered_indices & opportunity_indices
+                )
+                coverage_values.append(
+                    opportunity_covered / len(opportunity_indices)
+                )
                 generalization_covered = len(
-                    generalization_indices & eligible_indices
+                    generalization_indices & opportunity_indices
                 )
                 generalization_coverage_values.append(
-                    generalization_covered / len(eligible_indices)
+                    generalization_covered / len(opportunity_indices)
                 )
-                matched_nodes += eligible_covered
+                matched_nodes += opportunity_covered
                 generalization_matched_nodes += generalization_covered
-                total_nodes += len(eligible_indices)
+                total_nodes += len(opportunity_indices)
 
             function_nodes = len(func_ast)
             function_covered = len(covered_indices)
@@ -804,12 +884,12 @@ def compute_coverage_stats(
         "IC_macro": ic_macro,
         "IC_micro": ic_micro,
         "IC_raw": ic_raw,
-        "IC": _normalize_sparse_coverage(ic_raw),
+        "IC": ic_raw,
         "matched_idiom_indices": matched_idioms,
-        "matched_node_count": matched_nodes,
-        "total_node_count": total_nodes,
-        "function_count": len(coverage_values),
-        "function_coverage_sum": sum(coverage_values),
+        "covered_node_count": matched_nodes,
+        "opportunity_node_count": total_nodes,
+        "opportunity_function_count": len(coverage_values),
+        "opportunity_function_coverage_sum": sum(coverage_values),
         "match_count": match_count,
         "IC_all_macro": ic_all_macro,
         "IC_all_micro": ic_all_micro,
@@ -823,7 +903,7 @@ def compute_coverage_stats(
         "IC_generalization": (
             ic_generalization_macro + ic_generalization_micro
         ) / 2,
-        "generalization_matched_node_count": generalization_matched_nodes,
+        "generalization_covered_node_count": generalization_matched_nodes,
         "generalization_function_coverage_sum": sum(
             generalization_coverage_values
         ),
@@ -836,10 +916,17 @@ def compute_idiom_coverage(
     data: pd.DataFrame,
     project_name: str,
     project_idx: int,
+    opportunity_domain: Mapping[OpportunityFunctionDomain, set[int]],
 ) -> float:
-    """返回平方根归一化后的主 IC。"""
+    """返回未变换的聚类机会域主 IC。"""
     return float(
-        compute_coverage_stats(idioms, data, project_name, project_idx)["IC"]
+        compute_coverage_stats(
+            idioms,
+            data,
+            project_name,
+            project_idx,
+            opportunity_domain,
+        )["IC"]
     )
 
 
@@ -1095,34 +1182,6 @@ def _deduplicate_idioms(idioms: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return list(deduplicated.values())
 
 
-def _stable_file_split(
-    project_name: str,
-    files: Sequence[str],
-    test_fraction: float,
-) -> Tuple[set[int], set[int]]:
-    """按稳定路径顺序划分参考/测量文件。"""
-    if not 0 < test_fraction < 1:
-        raise ValueError("test_fraction 必须位于 (0, 1)")
-    file_count = len(files)
-    if file_count == 0:
-        return set(), set()
-    if file_count == 1:
-        return set(), {0}
-    ordered = sorted(
-        range(file_count),
-        key=lambda index: (
-            project_name,
-            str(files[index]).replace(os.sep, "/"),
-        ),
-    )
-    measurement_count = min(
-        file_count - 1,
-        max(1, round(file_count * test_fraction)),
-    )
-    measurement_indices = set(ordered[:measurement_count])
-    return set(range(file_count)) - measurement_indices, measurement_indices
-
-
 def _round_robin_file_folds(
     project_name: str,
     files: Sequence[str],
@@ -1184,6 +1243,7 @@ def evaluate_project_kfold(
     data: pd.DataFrame,
     project_idx: int,
     project_idioms: List[Dict[str, Any]],
+    opportunity_domain: Mapping[OpportunityFunctionDomain, set[int]],
     fold_count: int,
 ) -> Dict[str, Any]:
     """对全仓发现结果执行仓库内文件五折评价。"""
@@ -1205,6 +1265,7 @@ def evaluate_project_kfold(
             data,
             project_name,
             project_idx,
+            opportunity_domain,
             included_file_indices=measurement_files,
             evidence_by_file=_measurement_evidence(
                 project_idioms, files, measurement_files
@@ -1253,14 +1314,18 @@ def evaluate_project_kfold(
                 ),
                 "ISP": round(isp_fold, 4),
                 "ISP_fold": round(isp_fold, 4),
-                "matched_node_count": int(coverage["matched_node_count"]),
-                "total_node_count": int(coverage["total_node_count"]),
-                "function_count": int(coverage["function_count"]),
-                "function_coverage_sum": float(
-                    coverage["function_coverage_sum"]
+                "covered_node_count": int(coverage["covered_node_count"]),
+                "opportunity_node_count": int(
+                    coverage["opportunity_node_count"]
                 ),
-                "generalization_matched_node_count": int(
-                    coverage["generalization_matched_node_count"]
+                "opportunity_function_count": int(
+                    coverage["opportunity_function_count"]
+                ),
+                "opportunity_function_coverage_sum": float(
+                    coverage["opportunity_function_coverage_sum"]
+                ),
+                "generalization_covered_node_count": int(
+                    coverage["generalization_covered_node_count"]
                 ),
                 "generalization_function_coverage_sum": float(
                     coverage["generalization_function_coverage_sum"]
@@ -1283,11 +1348,13 @@ def evaluate_project_kfold(
             }
         )
 
-    matched_nodes = sum(item["matched_node_count"] for item in fold_results)
-    total_nodes = sum(item["total_node_count"] for item in fold_results)
-    function_count = sum(item["function_count"] for item in fold_results)
+    matched_nodes = sum(item["covered_node_count"] for item in fold_results)
+    total_nodes = sum(item["opportunity_node_count"] for item in fold_results)
+    function_count = sum(
+        item["opportunity_function_count"] for item in fold_results
+    )
     function_coverage_sum = sum(
-        item["function_coverage_sum"] for item in fold_results
+        item["opportunity_function_coverage_sum"] for item in fold_results
     )
     fold_matched_idiom_count = sum(
         item["matched_idiom_count"] for item in fold_results
@@ -1296,9 +1363,9 @@ def evaluate_project_kfold(
     ic_macro = function_coverage_sum / function_count if function_count else 0.0
     ic_micro = matched_nodes / total_nodes if total_nodes else 0.0
     ic_raw = (ic_macro + ic_micro) / 2
-    ic = _normalize_sparse_coverage(ic_raw)
+    ic = ic_raw
     generalization_matched_nodes = sum(
-        item["generalization_matched_node_count"] for item in fold_results
+        item["generalization_covered_node_count"] for item in fold_results
     )
     generalization_function_coverage_sum = sum(
         item["generalization_function_coverage_sum"] for item in fold_results
@@ -1376,11 +1443,9 @@ def evaluate_project_kfold(
         "IC_raw": round(ic_raw, 4),
         "IC": round(ic, 4),
         "ISP": round(isp, 4),
-        "ISP_any": round(isp_generalization, 4),
         "ISP_generalization": round(isp_generalization, 4),
         "ISP_fold": round(isp_fold, 4),
         "F1": round(compute_f1(ic, isp), 4),
-        "F1_raw": round(compute_f1(ic_raw, isp), 4),
         "IC_generalization_macro": round(ic_generalization_macro, 4),
         "IC_generalization_micro": round(ic_generalization_micro, 4),
         "IC_generalization": round(ic_generalization, 4),
@@ -1401,11 +1466,11 @@ def evaluate_project_kfold(
         ),
         "fold_evaluated_idiom_count": fold_evaluated_idiom_count,
         "fold_matched_idiom_count": fold_matched_idiom_count,
-        "matched_node_count": matched_nodes,
-        "total_node_count": total_nodes,
-        "function_count": function_count,
-        "function_coverage_sum": function_coverage_sum,
-        "generalization_matched_node_count": generalization_matched_nodes,
+        "covered_node_count": matched_nodes,
+        "opportunity_node_count": total_nodes,
+        "opportunity_function_count": function_count,
+        "opportunity_function_coverage_sum": function_coverage_sum,
+        "generalization_covered_node_count": generalization_matched_nodes,
         "generalization_function_coverage_sum": (
             generalization_function_coverage_sum
         ),
@@ -1414,106 +1479,6 @@ def evaluate_project_kfold(
         "all_total_node_count": all_total_nodes,
         "all_function_count": all_function_count,
         "all_function_coverage_sum": all_function_coverage_sum,
-    }
-
-
-def evaluate_mock_cluster_file_split(
-    project_name: str,
-    data: pd.DataFrame,
-    project_idx: int,
-    project_idioms: List[Dict[str, Any]],
-    test_fraction: float,
-) -> Dict[str, Any]:
-    """把冻结模拟簇的全部成员视作已知实例，验证覆盖与指标公式。
-
-    该模式不经过真实习语判断或人工质量核验，只是评价器的 evidence-oracle
-    冒烟，不能作为方法质量或论文结果。
-    """
-    row = data.iloc[project_idx]
-    files = row.get("cppFile", [])
-    func_asts = row.get("func_ast", [])
-    reference_files, measurement_files = _stable_file_split(
-        project_name, files, test_fraction
-    )
-
-    reference_idioms: List[Dict[str, Any]] = []
-    matched_idioms: set[int] = set()
-    evidence_by_file: Dict[int, Dict[str, set[int]]] = defaultdict(
-        lambda: defaultdict(set)
-    )
-    for idiom in project_idioms:
-        reference_infos: List[Sequence[Any]] = []
-        measurement_infos: List[Tuple[int, Sequence[Any]]] = []
-        for info in _idiom_source_infos(idiom):
-            file_idx = _match_file_path(str(info[1]), files)
-            if file_idx in reference_files:
-                reference_infos.append(info)
-            elif file_idx in measurement_files:
-                measurement_infos.append((file_idx, info))
-        if not reference_infos:
-            continue
-        reference_idx = len(reference_idioms)
-        record = dict(idiom)
-        record["info"] = reference_infos[0]
-        record["source_infos"] = reference_infos
-        record["center_point"] = _candidate_code(reference_infos[0])
-        record["cnt"] = len(reference_infos)
-        reference_idioms.append(record)
-        if measurement_infos:
-            matched_idioms.add(reference_idx)
-        for file_idx, info in measurement_infos:
-            evidence_by_file[file_idx][_candidate_extent(info)].add(reference_idx)
-
-    coverage_values: List[float] = []
-    matched_nodes = 0
-    total_nodes = 0
-    match_count = 0
-    for file_idx in sorted(measurement_files):
-        extent_index = evidence_by_file.get(file_idx, {})
-        for func_ast in func_asts[file_idx]:
-            if not func_ast:
-                continue
-            intervals: List[Tuple[int, int]] = []
-            for node_idx, node_info in enumerate(func_ast):
-                idiom_indices = extent_index.get(str(node_info.get("extent") or ""))
-                if not idiom_indices:
-                    continue
-                intervals.append((node_idx, _subtree_end(func_ast, node_idx)))
-                match_count += 1
-            function_covered = _covered_interval_size(intervals)
-            coverage_values.append(function_covered / len(func_ast))
-            matched_nodes += function_covered
-            total_nodes += len(func_ast)
-
-    ic_macro = sum(coverage_values) / len(coverage_values) if coverage_values else 0.0
-    ic_micro = matched_nodes / total_nodes if total_nodes else 0.0
-    ic_raw = (ic_macro + ic_micro) / 2
-    ic = _normalize_sparse_coverage(ic_raw)
-    isp = len(matched_idioms) / len(reference_idioms) if reference_idioms else 0.0
-    size_stats = compute_idiom_size_stats(reference_idioms, data)
-    return {
-        "project": project_name,
-        "training_projects": [project_name],
-        "training_file_count": len(reference_files),
-        "test_file_count": len(measurement_files),
-        "test_fraction": test_fraction,
-        "IC_macro": round(ic_macro, 4),
-        "IC_micro": round(ic_micro, 4),
-        "IC_raw": round(ic_raw, 4),
-        "IC": round(ic, 4),
-        "ISP": round(isp, 4),
-        "F1": round(compute_f1(ic, isp), 4),
-        "F1_raw": round(compute_f1(ic_raw, isp), 4),
-        "avg_idiom_size": round(size_stats["mean"], 2),
-        "median_idiom_size": round(size_stats["median"], 2),
-        "idiom_size_iqr": round(size_stats["iqr"], 2),
-        "idiom_count": len(reference_idioms),
-        "matched_idiom_count": len(matched_idioms),
-        "matched_node_count": matched_nodes,
-        "total_node_count": total_nodes,
-        "function_count": len(coverage_values),
-        "function_coverage_sum": sum(coverage_values),
-        "match_count": match_count,
     }
 
 
@@ -1535,6 +1500,7 @@ def evaluate_cpp(
     idiom_dir: str,
     dataset_path: str,
     output_path: str,
+    cluster_path: str,
     artifact_stage: str = "judgment",
     evaluation_mode: str = DEFAULT_EVALUATION_MODE,
     fold_count: int = 5,
@@ -1542,6 +1508,8 @@ def evaluate_cpp(
     """逐仓执行评价并在各仓完成后汇总保存 JSON。"""
     if fold_count < 2:
         raise ValueError("fold_count 必须至少为 2")
+    if evaluation_mode != DEFAULT_EVALUATION_MODE:
+        raise ValueError(f"未知评价模式: {evaluation_mode}")
     idiom_root = Path(idiom_dir)
     patterns = _artifact_patterns(artifact_stage)
     idiom_files = sorted(
@@ -1576,13 +1544,18 @@ def evaluate_cpp(
         return {}
     data = load_dataset(dataset_path)
     project_index = _build_project_index(data)
-    has_mock_inputs = any(
+    cluster_projects = load_stage2_clusters(cluster_path)
+    if set(cluster_projects) != set(project_index):
+        raise ValueError(
+            "Stage 2 聚类项目与数据集项目不一致: "
+            f"clusters={sorted(cluster_projects)}, dataset={sorted(project_index)}"
+        )
+    if any(
         "mock_provenance" in idiom
         for idioms in all_idioms.values()
         for idiom in idioms
-    )
-    if evaluation_mode == "mock_cluster_file_split" and not has_mock_inputs:
-        raise ValueError("mock_cluster_file_split 只允许带 mock_provenance 的模拟产物")
+    ):
+        raise ValueError("正式聚类机会域评价不接受 mock 习语产物")
 
     project_results: List[Dict[str, Any]] = []
     project_items = project_index.items()
@@ -1592,24 +1565,25 @@ def evaluate_cpp(
         desc="评价项目",
         unit="项目",
     ):
-        if evaluation_mode == "within_project_kfold":
-            result = evaluate_project_kfold(
-                project_name=project_name,
-                data=data,
-                project_idx=project_idx,
-                project_idioms=all_idioms.get(project_name, []),
-                fold_count=fold_count,
-            )
-        elif evaluation_mode == "mock_cluster_file_split":
-            result = evaluate_mock_cluster_file_split(
-                project_name=project_name,
-                data=data,
-                project_idx=project_idx,
-                project_idioms=all_idioms.get(project_name, []),
-                test_fraction=1 / fold_count,
-            )
-        else:
-            raise ValueError(f"未知评价模式: {evaluation_mode}")
+        cluster_project = cluster_projects[project_name]
+        opportunity_domain = build_cluster_opportunity_domain(
+            project_name,
+            data,
+            project_idx,
+            cluster_project["members"],
+        )
+        result = evaluate_project_kfold(
+            project_name=project_name,
+            data=data,
+            project_idx=project_idx,
+            project_idioms=all_idioms.get(project_name, []),
+            opportunity_domain=opportunity_domain,
+            fold_count=fold_count,
+        )
+        result["opportunity_cluster_count"] = cluster_project[
+            "cluster_count"
+        ]
+        result["opportunity_member_count"] = cluster_project["member_count"]
         library_stats = compute_idiom_library_stats(
             all_idioms.get(project_name, []),
             data,
@@ -1653,51 +1627,52 @@ def evaluate_cpp(
         payload = {"language": CPP_LANGUAGE, "projects": [], "summary": {}}
     else:
         count = len(project_results)
-        matched_nodes = sum(r["matched_node_count"] for r in project_results)
-        total_nodes = sum(r["total_node_count"] for r in project_results)
-        function_count = sum(r["function_count"] for r in project_results)
+        matched_nodes = sum(r["covered_node_count"] for r in project_results)
+        total_nodes = sum(
+            r["opportunity_node_count"] for r in project_results
+        )
+        function_count = sum(
+            r["opportunity_function_count"] for r in project_results
+        )
         function_coverage_sum = sum(
-            r["function_coverage_sum"] for r in project_results
+            r["opportunity_function_coverage_sum"] for r in project_results
         )
         matched_idioms = sum(r["matched_idiom_count"] for r in project_results)
         evaluated_idioms = sum(r["idiom_count"] for r in project_results)
         fold_matched_idioms = sum(
-            r.get("fold_matched_idiom_count", r["matched_idiom_count"])
+            r["fold_matched_idiom_count"]
             for r in project_results
         )
         fold_evaluated_idioms = sum(
-            r.get("fold_evaluated_idiom_count", r["idiom_count"])
+            r["fold_evaluated_idiom_count"]
             for r in project_results
         )
         generalization_matched_idioms = sum(
-            r.get("generalization_matched_idiom_count", r["matched_idiom_count"])
+            r["generalization_matched_idiom_count"]
             for r in project_results
         )
         generalization_matched_nodes = sum(
-            r.get("generalization_matched_node_count", r["matched_node_count"])
+            r["generalization_covered_node_count"]
             for r in project_results
         )
         generalization_function_coverage_sum = sum(
-            r.get(
-                "generalization_function_coverage_sum",
-                r["function_coverage_sum"],
-            )
+            r["generalization_function_coverage_sum"]
             for r in project_results
         )
         all_matched_nodes = sum(
-            r.get("all_matched_node_count", r["matched_node_count"])
+            r["all_matched_node_count"]
             for r in project_results
         )
         all_total_nodes = sum(
-            r.get("all_total_node_count", r["total_node_count"])
+            r["all_total_node_count"]
             for r in project_results
         )
         all_function_count = sum(
-            r.get("all_function_count", r["function_count"])
+            r["all_function_count"]
             for r in project_results
         )
         all_function_coverage_sum = sum(
-            r.get("all_function_coverage_sum", r["function_coverage_sum"])
+            r["all_function_coverage_sum"]
             for r in project_results
         )
         type_count = sum(r["idiom_type_count"] for r in project_results)
@@ -1724,66 +1699,75 @@ def evaluate_cpp(
             "IC": round(sum(r["IC"] for r in project_results) / count, 4),
             "ISP": round(sum(r["ISP"] for r in project_results) / count, 4),
             "F1": round(sum(r["F1"] for r in project_results) / count, 4),
-            "F1_raw": round(
-                sum(r["F1_raw"] for r in project_results) / count, 4
-            ),
-            "ISP_any": round(
-                sum(r.get("ISP_generalization", r["ISP"]) for r in project_results)
-                / count,
-                4,
-            ),
             "ISP_generalization": round(
-                sum(r.get("ISP_generalization", r["ISP"]) for r in project_results)
+                sum(r["ISP_generalization"] for r in project_results)
                 / count,
                 4,
             ),
             "ISP_fold": round(
-                sum(r.get("ISP_fold", r["ISP"]) for r in project_results)
+                sum(r["ISP_fold"] for r in project_results)
                 / count,
                 4,
             ),
             "IC_all_macro": round(
-                sum(r.get("IC_all_macro", r["IC_macro"]) for r in project_results)
+                sum(r["IC_all_macro"] for r in project_results)
                 / count,
                 4,
             ),
             "IC_all_micro": round(
-                sum(r.get("IC_all_micro", r["IC_micro"]) for r in project_results)
+                sum(r["IC_all_micro"] for r in project_results)
                 / count,
                 4,
             ),
             "IC_all": round(
-                sum(r.get("IC_all", r["IC"]) for r in project_results) / count,
+                sum(r["IC_all"] for r in project_results) / count,
                 4,
             ),
             "F1_all_fold": round(
-                sum(r.get("F1_all_fold", r["F1"]) for r in project_results)
+                sum(r["F1_all_fold"] for r in project_results)
                 / count,
                 4,
             ),
             "IC_generalization_macro": round(
                 sum(
-                    r.get("IC_generalization_macro", r["IC_macro"])
+                    r["IC_generalization_macro"]
                     for r in project_results
                 ) / count,
                 4,
             ),
             "IC_generalization_micro": round(
                 sum(
-                    r.get("IC_generalization_micro", r["IC_micro"])
+                    r["IC_generalization_micro"]
                     for r in project_results
                 ) / count,
                 4,
             ),
             "IC_generalization": round(
-                sum(r.get("IC_generalization", r["IC"]) for r in project_results)
+                sum(r["IC_generalization"] for r in project_results)
                 / count,
                 4,
             ),
             "F1_generalization": round(
-                sum(r.get("F1_generalization", r["F1"]) for r in project_results)
+                sum(r["F1_generalization"] for r in project_results)
                 / count,
                 4,
+            ),
+            "opportunity_function_count": round(
+                sum(
+                    r["opportunity_function_count"]
+                    for r in project_results
+                ) / count,
+                2,
+            ),
+            "opportunity_node_count": round(
+                sum(r["opportunity_node_count"] for r in project_results)
+                / count,
+                2,
+            ),
+            "covered_node_count": round(
+                sum(r["covered_node_count"] for r in project_results)
+                / count,
+                2,
             ),
             "idiom_type_count": round(
                 sum(r["idiom_type_count"] for r in project_results) / count, 2
@@ -1805,7 +1789,7 @@ def evaluate_cpp(
         )
         global_ic_micro = matched_nodes / total_nodes if total_nodes else 0.0
         global_ic_raw = (global_ic_macro + global_ic_micro) / 2
-        global_ic = _normalize_sparse_coverage(global_ic_raw)
+        global_ic = global_ic_raw
         global_isp = matched_idioms / evaluated_idioms if evaluated_idioms else 0.0
         global_isp_generalization = (
             generalization_matched_idioms / evaluated_idioms
@@ -1843,11 +1827,9 @@ def evaluate_cpp(
             "IC_raw": round(global_ic_raw, 4),
             "IC": round(global_ic, 4),
             "ISP": round(global_isp, 4),
-            "ISP_any": round(global_isp_generalization, 4),
             "ISP_generalization": round(global_isp_generalization, 4),
             "ISP_fold": round(global_isp_fold, 4),
             "F1": round(compute_f1(global_ic, global_isp), 4),
-            "F1_raw": round(compute_f1(global_ic_raw, global_isp), 4),
             "IC_generalization_macro": round(
                 global_ic_generalization_macro, 4
             ),
@@ -1886,10 +1868,10 @@ def evaluate_cpp(
             "fold_matched_idiom_count": fold_matched_idioms,
             "fold_evaluated_idiom_count": fold_evaluated_idioms,
             "total_cluster_instances": cluster_instances,
-            "matched_node_count": matched_nodes,
-            "total_node_count": total_nodes,
-            "function_count": function_count,
-            "generalization_matched_node_count": (
+            "covered_node_count": matched_nodes,
+            "opportunity_node_count": total_nodes,
+            "opportunity_function_count": function_count,
+            "generalization_covered_node_count": (
                 generalization_matched_nodes
             ),
             "all_matched_node_count": all_matched_nodes,
@@ -1899,19 +1881,19 @@ def evaluate_cpp(
         payload = {
             "language": CPP_LANGUAGE,
             "evaluation_mode": evaluation_mode,
+            "cluster_path": cluster_path,
+            "IC_opportunity_domain": (
+                "stage2_non_noise_cluster_member_ast_union_by_exact_function"
+            ),
             "ISP_support_domain": (
                 "repository_relative_file_and_function_root_extent"
             ),
             "fold_partition_domain": "file",
             "artifact_stage": artifact_stage,
-            "matcher": (
-                "cluster_membership_evidence_oracle"
-                if evaluation_mode == "mock_cluster_file_split"
-                else "reference_only_role_parameterized_lexical_structure"
-            ),
+            "matcher": "reference_only_role_parameterized_lexical_structure",
             "primary_metric_definition": {
-                "IC_raw": "accepted_occurrence_candidate_domain_ast_coverage",
-                "IC": "sqrt_of_IC_raw_for_sparse_coverage_separation",
+                "IC_raw": "arithmetic_mean_of_IC_macro_and_IC_micro",
+                "IC": "same_as_IC_raw_without_numeric_transformation",
                 "ISP": (
                     "library_idiom_with_support_in_at_least_two_"
                     "validated_function_domains"
@@ -1919,8 +1901,6 @@ def evaluate_cpp(
                 "F1": "harmonic_mean_of_IC_and_ISP",
             },
             "strict_sensitivity_metrics": [
-                "IC_raw",
-                "F1_raw",
                 "IC_generalization",
                 "ISP_generalization",
                 "F1_generalization",
@@ -1930,20 +1910,6 @@ def evaluate_cpp(
                 "ISP_fold",
                 "F1_all_fold",
             ],
-            "is_mock_evaluation": has_mock_inputs,
-            "mock_warning": (
-                "冻结簇被直接模拟为习语且未经过真实判断或人工质量核验；"
-                "该结果只验证指标实现，不能作为方法质量或论文结果。"
-                if has_mock_inputs and evaluation_mode in {
-                    "within_project_kfold",
-                    "mock_cluster_file_split",
-                }
-                else (
-                    "冻结的聚类集合被模拟为习语；该结果未经过 LLM 或人工质量判定。"
-                    if has_mock_inputs
-                    else None
-                )
-            ),
             "projects": project_results,
             "repository_macro": repository_macro,
             "global": global_metrics,
@@ -1958,6 +1924,7 @@ def evaluate_cpp(
 
 
 def run_evaluation(
+    cluster_path: str,
     idiom_dir: Optional[str] = None,
     dataset_path: Optional[str] = None,
     output_path: Optional[str] = None,
@@ -1972,11 +1939,13 @@ def run_evaluation(
     logger.info("代码习语评估，模式: %s", evaluation_mode)
     logger.info("习语目录: %s", idiom_dir)
     logger.info("数据集: %s", dataset_path)
+    logger.info("冻结聚类机会域: %s", cluster_path)
     logger.info("输出: %s", output_path)
     return evaluate_cpp(
         idiom_dir=idiom_dir,
         dataset_path=dataset_path,
         output_path=output_path,
+        cluster_path=cluster_path,
         artifact_stage=artifact_stage,
         evaluation_mode=evaluation_mode,
         fold_count=fold_count,
@@ -1994,6 +1963,11 @@ def main() -> None:
     )
     parser.add_argument("--idiom-dir", "-i", default=None, help="默认 results/cpp")
     parser.add_argument("--dataset", "-d", default=None, help="默认 outputs/cpp/dataset.pkl")
+    parser.add_argument(
+        "--clusters",
+        required=True,
+        help="Stage 3 实际使用的 Stage 2 非噪声聚类产物",
+    )
     parser.add_argument("--output", "-o", default=None, help="默认 results/cpp/eval.json")
     parser.add_argument(
         "--stage",
@@ -2005,14 +1979,9 @@ def main() -> None:
     )
     parser.add_argument(
         "--mode",
-        choices=(
-            "within_project_kfold",
-            "mock_cluster_file_split",
-        ),
+        choices=("within_project_kfold",),
         default=DEFAULT_EVALUATION_MODE,
-        help=(
-            "仓库内文件五折（正式默认）或冻结簇证据模拟"
-        ),
+        help="仓库内文件五折",
     )
     parser.add_argument(
         "--folds",
@@ -2022,6 +1991,7 @@ def main() -> None:
     )
     args = parser.parse_args()
     run_evaluation(
+        cluster_path=args.clusters,
         idiom_dir=args.idiom_dir,
         dataset_path=args.dataset,
         output_path=args.output,

@@ -598,6 +598,7 @@ class BaselineEndToEndTests(unittest.TestCase):
                     method=method,
                     idiom_dir=idiom_dir,
                     dataset_path=dataset_path,
+                    cluster_path=clusters_path,
                     require_baseline_provenance=require_provenance,
                 )
                 self.assertEqual(report["status"], "passed")

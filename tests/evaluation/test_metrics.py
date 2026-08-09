@@ -13,12 +13,12 @@ from src.evaluation.idiom_metrics import (
     _restrict_idioms_to_reference_files,
     _round_robin_file_folds,
     _structural_code_match,
+    build_cluster_opportunity_domain,
     compute_avg_idiom_size,
     compute_coverage_stats,
     compute_f1,
     compute_idiom_set_precision,
     compute_idiom_library_stats,
-    evaluate_mock_cluster_file_split,
     evaluate_project_kfold,
     evaluate_cpp,
 )
@@ -60,6 +60,25 @@ def _function_ast(prefix, condition_name, number, operator="if"):
         _leaf(2, f"{prefix + 1}-16-{prefix + 1}-17", "{", "{"),
         _leaf(2, f"{prefix + 1}-18-{prefix + 1}-27", "return_statement", f"return {number};"),
         _leaf(2, f"{prefix + 1}-28-{prefix + 1}-29", "}", "}"),
+    ]
+
+
+def _opportunity(data, project, project_idx, infos):
+    return build_cluster_opportunity_domain(
+        project,
+        data,
+        project_idx,
+        infos,
+    )
+
+
+def _cluster_payload(project_infos):
+    return [
+        {
+            "pros_name": project,
+            "clusters": pd.DataFrame([{"label": 0, "infos": infos}]),
+        }
+        for project, infos in project_infos.items()
     ]
 
 
@@ -176,7 +195,15 @@ class MetricHelperTests(unittest.TestCase):
             "avg_ast_num": 5,
         }
 
-        coverage = compute_coverage_stats([idiom], data, "test", 1)
+        opportunity = _opportunity(
+            data,
+            "test",
+            1,
+            [["test", "test.cpp", test_ast[0]["extent"], test_ast[1]]],
+        )
+        coverage = compute_coverage_stats(
+            [idiom], data, "test", 1, opportunity
+        )
         self.assertEqual(coverage["IC_macro"], 1.0)
         self.assertEqual(coverage["IC_micro"], 1.0)
         self.assertEqual(coverage["IC"], 1.0)
@@ -239,11 +266,16 @@ class MetricHelperTests(unittest.TestCase):
                 "func_src": [[source]],
             }
         ])
+        cluster_infos = [
+            ["sample", "sample.cpp", "1-0-4-1", func_ast[1]],
+            ["sample", "sample.cpp", "1-0-4-1", func_ast[2]],
+        ]
         coverage = compute_coverage_stats(
             [{"center_point": "first();\nsecond();", "source_infos": [info]}],
             data,
             "sample",
             0,
+            _opportunity(data, "sample", 0, cluster_infos),
         )
         self.assertEqual(coverage["matched_idiom_indices"], {0})
         self.assertEqual(coverage["IC_macro"], 1.0)
@@ -265,16 +297,26 @@ class MetricHelperTests(unittest.TestCase):
                          [unrelated_ast[0]["code_snippet"]]],
         }])
         info = ["sample", files[0], source_ast[0]["extent"], source_ast[1]]
+        opportunity = _opportunity(
+            data,
+            "sample",
+            0,
+            [
+                info,
+                ["sample", files[1], repeat_ast[0]["extent"], repeat_ast[1]],
+                ["sample", files[2], unrelated_ast[0]["extent"], unrelated_ast[1]],
+            ],
+        )
         result = evaluate_project_kfold(
             "sample",
             data,
             0,
             [{"center_point": source_ast[1]["code_snippet"],
               "info": info, "source_infos": [info], "cnt": 1}],
-            3,
+            opportunity,
+            fold_count=3,
         )
         self.assertEqual(result["ISP"], 0.0)
-        self.assertEqual(result["ISP_any"], 1.0)
         self.assertEqual(result["ISP_generalization"], 1.0)
         self.assertEqual(result["ISP_fold"], 0.5)
 
@@ -304,7 +346,12 @@ class MetricHelperTests(unittest.TestCase):
         }
 
         result = evaluate_project_kfold(
-            "sample", data, 0, [idiom], fold_count=2
+            "sample",
+            data,
+            0,
+            [idiom],
+            _opportunity(data, "sample", 0, infos),
+            fold_count=2,
         )
         library = compute_idiom_library_stats(
             [idiom], data, "sample", 0
@@ -331,7 +378,12 @@ class MetricHelperTests(unittest.TestCase):
         }
 
         result = evaluate_project_kfold(
-            "sample", data, 0, [idiom], fold_count=2
+            "sample",
+            data,
+            0,
+            [idiom],
+            _opportunity(data, "sample", 0, [info]),
+            fold_count=2,
         )
         library = compute_idiom_library_stats(
             [idiom], data, "sample", 0
@@ -340,42 +392,101 @@ class MetricHelperTests(unittest.TestCase):
         self.assertEqual(result["ISP"], 0.0)
         self.assertEqual(library["avg_cross_function_support"], 1)
 
-    def test_mock_cluster_split_uses_candidate_evidence_not_function_root(self):
-        first_ast = _function_ast(1, "value", 1)
-        second_ast = _function_ast(10, "ready", 2)
-        files = ["a.cpp", "b.cpp"]
-        data = pd.DataFrame(
-            [{
-                "project": "sample",
-                "cppFile": files,
-                "func_ast": [[first_ast], [second_ast]],
-                "func_src": [[first_ast[0]["code_snippet"]], [second_ast[0]["code_snippet"]]],
-            }]
-        )
-        idiom = {
-            "center_point": first_ast[1]["code_snippet"],
-            "info": ["sample", files[0], first_ast[0]["extent"], first_ast[1]],
-            "source_infos": [
-                ["sample", files[0], first_ast[0]["extent"], first_ast[1]],
-                ["sample", files[1], second_ast[0]["extent"], second_ast[1]],
-            ],
-            "mock_provenance": {
-                "kind": "frozen_cluster_selection_without_llm"
-            },
+    def test_opportunity_excludes_unclustered_functions_and_candidates(self):
+        clustered = _function_ast(1, "value", 1)
+        unclustered = _function_ast(10, "ready", 2)
+        extra_candidate = {
+            "depth": 1,
+            "extent": "3-2-3-12",
+            "kind": "expression_statement",
+            "code_snippet": "extra();",
+            "ast_num": 0,
         }
-        result = evaluate_mock_cluster_file_split(
-            "sample", data, 0, [idiom], test_fraction=0.5
+        clustered.insert(2, extra_candidate)
+        data = pd.DataFrame([{
+            "project": "sample",
+            "cppFile": ["a.cpp", "b.cpp"],
+            "func_ast": [[clustered], [unclustered]],
+            "func_src": [[clustered[0]["code_snippet"]], [unclustered[0]["code_snippet"]]],
+        }])
+        info = ["sample", "a.cpp", clustered[0]["extent"], clustered[1]]
+
+        opportunity = _opportunity(data, "sample", 0, [info])
+
+        self.assertEqual(set(opportunity), {("a.cpp", clustered[0]["extent"])})
+        self.assertNotIn(2, opportunity[("a.cpp", clustered[0]["extent"])])
+
+    def test_rejected_cluster_member_function_remains_in_denominator(self):
+        first = _function_ast(1, "value", 1)
+        second = _function_ast(10, "ready", 2)
+        files = ["a.cpp", "b.cpp"]
+        data = pd.DataFrame([{
+            "project": "sample",
+            "cppFile": files,
+            "func_ast": [[first], [second]],
+            "func_src": [[first[0]["code_snippet"]], [second[0]["code_snippet"]]],
+        }])
+        infos = [
+            ["sample", files[0], first[0]["extent"], first[1]],
+            ["sample", files[1], second[0]["extent"], second[1]],
+        ]
+        idiom = {
+            "center_point": first[1]["code_snippet"],
+            "info": infos[0],
+            "source_infos": [infos[0]],
+            "cnt": 1,
+        }
+        coverage = compute_coverage_stats(
+            [idiom],
+            data,
+            "sample",
+            0,
+            _opportunity(data, "sample", 0, infos),
+            evidence_by_file={0: [(0, infos[0])]},
         )
-        self.assertEqual(result["ISP"], 1.0)
-        self.assertEqual(result["matched_idiom_count"], 1)
-        self.assertAlmostEqual(result["IC_raw"], round(6 / 7, 4))
-        self.assertAlmostEqual(result["IC"], round((6 / 7) ** 0.5, 4))
-        self.assertEqual(result["avg_idiom_size"], 10.0)
-        library = compute_idiom_library_stats([idiom], data, "sample", 0)
-        self.assertEqual(library["idiom_type_count"], 1)
-        self.assertEqual(library["avg_cluster_size"], 2)
-        self.assertEqual(library["avg_cross_function_support"], 2)
-        self.assertEqual(library["AvgAST"], 10)
+
+        self.assertEqual(coverage["opportunity_function_count"], 2)
+        self.assertAlmostEqual(coverage["IC_macro"], 0.5)
+        self.assertAlmostEqual(coverage["IC_micro"], 0.5)
+        self.assertEqual(coverage["IC"], coverage["IC_raw"])
+
+    def test_overlapping_cluster_members_deduplicate_ast_nodes(self):
+        function = _function_ast(1, "value", 1)
+        data = pd.DataFrame([{
+            "project": "sample",
+            "cppFile": ["a.cpp"],
+            "func_ast": [[function]],
+            "func_src": [[function[0]["code_snippet"]]],
+        }])
+        infos = [
+            ["sample", "a.cpp", function[0]["extent"], function[0]],
+            ["sample", "a.cpp", function[0]["extent"], function[1]],
+        ]
+
+        opportunity = _opportunity(data, "sample", 0, infos)
+
+        self.assertEqual(
+            len(opportunity[("a.cpp", function[0]["extent"])]),
+            len(function),
+        )
+
+    def test_opportunity_mapping_failure_has_no_broad_fallback(self):
+        function = _function_ast(1, "value", 1)
+        data = pd.DataFrame([{
+            "project": "sample",
+            "cppFile": ["a.cpp"],
+            "func_ast": [[function]],
+            "func_src": [[function[0]["code_snippet"]]],
+        }])
+        invalid_info = [
+            "sample",
+            "a.cpp",
+            function[0]["extent"],
+            {"kind": "if_statement", "extent": "99-0-99-1"},
+        ]
+
+        with self.assertRaisesRegex(ValueError, "无法精确映射 AST 节点"):
+            _opportunity(data, "sample", 0, [invalid_info])
 
     def test_quality_semantic_slice_maps_back_to_ast_coverage(self):
         semantic_slice = {
@@ -459,16 +570,23 @@ class MetricHelperTests(unittest.TestCase):
             "cnt": 1,
         }
 
-        coverage = compute_coverage_stats([idiom], data, "sample", 0)
+        coverage = compute_coverage_stats(
+            [idiom],
+            data,
+            "sample",
+            0,
+            _opportunity(data, "sample", 0, [info]),
+        )
 
         self.assertEqual(coverage["matched_idiom_indices"], {0})
         self.assertEqual(coverage["match_count"], 1)
-        self.assertGreater(coverage["matched_node_count"], 0)
+        self.assertGreater(coverage["covered_node_count"], 0)
         self.assertGreater(coverage["IC"], 0)
 
     def test_repository_macro_and_global_summary_use_final_ic(self):
         rows = []
         idioms_by_project = {}
+        cluster_infos_by_project = {}
         for offset, project in ((1, "first"), (30, "second")):
             first_ast = _function_ast(offset, "value", 1)
             second_ast = _function_ast(offset + 10, "ready", 2)
@@ -488,17 +606,18 @@ class MetricHelperTests(unittest.TestCase):
                 "info": infos[0],
                 "source_infos": infos,
                 "cnt": 2,
-                "mock_provenance": {
-                    "kind": "frozen_cluster_selection_without_llm"
-                },
             }]
+            cluster_infos_by_project[project] = infos
 
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
             idiom_dir = root / "idioms"
             idiom_dir.mkdir()
             dataset_path = root / "dataset.pkl"
+            cluster_path = root / "clusters.pkl"
             pd.DataFrame(rows).to_pickle(dataset_path)
+            with cluster_path.open("wb") as file:
+                pickle.dump(_cluster_payload(cluster_infos_by_project), file)
             for project, idioms in idioms_by_project.items():
                 with (idiom_dir / f"{project}_idiom.pkl").open("wb") as file:
                     pickle.dump(
@@ -513,22 +632,16 @@ class MetricHelperTests(unittest.TestCase):
                 str(idiom_dir),
                 str(dataset_path),
                 str(root / "eval.json"),
-                evaluation_mode="mock_cluster_file_split",
+                str(cluster_path),
                 fold_count=2,
             )
 
-        expected_ic = round(6 / 7, 4)
+        expected_ic = 1.0
         self.assertEqual(result["repository_macro"]["IC_macro"], expected_ic)
         self.assertEqual(result["repository_macro"]["IC_micro"], expected_ic)
         self.assertEqual(result["repository_macro"]["IC_raw"], expected_ic)
-        self.assertEqual(
-            result["repository_macro"]["IC"],
-            round((6 / 7) ** 0.5, 4),
-        )
-        self.assertEqual(
-            result["repository_macro"]["F1"],
-            round(compute_f1((6 / 7) ** 0.5, 1.0), 4),
-        )
+        self.assertEqual(result["repository_macro"]["IC"], expected_ic)
+        self.assertEqual(result["repository_macro"]["F1"], 1.0)
         self.assertEqual(result["global"]["idiom_type_count"], 2)
         self.assertEqual(result["global"]["total_cluster_instances"], 4)
         self.assertNotIn('"rank"', json.dumps(result))
@@ -573,13 +686,17 @@ class MetricHelperTests(unittest.TestCase):
             idiom_dir = root / "idioms" / "sample"
             idiom_dir.mkdir(parents=True)
             dataset_path = root / "dataset.pkl"
+            cluster_path = root / "clusters.pkl"
             data.to_pickle(dataset_path)
+            with cluster_path.open("wb") as file:
+                pickle.dump(_cluster_payload({"sample": infos}), file)
             with (idiom_dir / "idiom-synthesis.pkl").open("wb") as file:
                 pickle.dump(artifact, file)
             result = evaluate_cpp(
                 str(root / "idioms"),
                 str(dataset_path),
                 str(root / "eval.json"),
+                str(cluster_path),
                 artifact_stage="synthesis",
                 fold_count=2,
             )
@@ -587,6 +704,55 @@ class MetricHelperTests(unittest.TestCase):
         self.assertEqual(result["artifact_stage"], "synthesis")
         self.assertEqual(result["projects"][0]["project"], "sample")
         self.assertEqual(result["projects"][0]["idiom_type_count"], 1)
+
+    def test_existing_three_repository_artifacts_can_be_reevaluated(self):
+        root = Path(__file__).resolve().parents[2]
+        replay_root = (
+            root
+            / "outputs"
+            / "experiments"
+            / "stage34-three-policy-replay-20260809"
+        )
+        isolated_root = (
+            root / "outputs" / "experiments" / "repo-isolated-v1" / "repos"
+        )
+        repositories = ("leveldb", "ninja", "tomlplusplus")
+        paths = [
+            (
+                replay_root / repository / "stage4",
+                root
+                / "outputs"
+                / "dataset-experiment"
+                / "final"
+                / repository
+                / "dataset.pkl",
+                isolated_root
+                / repository
+                / "stage2"
+                / "clustering-merged"
+                / "clusters.pkl",
+            )
+            for repository in repositories
+        ]
+        if any(not path.exists() for triple in paths for path in triple):
+            self.skipTest("本地三仓实验产物不完整")
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            for repository, (idiom_dir, dataset_path, cluster_path) in zip(
+                repositories, paths
+            ):
+                result = evaluate_cpp(
+                    str(idiom_dir),
+                    str(dataset_path),
+                    str(Path(temporary_directory) / f"{repository}.json"),
+                    str(cluster_path),
+                    artifact_stage="synthesis",
+                    fold_count=5,
+                )
+                project = result["projects"][0]
+                self.assertEqual(project["IC"], project["IC_raw"])
+                self.assertGreater(project["opportunity_function_count"], 0)
+                self.assertGreater(project["opportunity_node_count"], 0)
 
 
 if __name__ == "__main__":

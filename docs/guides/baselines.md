@@ -252,7 +252,9 @@ manifest 对每个项目保存 `input_cluster_count`、`minimum_size_eligible_co
 数量上限、IdioMine-CPP 缺失 DCC-lite/DBSCAN/迁移声明、未按
 “独立判断→同区域直接合成”执行或预算耗尽的配置，以及缺少
 “最小簇大小→比例→数量上限”组合或比例不小于1的旧规则配置。随后才调用现有
-`src.evaluation.idiom_metrics`。验证只有在逐项目、仓库宏平均和全局三个层次都
+`src.evaluation.idiom_metrics`。所有方法必须显式传入同一份 Stage 3 裁决前冻结的
+Stage 2 非噪声聚类产物；IC 的函数和节点分母由该产物固定，不随各方法最终输出
+变化。验证只有在逐项目、仓库宏平均和全局三个层次都
 包含下列九个有限数值时才通过：
 
 `IC_macro`、`IC_micro`、`IC`、`ISP`、`F1`、`idiom_type_count`、`avg_cluster_size`、`avg_cross_function_support`、`AvgAST`。
@@ -270,7 +272,7 @@ manifest 对每个项目保存 `input_cluster_count`、`minimum_size_eligible_co
 | `loc_label` | 项目、文件和候选范围组成的稳定位置标签 |
 | `baseline_provenance` | 方法、参数、适配差异、预算或选择规则 |
 
-评价器允许各方法的 `idiom_type_count` 不同。它不会做公共 Top100、补齐、重排或按最小方法数量对齐；IC、ISP、F1 和结构指标均以每个方法自己的完整有效集合为分母。
+评价器允许各方法的 `idiom_type_count` 不同。它不会做公共 Top100、补齐、重排或按最小方法数量对齐；ISP 和结构指标使用每个方法自己的完整有效集合，IC 则统一使用同一仓库预先冻结的聚类机会域。
 
 ## 7. 复现命令
 
@@ -287,7 +289,8 @@ manifest 对每个项目保存 `input_cluster_count`、`minimum_size_eligible_co
 .venv/bin/python -m src.evaluation.baseline_validation \
   --method haggis-cpp \
   --idiom-dir results/baselines/haggis-cpp/cpp \
-  --dataset outputs/cpp/dataset.pkl
+  --dataset outputs/cpp/dataset.pkl \
+  --clusters outputs/cpp/clusters-merged.pkl
 ```
 
 `--max-functions-per-project` 和 `--max-nodes-per-function` 只用于有界 smoke 或资源保护；正式运行必须在 manifest 中说明是否使用。
@@ -304,7 +307,8 @@ manifest 对每个项目保存 `input_cluster_count`、`minimum_size_eligible_co
 .venv/bin/python -m src.evaluation.baseline_validation \
   --method llm-direct-budget \
   --idiom-dir results/baselines/llm-direct-budget/cpp \
-  --dataset outputs/cpp/dataset.pkl
+  --dataset outputs/cpp/dataset.pkl \
+  --clusters outputs/cpp/clusters-merged.pkl
 ```
 
 真实入口会发送源码到配置的模型端点。先用合成代码与 `--max-functions-per-project` 做 smoke，再单独审批公开语料范围、调用数和成本。
@@ -321,7 +325,8 @@ manifest 对每个项目保存 `input_cluster_count`、`minimum_size_eligible_co
 .venv/bin/python -m src.evaluation.baseline_validation \
   --method rules-embedding-clustering \
   --idiom-dir results/baselines/rules-embedding-clustering/cpp \
-  --dataset outputs/cpp/dataset.pkl
+  --dataset outputs/cpp/dataset.pkl \
+  --clusters outputs/cpp/clusters-merged.pkl
 ```
 
 运行 manifest 同时记录原始簇数、最小簇大小过滤后的合格簇数、比例截断数量、数量上限和最终产物数。比例与阈值不得用最终参考/测量指标或人工标签调参。
@@ -346,7 +351,8 @@ manifest 对每个项目保存 `input_cluster_count`、`minimum_size_eligible_co
 .venv/bin/python -m src.evaluation.baseline_validation \
   --method idiomine-cpp \
   --idiom-dir results/baselines/idiomine-cpp/cpp \
-  --dataset outputs/cpp/cli11/dataset.pkl
+  --dataset outputs/cpp/cli11/dataset.pkl \
+  --clusters outputs/cpp/cli11/clusters-merged.pkl
 ```
 
 `--embeddings` 可以重复传入，但每个项目只能出现一次。正式实验应逐仓生成输入并
@@ -370,7 +376,8 @@ manifest 对每个项目保存 `input_cluster_count`、`minimum_size_eligible_co
 
 .venv/bin/python -m src.evaluation.baseline_validation \
   --method cimas-cpp --idiom-dir results/cpp \
-  --dataset outputs/cpp/dataset.pkl --allow-main-method
+  --dataset outputs/cpp/dataset.pkl \
+  --clusters outputs/cpp/clusters-merged.pkl --allow-main-method
 ```
 
 阶段4的 `accepted` 是阶段3基础习语与去重后新增合成的最终知识库；

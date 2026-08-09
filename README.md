@@ -69,6 +69,7 @@ cp .env.example .env
 .venv/bin/python -m src.evaluation.idiom_metrics \
   --idiom-dir results/cpp/cli11 \
   --dataset outputs/cpp/cli11/dataset.pkl \
+  --clusters outputs/cpp/cli11/clusters-merged.pkl \
   --output results/cpp/cli11/eval.json \
   --mode within_project_kfold --folds 5
 ```

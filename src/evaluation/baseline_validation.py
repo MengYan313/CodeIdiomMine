@@ -196,6 +196,7 @@ def validate_method_metrics(
     method: str,
     idiom_dir: str | Path,
     dataset_path: str | Path,
+    cluster_path: str | Path,
     output_path: str | Path | None = None,
     artifact_stage: str = "judgment",
     evaluation_mode: str = DEFAULT_EVALUATION_MODE,
@@ -218,6 +219,7 @@ def validate_method_metrics(
         str(idiom_dir),
         str(dataset_path),
         str(output_path),
+        str(cluster_path),
         artifact_stage=artifact_stage,
         evaluation_mode=evaluation_mode,
         fold_count=fold_count,
@@ -251,6 +253,7 @@ def main() -> None:
     parser.add_argument("--method", required=True)
     parser.add_argument("--idiom-dir", required=True)
     parser.add_argument("--dataset", default="outputs/cpp/dataset.pkl")
+    parser.add_argument("--clusters", required=True)
     parser.add_argument("--output", default=None)
     parser.add_argument(
         "--stage", choices=("judgment", "synthesis"), default="judgment"
@@ -272,6 +275,7 @@ def main() -> None:
         method=args.method,
         idiom_dir=args.idiom_dir,
         dataset_path=args.dataset,
+        cluster_path=args.clusters,
         output_path=args.output,
         artifact_stage=args.stage,
         evaluation_mode=args.mode,
