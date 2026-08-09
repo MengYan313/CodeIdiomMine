@@ -21,7 +21,11 @@ from .schema import (
     SynthesisResult,
     build_synthesis_artifact,
 )
-from .sources import group_related_idioms, load_idiom_candidates
+from .sources import (
+    group_related_idioms,
+    load_accepted_judgments,
+    load_idiom_candidates,
+)
 
 
 logger = get_logger(__name__)
@@ -75,6 +79,7 @@ async def synthesize_idioms(
     if resume and not checkpoint_path:
         raise ValueError("--resume 必须与 --checkpoint 一起使用")
     project, candidates = load_idiom_candidates(input_path)
+    base_records = load_accepted_judgments(input_path)
     groups = group_related_idioms(candidates)
     if max_groups > 0:
         groups = groups[:max_groups]
@@ -106,18 +111,14 @@ async def synthesize_idioms(
         for position, value in results_by_position.items()
         if 0 <= position < len(groups)
     }
+    seen_combinations = {
+        str(result.plan.get("combination_key") or "")
+        for region_results in results_by_position.values()
+        for result in region_results
+        if result.plan.get("combination_key")
+    }
 
     usage = {"prompt_tokens": 0, "completion_tokens": 0}
-    run_contract: Dict[str, Any] = {
-        "artifact_semantics": "synthesis_delta",
-        "region_grouping": "member_source_region_cooccurrence",
-        "decision_policy": {
-            "calibration_status": "synthetic_smoke_only_pilot_required"
-        },
-        "max_group_candidates": max_group_candidates,
-        "max_plans_per_region": max_plans_per_region,
-        "planning_mode": "single_region_call_batched_plans",
-    }
     pipeline = IdiomSynthesisPipeline(
         model=model,
         max_group_candidates=max_group_candidates,
@@ -134,6 +135,7 @@ async def synthesize_idioms(
                 region_results = await pipeline.synthesize(
                     group,
                     source_root=source_root,
+                    excluded_combination_keys=seen_combinations,
                 )
             except Exception as exc:
                 logger.error(
@@ -143,6 +145,11 @@ async def synthesize_idioms(
                 region_results = [
                     _orchestration_failure_result(project, group)
                 ]
+            seen_combinations.update(
+                str(result.plan["combination_key"])
+                for result in region_results
+                if result.plan.get("combination_key")
+            )
             results_by_position[position] = region_results
             if checkpoint is not None:
                 checkpoint.save_record(position, region_results)
@@ -168,6 +175,7 @@ async def synthesize_idioms(
         region_candidate_membership_count=(
             region_candidate_membership_count
         ),
+        base_records=base_records,
     )
     artifact["execution_status"] = "completed"
     artifact["input"] = {

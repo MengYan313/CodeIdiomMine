@@ -63,6 +63,22 @@ def _info(
 
 
 class IdiomSynthesisTests(unittest.TestCase):
+    def test_pipeline_passes_explicit_model_by_keyword(self):
+        client = SimpleNamespace()
+
+        async def run_pipeline():
+            pipeline = IdiomSynthesisPipeline(model="gpt-5.6-luna")
+            with patch(
+                "src.idiom_synthesis.pipeline.create_model_client",
+                return_value=client,
+            ) as factory:
+                await pipeline.initialize()
+                factory.assert_called_once_with(model="gpt-5.6-luna")
+                pipeline._owns_model_client = False
+                await pipeline.shutdown()
+
+        asyncio.run(run_pipeline())
+
     def test_group_limit_rejects_invalid_configuration(self):
         with self.assertRaisesRegex(
             ValueError,
@@ -252,6 +268,9 @@ class IdiomSynthesisTests(unittest.TestCase):
             improves_quality=True,
             preserves_intents=True,
             review_unsupported_additions=[],
+            review_issues=[],
+            adds_semantic_content=True,
+            located_in_context=True,
         )
         status, _ = decide_synthesis_status(
             quality_score=70,
@@ -528,9 +547,9 @@ class IdiomSynthesisTests(unittest.TestCase):
             )
             self.assertEqual(
                 artifact["artifact_semantics"],
-                "synthesis_delta",
+                "final_library",
             )
-            self.assertFalse(artifact["passthrough_included"])
+            self.assertNotIn("passthrough_included", artifact)
             self.assertNotIn("manual_review", artifact)
             self.assertEqual(
                 artifact["summary"]["accepted_classification_kind_counts"][
@@ -644,7 +663,7 @@ class IdiomSynthesisTests(unittest.TestCase):
                         "plans": [
                             plan([0, 1], "数据依赖"),
                             plan([1, 0], "重复的数据依赖"),
-                            plan([0, 2], "稳定源码顺序"),
+                            plan([1, 2], "稳定源码顺序"),
                             plan([2], "候选不足"),
                             plan([0, 5], "索引越界"),
                         ],
@@ -655,7 +674,7 @@ class IdiomSynthesisTests(unittest.TestCase):
                     merged = (
                         ""
                         if self.calls["assembly"] == 1
-                        else "first();\nthird();"
+                        else "second();\nthird();"
                     )
                     response = {
                         "merged_code": merged,
@@ -768,11 +787,11 @@ class IdiomSynthesisTests(unittest.TestCase):
         )
         self.assertEqual(
             [result.plan["selected_indices"] for result in results],
-            [[0, 1], [0, 2]],
+            [[0, 1], [1, 2]],
         )
         self.assertEqual(
             results[1].plan["selected_candidate_ids"],
-            ["judgment:0", "judgment:2"],
+            ["judgment:1", "judgment:2"],
         )
         validation = results[0].region_planning["validation"]
         self.assertEqual(validation["raw_plan_count"], 5)
@@ -944,6 +963,31 @@ class IdiomSynthesisTests(unittest.TestCase):
             ],
         )
 
+    def test_same_candidate_set_across_regions_is_planned_once(self):
+        def candidate(candidate_id, code):
+            infos = [
+                _info("sample", "same.cpp", extent, code)
+                for extent in ("1-0-5-1", "8-0-12-1")
+            ]
+            return IdiomCandidate(
+                candidate_id=candidate_id,
+                project="sample",
+                code=code,
+                loc_label="",
+                source_infos=infos,
+                representative_info=infos[0],
+                support_count=2,
+            )
+
+        groups = group_related_idioms(
+            [candidate("judgment:1", "first();"), candidate("judgment:2", "second();")]
+        )
+        self.assertEqual(len(groups), 1)
+        self.assertEqual(
+            {item.candidate_id for item in groups[0]},
+            {"judgment:1", "judgment:2"},
+        )
+
     def test_context_loads_shared_non_center_member_region(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
@@ -1110,6 +1154,42 @@ class IdiomSynthesisTests(unittest.TestCase):
                 "sample",
                 [result],
             )
+
+    def test_artifact_builder_returns_base_plus_synthesized_final_library(self):
+        base = {
+            "center_point": "first();",
+            "idiom_classification": {"kind": "repository_specific"},
+        }
+        result = SynthesisResult(
+            project="sample",
+            status="accepted",
+            merged_code="first();\nsecond();",
+            context_evidence={
+                "source_identity": {
+                    "relative_path": "sample.cpp",
+                    "extent": "1-0-4-1",
+                }
+            },
+            plan={"combination_key": "combination:1+2"},
+            deterministic_checks={"synthesized_ast_node_count": 4},
+        )
+        artifact = build_synthesis_artifact(
+            "sample",
+            [result],
+            base_records=[base],
+        )
+        self.assertEqual(
+            [record["center_point"] for record in artifact["accepted"]],
+            ["first();", "first();\nsecond();"],
+        )
+        self.assertEqual(len(artifact["synthesized"]), 1)
+        self.assertEqual(artifact["summary"]["accepted_count"], 2)
+        self.assertEqual(artifact["summary"]["synthesis_accepted_count"], 1)
+        self.assertEqual(artifact["summary"]["base_candidate_count"], 1)
+        self.assertEqual(
+            artifact["synthesized"][0]["source_infos"][0][3]["code_snippet"],
+            "first();\nsecond();",
+        )
 
     def test_missing_context_is_rejected_without_llm_calls(self):
         candidate = IdiomCandidate(

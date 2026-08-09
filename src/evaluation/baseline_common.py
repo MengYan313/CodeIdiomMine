@@ -17,7 +17,7 @@ FINAL_METRICS = (
     "F1",
     "idiom_type_count",
     "avg_cluster_size",
-    "avg_cross_file_support",
+    "avg_cross_function_support",
     "AvgAST",
 )
 

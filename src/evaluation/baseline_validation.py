@@ -199,7 +199,7 @@ def validate_method_metrics(
     output_path: str | Path | None = None,
     artifact_stage: str = "judgment",
     evaluation_mode: str = DEFAULT_EVALUATION_MODE,
-    test_fraction: float = 0.2,
+    fold_count: int = 5,
     require_baseline_provenance: bool = True,
 ) -> Dict[str, Any]:
     idiom_dir = Path(idiom_dir)
@@ -220,7 +220,7 @@ def validate_method_metrics(
         str(output_path),
         artifact_stage=artifact_stage,
         evaluation_mode=evaluation_mode,
-        test_fraction=test_fraction,
+        fold_count=fold_count,
     )
     metric_contract = validate_metric_payload(payload)
     report = {
@@ -257,11 +257,11 @@ def main() -> None:
     )
     parser.add_argument(
         "--mode",
-        choices=("within_project_file_split",),
+        choices=("within_project_kfold",),
         default=DEFAULT_EVALUATION_MODE,
-        help="仓库内参考/测量分区",
+        help="仓库内文件五折",
     )
-    parser.add_argument("--test-fraction", type=float, default=0.2)
+    parser.add_argument("--folds", type=int, default=5)
     parser.add_argument(
         "--allow-main-method",
         action="store_true",
@@ -275,7 +275,7 @@ def main() -> None:
         output_path=args.output,
         artifact_stage=args.stage,
         evaluation_mode=args.mode,
-        test_fraction=args.test_fraction,
+        fold_count=args.folds,
         require_baseline_provenance=not args.allow_main_method,
     )
 

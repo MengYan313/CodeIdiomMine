@@ -255,7 +255,7 @@ manifest 对每个项目保存 `input_cluster_count`、`minimum_size_eligible_co
 `src.evaluation.idiom_metrics`。验证只有在逐项目、仓库宏平均和全局三个层次都
 包含下列九个有限数值时才通过：
 
-`IC_macro`、`IC_micro`、`IC`、`ISP`、`F1`、`idiom_type_count`、`avg_cluster_size`、`avg_cross_file_support`、`AvgAST`。
+`IC_macro`、`IC_micro`、`IC`、`ISP`、`F1`、`idiom_type_count`、`avg_cluster_size`、`avg_cross_function_support`、`AvgAST`。
 
 ### 6.1 公共记录字段
 
@@ -373,10 +373,10 @@ manifest 对每个项目保存 `input_cluster_count`、`minimum_size_eligible_co
   --dataset outputs/cpp/dataset.pkl --allow-main-method
 ```
 
-上面的主方法评价示例使用阶段3完整 `accepted` 产物。阶段4是
-`synthesis_delta`，使用 `--stage synthesis` 只能分析合成增量本身，不能把该
-增量误当作包含未合成习语的完整知识库。不能把 `results/evaluation-mock/`
-传给 `--allow-main-method`。
+阶段4的 `accepted` 是阶段3基础习语与去重后新增合成的最终知识库；
+`synthesized` 单独保留新增合成，来源候选只作证据。正式主方法评价使用
+`--stage synthesis`。不能把 `results/evaluation-mock/` 传给
+`--allow-main-method`。
 
 ## 8. 当前验证状态
 
@@ -387,16 +387,9 @@ manifest 对每个项目保存 `input_cluster_count`、`minimum_size_eligible_co
 - `Rules-Embedding-Clustering` 的三段组合截断已由确定性测试覆盖；旧的 `selection_ratio=1` 本地产物不再符合当前合同，不能作为正式规则 baseline。
 - `Haggis-CPP` 已在当前三个项目上完成每项目 20 个函数、6 轮采样的有界 smoke。
 - `LLM-Direct-Budget` 已用两个合成 C++ 短函数完成低档模型的 1 次 map + 1 次 reduce smoke；没有发送仓库源码。
-- IdioMine-CPP 的判断前候选阶段已复用筛选前26个冻结仓库的缓存 UniXcoder embedding
-  完成全输入诊断：233,912 个输入候选中有8,413个 DCC-lite 候选，形成1,083个
-  非噪声簇、3,617个簇内实例。仓库宏平均九指标为
-  `IC_macro=0.0021`、`IC_micro=0.0076`、`IC=0.0048`、`ISP=0.0765`、
-  `F1=0.0085`、`idiom_type_count=41.65`、`avg_cluster_size=3.0779`、
-  `avg_cross_file_support=1.6257`、`AvgAST=182.46`；全局九指标也已通过合同。
-  该运行使用当前默认 `eps=0.25`、`min_samples=2`；指标只是进入 ChatGPT
-  判断前的历史诊断值，不是 `IdioMine-CPP` 最终指标。阶段2质量筛选后，
-  `cpp-httplib`、`entt` 和 `simdjson` 已退出正式主数据集，该26仓产物不得直接
-  作为当前23仓论文结果。
+- IdioMine-CPP 的候选构建、逐簇判断、同区域直接合成和九指标合同均有确定性
+  测试。任何筛选前仓库集合或旧指标定义产生的本地产物都不得作为当前论文结果；
+  正式运行须使用当前项目清单和[评价指标规范](evaluation-metrics.md)。
 - `IdioMine-CPP` 已通过 fake client 确定性测试，覆盖逐簇独立判断、
   精确同区域分组、成功合成直接接受、理由审计和统一九指标。对上述筛选前26仓候选
   产物按与代表代码对应的来源位置离线估算为1,083次判断、至多122次合成，即
@@ -404,8 +397,7 @@ manifest 对每个项目保存 `input_cluster_count`、`minimum_size_eligible_co
 - 少量真实付费测试只发送完全合成的 C++：第一批3个过短候选均被拒绝，因此未
   调用合成；第二批2个带重复证据的并发候选均通过，随后1次同区域合成成功并
   直接接受。两批共6次端点请求、近似3,064 token，无 JSON 修复或技术失败。
-  第二批最终3项已通过九指标合同；单文件 smoke 的 IC/ISP/F1 为0，不代表正式
-  质量。正式23仓真实付费运行尚未执行；运行前必须按当前清单重新计算调用预算，
-  不得继续使用上述26仓上界。
+  第二批最终3项已通过九指标合同；单函数 smoke 不具备跨函数 ISP 分母，不能代表
+  正式质量。正式多仓真实付费运行前必须按当前清单重新计算调用预算。
 
 以上证明代码路径与九项指标兼容，不是正式方法优劣结论。被忽略的 smoke/评价产物及精确运行统计记录在[本地开发基线](local-baseline.md)。

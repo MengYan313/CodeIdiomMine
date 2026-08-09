@@ -68,6 +68,22 @@ def _candidate(codes, *, files=None, kinds=None):
 
 
 class IdiomJudgmentTests(unittest.TestCase):
+    def test_pipeline_passes_explicit_model_by_keyword(self):
+        client = SimpleNamespace()
+
+        async def run_pipeline():
+            pipeline = IdiomJudgmentPipeline(model="gpt-5.6-luna")
+            with patch(
+                "src.idiom_judgment.pipeline.create_model_client",
+                return_value=client,
+            ) as factory:
+                await pipeline.initialize()
+                factory.assert_called_once_with(model="gpt-5.6-luna")
+                pipeline._owns_model_client = False
+                await pipeline.shutdown()
+
+        asyncio.run(run_pipeline())
+
     def test_taxonomy_source_refs_use_only_thesis_global_ids(self):
         for idiom_type in KNOWN_IDIOM_TYPES:
             self.assertTrue(idiom_type.source_refs, idiom_type.type_id)
@@ -217,7 +233,7 @@ class IdiomJudgmentTests(unittest.TestCase):
             self.assertEqual(report["run"]["resumed_record_count"], 1)
             self.assertEqual(report["summary"]["pending_llm_count"], 1)
 
-    def test_verified_context_gates_stage3_without_entering_llm_prompts(self):
+    def test_verified_context_gates_stage3_and_enters_llm_prompts(self):
         class ContextClient:
             def __init__(self):
                 self.prompts = []
@@ -312,7 +328,7 @@ class IdiomJudgmentTests(unittest.TestCase):
             self.assertTrue(result.context_evidence["verified"])
             self.assertEqual(len(client.prompts), 2)
             self.assertTrue(
-                all("void f()" not in prompt for prompt in client.prompts)
+                all("void f()" in prompt for prompt in client.prompts)
             )
             self.assertTrue(
                 all(
@@ -439,7 +455,7 @@ class IdiomJudgmentTests(unittest.TestCase):
         self.assertTrue(result.exact_duplicate)
         self.assertIn("exact_source_duplicate", result.warnings)
 
-    def test_only_frequent_local_alpha_names_are_proposed(self):
+    def test_frequent_local_variable_names_are_proposed(self):
         candidate = _candidate(
             [
                 "int result = load(a); consume(result);",
@@ -469,6 +485,15 @@ class IdiomJudgmentTests(unittest.TestCase):
         self.assertIn("load(a)", abstracted)
         self.assertIn("consume(<VAR_1>)", abstracted)
 
+        with_context = propose_abstractions(
+            candidate,
+            context_code=(
+                "void f(int a) { int result = load(a); consume(result); }"
+            ),
+        )
+        self.assertEqual(len(with_context), 2)
+        self.assertEqual(with_context[1].values, ["a", "b", "c"])
+
     def test_two_instances_and_semantic_calls_are_not_abstracted(self):
         two = _candidate(
             [
@@ -478,21 +503,33 @@ class IdiomJudgmentTests(unittest.TestCase):
         )
         self.assertEqual(propose_abstractions(two), [])
 
-    def test_deterministic_decision_only_scores_idiom_value(self):
+    def test_field_and_call_api_names_are_not_abstracted(self):
+        proposals = propose_abstractions(
+            _candidate(
+                [
+                    "left.state = load(a); consume(left.state);",
+                    "right.mode = load(b); consume(right.mode);",
+                    "item.flag = load(c); consume(item.flag);",
+                ]
+            )
+        )
+        self.assertEqual(proposals, [])
+
+    def test_deterministic_decision_uses_one_composite_threshold(self):
         accepted, _ = decide_judgment_status(
             rule_eligible=True,
             rule_score=80,
             semantic_is_idiom=True,
             semantic_score=75,
-            reuse_score=65,
+            reuse_score=45,
         )
         self.assertEqual(accepted, "accepted")
         rejected, _ = decide_judgment_status(
             rule_eligible=True,
-            rule_score=90,
+            rule_score=50,
             semantic_is_idiom=True,
             semantic_score=49,
-            reuse_score=90,
+            reuse_score=50,
         )
         self.assertEqual(rejected, "rejected")
         boundary, _ = decide_judgment_status(
@@ -566,10 +603,10 @@ class IdiomJudgmentTests(unittest.TestCase):
         )
         client = FakeClient()
 
-        async def run_pipeline(active_client):
+        async def run_pipeline(active_client, active_candidate=candidate):
             pipeline = IdiomJudgmentPipeline(model_client=active_client)
             try:
-                return await pipeline.evaluate(candidate)
+                return await pipeline.evaluate(active_candidate)
             finally:
                 await pipeline.shutdown()
 
@@ -578,7 +615,7 @@ class IdiomJudgmentTests(unittest.TestCase):
         self.assertEqual(result.approved_abstraction_ids, ["var-1"])
         self.assertTrue(result.abstraction_applied)
         self.assertEqual(result.template_code.count("<VAR_1>"), 2)
-        self.assertGreaterEqual(result.scorecard["final_score"], 70)
+        self.assertGreaterEqual(result.scorecard["final_score"], 60)
         self.assertNotIn("smell_risk_score", result.scorecard)
         self.assertFalse(result.smell_gate["rejected"])
         self.assertEqual(
@@ -614,7 +651,8 @@ class IdiomJudgmentTests(unittest.TestCase):
             candidate.lexical_variants,
         )
         self.assertNotIn("cluster_members", result.semantic_review_input)
-        self.assertNotIn("context_code", result.semantic_review_input)
+        self.assertEqual(result.semantic_review_input["context_code"], "")
+        self.assertEqual(result.smell_review_input["context_code"], "")
         self.assertEqual(
             result.smell_review_input["related_examples"],
             candidate.lexical_variants,
@@ -637,6 +675,17 @@ class IdiomJudgmentTests(unittest.TestCase):
             kept_result.template_code,
             candidate.representative_code,
         )
+
+        compact_candidate = _candidate(
+            ["file_->Unref();"] * 3,
+            files=["same.cpp"] * 3,
+        )
+        compact_result = asyncio.run(
+            run_pipeline(FakeClient(), compact_candidate)
+        )
+        self.assertEqual(compact_result.status, "accepted")
+        self.assertNotIn("small_semantic_unit", compact_result.rules.warnings)
+
         artifact = build_judgment_artifact(
             "sample",
             [result, kept_result],
@@ -672,7 +721,7 @@ class IdiomJudgmentTests(unittest.TestCase):
         risky_result = asyncio.run(run_pipeline(risky_client))
         self.assertEqual(risky_result.status, "rejected")
         self.assertTrue(risky_result.smell_gate["rejected"])
-        self.assertGreaterEqual(risky_result.scorecard["final_score"], 70)
+        self.assertGreaterEqual(risky_result.scorecard["final_score"], 60)
 
         missing_semantic_reason = FakeClient()
         missing_semantic_reason.semantic_reason = ""

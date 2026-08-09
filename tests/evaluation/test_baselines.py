@@ -603,7 +603,7 @@ class BaselineEndToEndTests(unittest.TestCase):
                 self.assertEqual(report["status"], "passed")
                 self.assertEqual(
                     report["evaluation_mode"],
-                    "within_project_file_split",
+                    "within_project_kfold",
                 )
                 self.assertEqual(
                     report["metric_contract"]["metric_names"],

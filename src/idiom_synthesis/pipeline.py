@@ -36,6 +36,9 @@ from .assembly_agent import (
 )
 from .context import (
     SYNTHESIS_CONTEXT_MODE,
+    adds_semantics,
+    code_occurs_in_context,
+    fragment_node_count,
     load_group_context_with_evidence,
     syntax_structure_valid,
     unsupported_call_targets,
@@ -190,6 +193,9 @@ def decide_synthesis_status(
     improves_quality: bool,
     preserves_intents: bool,
     review_unsupported_additions: Sequence[str],
+    review_issues: Sequence[str],
+    adds_semantic_content: bool,
+    located_in_context: bool,
 ) -> tuple[str, str]:
     """只裁决合成质量；代码异味由独立门禁处理。"""
 
@@ -199,6 +205,10 @@ def decide_synthesis_status(
         return "rejected", "合成结果未通过 Tree-sitter 语法结构检查。"
     if unsupported_calls or review_unsupported_additions:
         return "rejected", "合成结果包含输入习语和允许上下文之外的新增操作。"
+    if not located_in_context:
+        return "rejected", "合成结果不能在已核验源码上下文中定位。"
+    if not adds_semantic_content:
+        return "rejected", "合成结果与单个来源习语等价，没有新增组合语义。"
     if not context_contract_valid:
         return "rejected", "未能提供通过来源校验的成员共现区域上下文。"
     if not review_is_idiom:
@@ -207,6 +217,8 @@ def decide_synthesis_status(
         return "rejected", "合成结果未忠实保留来源习语意图。"
     if not improves_quality:
         return "rejected", "合成结果相较来源习语没有明确质量增益。"
+    if review_issues:
+        return "rejected", "质量复审仍报告未解决问题。"
 
     scorecard = build_synthesis_scorecard(
         quality_score=quality_score,
@@ -243,8 +255,8 @@ class IdiomSynthesisPipeline:
 
     def run_contract(self) -> dict[str, object]:
         return {
-            "artifact_semantics": "synthesis_delta",
-            "region_grouping": "member_source_region_cooccurrence",
+            "artifact_semantics": "final_library",
+            "region_grouping": "unique_candidate_set_member_cooccurrence",
             "decision_policy": {
                 "acceptance_score": SYNTHESIS_ACCEPTANCE_SCORE,
                 "calibration_status": (
@@ -253,7 +265,7 @@ class IdiomSynthesisPipeline:
             },
             "max_group_candidates": self.max_group_candidates,
             "max_plans_per_region": self.max_plans_per_region,
-            "planning_mode": "single_region_call_batched_plans",
+            "planning_mode": "globally_unique_candidate_combinations",
             "idiom_taxonomy": {
                 "known_type_count": len(KNOWN_IDIOM_TYPES),
                 "repository_specific_label": (
@@ -275,7 +287,7 @@ class IdiomSynthesisPipeline:
         if self.runtime is not None:
             return
         if self.model_client is None:
-            self.model_client = create_model_client(self.model)
+            self.model_client = create_model_client(model=self.model)
         runtime = SingleThreadedAgentRuntime()
         await register_agent(
             runtime,
@@ -324,6 +336,7 @@ class IdiomSynthesisPipeline:
         candidates: Sequence[IdiomCandidate],
         *,
         source_root: str | None = None,
+        excluded_combination_keys: set[str] | None = None,
     ) -> list[SynthesisResult]:
         """对一个成员共现区域规划一次，并执行其中全部合法唯一计划。"""
 
@@ -454,6 +467,15 @@ class IdiomSynthesisPipeline:
             group_candidates,
             max_plans_per_region=self.max_plans_per_region,
         )
+        excluded = excluded_combination_keys or set()
+        duplicate_plan_count = sum(
+            plan["combination_key"] in excluded for plan in plans
+        )
+        plans = [
+            plan for plan in plans
+            if plan["combination_key"] not in excluded
+        ]
+        validation["globally_duplicate_plan_count"] = duplicate_plan_count
         region_planning = {
             "region_key": _region_key(context_key),
             "candidate_ids": [
@@ -468,6 +490,8 @@ class IdiomSynthesisPipeline:
             "failure_kind": plan_result.failure_kind,
             "validation": validation,
         }
+        if not plans and duplicate_plan_count:
+            return []
         if not plans:
             plan_failed = plan_result.call_status == "failed"
             if plan_failed:
@@ -592,19 +616,31 @@ class IdiomSynthesisPipeline:
         )
         assembly_data = asdict(assembly_result)
         merged = assembly_result.merged_code
+        source_codes = [candidate.code for candidate in selected]
         unsupported_calls = unsupported_call_targets(
             merged,
-            [candidate.code for candidate in selected],
+            source_codes,
             available_context,
         )
         syntax_valid = bool(merged) and syntax_structure_valid(merged)
         context_contract_valid = bool(available_context)
+        located_in_context = code_occurs_in_context(merged, available_context)
+        adds_semantic_content = adds_semantics(merged, source_codes)
         deterministic = {
             "syntax_structure_valid": syntax_valid,
             "unsupported_call_targets": unsupported_calls,
             "context_contract_valid": context_contract_valid,
+            "located_in_context": located_in_context,
+            "adds_semantic_content": adds_semantic_content,
+            "synthesized_ast_node_count": fragment_node_count(merged),
         }
-        if not merged or not syntax_valid or unsupported_calls:
+        if (
+            not merged
+            or not syntax_valid
+            or unsupported_calls
+            or not located_in_context
+            or not adds_semantic_content
+        ):
             if not merged:
                 reason = (
                     "组装 Agent 技术失败，跳过复审并拒绝当前计划。"
@@ -616,11 +652,15 @@ class IdiomSynthesisPipeline:
                     "合成结果未通过 Tree-sitter 语法结构检查，"
                     "跳过复审并拒绝当前计划。"
                 )
-            else:
+            elif unsupported_calls:
                 reason = (
                     "合成结果包含来源习语和允许上下文之外的新增调用，"
                     "跳过复审并拒绝当前计划。"
                 )
+            elif not located_in_context:
+                reason = "合成结果不能在已核验源码上下文中定位。"
+            else:
+                reason = "合成结果与单个来源习语等价，没有新增组合语义。"
             return SynthesisResult(
                 project=project,
                 status="rejected",
@@ -676,6 +716,7 @@ class IdiomSynthesisPipeline:
                     for candidate in selected
                 ],
             },
+            context_code=available_context,
         )
 
         review_result, smell_result = await asyncio.gather(
@@ -739,6 +780,9 @@ class IdiomSynthesisPipeline:
             improves_quality=review_result.improves_quality,
             preserves_intents=review_result.preserves_intents,
             review_unsupported_additions=review_result.unsupported_additions,
+            review_issues=review_result.issues,
+            adds_semantic_content=adds_semantic_content,
+            located_in_context=located_in_context,
         )
         scorecard = build_synthesis_scorecard(
             quality_score=review_result.quality_score,

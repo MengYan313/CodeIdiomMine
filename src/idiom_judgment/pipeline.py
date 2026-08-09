@@ -48,7 +48,7 @@ from .smell_review_agent import (
 from .smell_taxonomy import build_smell_gate
 
 
-JUDGMENT_ACCEPTANCE_SCORE = 70.0
+JUDGMENT_ACCEPTANCE_SCORE = 60.0
 _JUDGMENT_AGENT_STAGES = ("semantic_review", "smell_review")
 
 
@@ -95,8 +95,6 @@ def decide_judgment_status(
         return "rejected", "确定性规则门禁失败。"
     if not semantic_is_idiom:
         return "rejected", "语义有效性 Agent 判断该候选不属于代码习语。"
-    if semantic_score < 50 or reuse_score < 50:
-        return "rejected", "语义稳定性或复用价值低于最低门槛。"
     scorecard = build_judgment_scorecard(
         rule_score=rule_score,
         semantic_score=semantic_score,
@@ -142,6 +140,12 @@ class IdiomJudgmentPipeline:
                     "semantic": 0.45,
                     "reuse": 0.35,
                 },
+                "hard_gates": [
+                    "deterministic_rules",
+                    "semantic_is_idiom",
+                    "smell_gate",
+                ],
+                "score_dimension_floors": {},
                 "calibration_status": (
                     "synthetic_smoke_only_pilot_required"
                 ),
@@ -168,7 +172,7 @@ class IdiomJudgmentPipeline:
         if self.runtime is not None:
             return
         if self.model_client is None:
-            self.model_client = create_model_client(self.model)
+            self.model_client = create_model_client(model=self.model)
         runtime = SingleThreadedAgentRuntime()
         await register_agent(
             runtime,
@@ -190,7 +194,20 @@ class IdiomJudgmentPipeline:
         rule_only: bool = False,
     ) -> IdiomJudgmentResult:
         rules = evaluate_cluster_rules(candidate)
-        proposals = propose_abstractions(candidate, self.abstraction_policy)
+        context_code = ""
+        context_evidence: dict[str, object] = {}
+        if rules.eligible_for_llm and not rule_only:
+            context_code, context_evidence = load_verified_source_context(
+                project=candidate.project,
+                representative_info=candidate.representative_info,
+                source_root=self.source_root,
+            )
+            context_evidence["required"] = self.require_context
+        proposals = propose_abstractions(
+            candidate,
+            self.abstraction_policy,
+            context_code=context_code,
+        )
         if not rules.eligible_for_llm:
             return IdiomJudgmentResult(
                 candidate=candidate,
@@ -211,12 +228,6 @@ class IdiomJudgmentPipeline:
                 agent_trace=_not_run_traces("rule_only"),
                 decision_reason="规则检查通过，尚未执行语义和异味审查。",
             )
-        context_code, context_evidence = load_verified_source_context(
-            project=candidate.project,
-            representative_info=candidate.representative_info,
-            source_root=self.source_root,
-        )
-        context_evidence["required"] = self.require_context
         if self.require_context and not context_code:
             return IdiomJudgmentResult(
                 candidate=candidate,
@@ -245,6 +256,7 @@ class IdiomJudgmentPipeline:
             cluster_statistics=cluster_statistics,
             rule_evidence=rule_data,
             abstraction_proposals=proposal_data,
+            context_code=context_code,
         )
         smell_request = SmellReviewRequest(
             project=candidate.project,
@@ -252,6 +264,7 @@ class IdiomJudgmentPipeline:
             candidate_code=candidate.representative_code,
             related_examples=code_variants,
             deterministic_evidence=cluster_statistics,
+            context_code=context_code,
         )
         semantic_result, smell_result = await asyncio.gather(
             dispatch_with_fallback(

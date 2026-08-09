@@ -1,29 +1,33 @@
 """C++ 仓库专属代码习语的仓库内评价指标。
 
-每个仓库先使用完整合格源码独立完成习语发现。最终评价阶段再把该仓库的文件
-确定性划分为参考分区和测量分区：只用参考分区中的已发现实例构造匹配变体，
-并在测量分区上同时计算 IC 与 ISP。该分区不触发重新解析、嵌入或聚类：
+每个仓库先使用完整合格源码独立完成习语发现。最终评价阶段把文件按稳定路径
+轮转为五折，每折只用其余文件中的已发现实例构造参考库，并在当前折上测量
+IC 与 ISP。该分区不触发重新解析、嵌入或聚类：
 
-* IC_macro：逐测量函数 AST 节点覆盖率的宏平均；
-* IC_micro：所有测量函数 AST 节点的总体覆盖率；
-* IC：IC_macro 与 IC_micro 的算术平均；
-* ISP：参考分区习语中至少有一个变体在测量分区复现的比例；
+* IC_macro：逐测量函数候选域 AST 节点覆盖率的宏平均；
+* IC_micro：所有测量函数候选域 AST 节点的总体覆盖率；
+* IC_raw：IC_macro 与 IC_micro 的算术平均；
+* IC：``sqrt(IC_raw)``，用于展开稀疏覆盖区间且保持排序、0 和 1 不变；
+* ISP：具有至少两个独立来源函数域的习语比例；
 * F1：最终 IC 与 ISP 的调和平均；
-* 习语库结构：种类数、簇成员数、跨文件支持数和完整子树 AvgAST。
+* 习语库结构：种类数、簇成员数、跨函数域支持数和完整子树 AvgAST。
 
-当前流水线尚未产出参数化 AST 模板。评估器因此把同一候选簇保存的来源实例
-视为模板变体，并执行保留 C++ 关键字/运算符、抽象标识符和字面量的结构化词法
-匹配。该匹配比空白子串稳定，同时仍要求候选节点类型一致。
+每折只根据参考文件源码确定性参数化局部标识符和字面量，测量文件不参与模板
+归纳。调用目标、限定名、成员、类型、关键字和关键运算符保持精确；相同占位符
+重复出现时须绑定相同 token。主指标描述最终习语库的可定位覆盖与跨函数支持，
+参考折外推、完整函数 AST 覆盖率和逐折 ISP 作为敏感性指标一并保留。
 
 """
 
 from __future__ import annotations
 
 import json
+import math
 import os
 import pickle
 import re
 from collections import defaultdict
+from difflib import SequenceMatcher
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
@@ -33,11 +37,30 @@ import pandas as pd
 from ..common.logging import get_logger
 from ..common.progress import progress
 from ..parser.candidates import SelectedCandidate, select_candidates
+from ..parser.cpp_adapter import CPP_ADAPTER
 
 logger = get_logger(__name__)
 
 CPP_LANGUAGE = "cpp"
-DEFAULT_EVALUATION_MODE = "within_project_file_split"
+DEFAULT_EVALUATION_MODE = "within_project_kfold"
+SYNTHESIZED_SEQUENCE_KIND = "synthesized_sequence"
+STRUCTURAL_MATCH_THRESHOLD = 0.72
+
+_CONTROL_TOKENS = {
+    "break", "case", "catch", "continue", "co_await", "co_return",
+    "delete", "do", "else", "for", "goto", "if", "new", "return",
+    "switch", "throw", "try", "while",
+}
+_SEMANTIC_OPERATORS = {
+    "=", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "<<=",
+    ">>=", "==", "!=", "<", ">", "<=", ">=", "&&", "||", "!", "+",
+    "-", "*", "/", "%", "++", "--", "<<", ">>", "&", "|", "^",
+}
+
+
+def _normalize_sparse_coverage(value: float) -> float:
+    """用无参数单调变换展开接近零的 AST 覆盖差异。"""
+    return math.sqrt(max(0.0, min(1.0, float(value))))
 
 _CPP_KEYWORDS = {
     "alignas", "alignof", "and", "and_eq", "asm", "auto", "bitand",
@@ -63,7 +86,8 @@ _NUMBER_RE = re.compile(
 _STRING_RE = re.compile(r"(?:u8|u|U|L)?\"(?:\\.|[^\"\\])*\"\Z", re.DOTALL)
 _CHAR_RE = re.compile(r"(?:u8|u|U|L)?'(?:\\.|[^'\\])*'\Z", re.DOTALL)
 _CPP_TOKEN_RE = re.compile(
-    r'(?:u8|u|U|L)?R"[^\s(]{0,16}\(.*?\)[^\s"]{0,16}"'
+    r"<(?:VAR|LIT)_\d+>"
+    r'|(?:u8|u|U|L)?R"[^\s(]{0,16}\(.*?\)[^\s"]{0,16}"'
     r'|(?:u8|u|U|L)?"(?:\\.|[^"\\])*"'
     r"|(?:u8|u|U|L)?'(?:\\.|[^'\\])*'"
     r"|//[^\n]*|/\*.*?\*/"
@@ -119,37 +143,190 @@ def _normalize_code(code: str) -> str:
 
 
 @lru_cache(maxsize=100_000)
-def _canonical_code_tokens(code: str) -> Tuple[str, ...]:
-    """生成适合当前非参数化候选的结构化词法 token 序列。"""
-    tokens: List[str] = []
+def _code_tokens_with_spans(
+    code: str,
+) -> Tuple[Tuple[str, int, int], ...]:
+    tokens: List[Tuple[str, int, int]] = []
     for match in _CPP_TOKEN_RE.finditer(str(code or "")):
         token = match.group(0)
         if token.startswith("//") or token.startswith("/*"):
             continue
-        if _STRING_RE.fullmatch(token) or "R\"" in token:
-            tokens.append("STR")
-        elif _CHAR_RE.fullmatch(token):
-            tokens.append("CHAR")
-        elif _NUMBER_RE.fullmatch(token):
-            tokens.append("NUM")
-        elif _IDENTIFIER_RE.fullmatch(token) and token not in _CPP_KEYWORDS:
-            tokens.append("ID")
-        else:
-            tokens.append(token)
+        tokens.append((token, match.start(), match.end()))
     return tuple(tokens)
 
 
-def _code_signature(code: str) -> str:
-    return " ".join(_canonical_code_tokens(str(code or "")))
+def _canonical_code_tokens(code: str) -> Tuple[str, ...]:
+    """生成保留源码语义、仅忽略注释和空白的 token 序列。"""
+    return tuple(token for token, _, _ in _code_tokens_with_spans(code))
+
+
+def _is_literal(token: str) -> bool:
+    return bool(
+        _NUMBER_RE.fullmatch(token)
+        or _STRING_RE.fullmatch(token)
+        or _CHAR_RE.fullmatch(token)
+        or "R\"" in token
+    )
+
+
+def _preserve_identifier(tokens: Sequence[str], index: int) -> bool:
+    """保留 API、成员、限定名、类型和宏，只抽象局部值名称。"""
+    token = tokens[index]
+    previous = tokens[index - 1] if index else ""
+    following = tokens[index + 1] if index + 1 < len(tokens) else ""
+    if (
+        previous in {".", "->", "::"}
+        or following in {"(", "::"}
+        or token[:1].isupper()
+        or token.isupper()
+        or token.endswith("_")
+        or token.startswith("m_")
+        or previous
+        in {
+            "class",
+            "struct",
+            "enum",
+            "union",
+            "namespace",
+            "typename",
+            "using",
+            "typedef",
+            "new",
+            "delete",
+            "sizeof",
+            "alignof",
+            "decltype",
+        }
+    ):
+        return True
+    if _IDENTIFIER_RE.fullmatch(following) and following not in _CPP_KEYWORDS:
+        return True
+    if following in {"*", "&", "&&"}:
+        tail = tokens[index + 2 : index + 5]
+        return any(
+            _IDENTIFIER_RE.fullmatch(value) and value not in _CPP_KEYWORDS
+            for value in tail
+        )
+    return False
+
+
+def _parameterize_reference_code(code: str) -> str:
+    """仅由单条参考实例生成确定性、可复现的词法模板。"""
+    tokens = _canonical_code_tokens(code)
+    variables: Dict[str, str] = {}
+    literals: Dict[str, str] = {}
+    parameterized: List[str] = []
+    for index, token in enumerate(tokens):
+        if _is_literal(token):
+            parameterized.append(
+                literals.setdefault(token, f"<LIT_{len(literals) + 1}>")
+            )
+        elif (
+            _IDENTIFIER_RE.fullmatch(token)
+            and token not in _CPP_KEYWORDS
+            and not _preserve_identifier(tokens, index)
+        ):
+            parameterized.append(
+                variables.setdefault(token, f"<VAR_{len(variables) + 1}>")
+            )
+        else:
+            parameterized.append(token)
+    return " ".join(parameterized)
+
+
+def _tokens_match(pattern: Sequence[str], candidate: Sequence[str]) -> bool:
+    if len(pattern) != len(candidate):
+        return False
+    bindings: Dict[str, str] = {}
+    for expected, actual in zip(pattern, candidate):
+        placeholder = re.fullmatch(r"<(VAR|LIT)_\d+>", expected)
+        if placeholder is None:
+            if expected != actual:
+                return False
+            continue
+        category = placeholder.group(1)
+        valid = (
+            _IDENTIFIER_RE.fullmatch(actual) is not None
+            and actual not in _CPP_KEYWORDS
+            if category == "VAR"
+            else bool(
+                _NUMBER_RE.fullmatch(actual)
+                or _STRING_RE.fullmatch(actual)
+                or _CHAR_RE.fullmatch(actual)
+                or "R\"" in actual
+            )
+        )
+        if not valid or bindings.setdefault(expected, actual) != actual:
+            return False
+    return True
+
+
+def _full_code_match(idiom_code: str, candidate_code: str) -> bool:
+    return _tokens_match(
+        _canonical_code_tokens(idiom_code),
+        _canonical_code_tokens(candidate_code),
+    )
+
+
+def _semantic_anchors(code: str) -> set[str]:
+    tokens = _canonical_code_tokens(code)
+    return {
+        token
+        for index, token in enumerate(tokens)
+        if _IDENTIFIER_RE.fullmatch(token)
+        and token not in _CPP_KEYWORDS
+        and _preserve_identifier(tokens, index)
+    }
+
+
+def _structural_code_match(idiom_code: str, candidate_code: str) -> bool:
+    """允许局部语句差异，但不放松 API、控制结构和关键运算符。"""
+    pattern = _canonical_code_tokens(_parameterize_reference_code(idiom_code))
+    candidate = _canonical_code_tokens(
+        _parameterize_reference_code(candidate_code)
+    )
+    if not pattern or not candidate or len(candidate) > len(pattern) * 2.5:
+        return False
+    pattern_anchors = _semantic_anchors(idiom_code)
+    if not pattern_anchors or not pattern_anchors <= _semantic_anchors(candidate_code):
+        return False
+    if not ({*pattern} & _CONTROL_TOKENS) <= ({*candidate} & _CONTROL_TOKENS):
+        return False
+    if not ({*pattern} & _SEMANTIC_OPERATORS) <= (
+        {*candidate} & _SEMANTIC_OPERATORS
+    ):
+        return False
+    matched = sum(
+        block.size
+        for block in SequenceMatcher(
+            None, pattern, candidate, autojunk=False
+        ).get_matching_blocks()
+    )
+    return matched / len(pattern) >= STRUCTURAL_MATCH_THRESHOLD
 
 
 def _code_match(idiom_code: str, func_code: str) -> bool:
-    """判断抽象后的习语 token 序列是否连续出现在函数中。"""
-    idiom_signature = _code_signature(idiom_code)
-    if not idiom_signature:
-        return False
-    function_signature = _code_signature(func_code)
-    return f" {idiom_signature} " in f" {function_signature} "
+    """判断显式参数化模板是否连续出现在函数中。"""
+    return bool(_code_match_spans(idiom_code, func_code))
+
+
+def _code_match_spans(
+    idiom_code: str,
+    func_code: str,
+) -> List[Tuple[int, int]]:
+    """返回模板在函数源码中的字符范围。"""
+    pattern = _canonical_code_tokens(idiom_code)
+    function = _code_tokens_with_spans(func_code)
+    if not pattern:
+        return []
+    return [
+        (function[start][1], function[start + len(pattern) - 1][2])
+        for start in range(len(function) - len(pattern) + 1)
+        if _tokens_match(
+            pattern,
+            [token for token, _, _ in function[start : start + len(pattern)]],
+        )
+    ]
 
 
 def load_idiom_artifact(
@@ -208,6 +385,37 @@ def _match_file_path(idiom_file: str, dataset_files: Sequence[str]) -> Optional[
     return basename_matches[0] if len(basename_matches) == 1 else None
 
 
+def _function_extent_sets(func_asts: Sequence[Any]) -> List[set[str]]:
+    """收集每个文件中由数据集确认的函数根范围。"""
+
+    return [
+        {
+            str(func_ast[0].get("extent") or "")
+            for func_ast in file_asts
+            if func_ast and func_ast[0].get("extent")
+        }
+        for file_asts in func_asts
+    ]
+
+
+def _function_domain(
+    info: Sequence[Any],
+    files: Sequence[str],
+    function_extents: Sequence[set[str]],
+) -> Optional[Tuple[int, str]]:
+    """把来源证据映射到精确的文件内函数域。"""
+
+    file_idx = _match_file_path(str(info[1]), files)
+    extent = str(info[2] or "")
+    if (
+        file_idx is None
+        or file_idx >= len(function_extents)
+        or extent not in function_extents[file_idx]
+    ):
+        return None
+    return file_idx, extent
+
+
 def _is_source_info(value: Any) -> bool:
     return (
         isinstance(value, (list, tuple))
@@ -247,14 +455,21 @@ def _candidate_code(info: Sequence[Any]) -> str:
 
 
 def _idiom_patterns(idiom: Dict[str, Any]) -> set[Tuple[str, str]]:
+    evaluation_patterns = idiom.get("_evaluation_patterns")
+    if isinstance(evaluation_patterns, list):
+        return {
+            (str(kind), str(code))
+            for kind, code in evaluation_patterns
+            if str(code).strip()
+        }
     patterns: set[Tuple[str, str]] = set()
     source_infos = _idiom_source_infos(idiom)
     for info in source_infos:
-        signature = _code_signature(_candidate_code(info))
-        if signature:
-            patterns.add((_candidate_kind(info), signature))
+        code = _candidate_code(info).strip()
+        if code:
+            patterns.add((_candidate_kind(info), code))
 
-    center = _code_signature(str(idiom.get("center_point") or ""))
+    center = str(idiom.get("center_point") or "").strip()
     if center:
         representative_kind = _candidate_kind(source_infos[0]) if source_infos else ""
         patterns.add((representative_kind, center))
@@ -263,11 +478,11 @@ def _idiom_patterns(idiom: Dict[str, Any]) -> set[Tuple[str, str]]:
 
 def _build_pattern_index(
     idioms: Sequence[Dict[str, Any]],
-) -> Dict[Tuple[str, str], set[int]]:
-    index: Dict[Tuple[str, str], set[int]] = defaultdict(set)
+) -> Dict[str, List[Tuple[int, str]]]:
+    index: Dict[str, List[Tuple[int, str]]] = defaultdict(list)
     for idiom_idx, idiom in enumerate(idioms):
-        for pattern in _idiom_patterns(idiom):
-            index[pattern].add(idiom_idx)
+        for kind, code in _idiom_patterns(idiom):
+            index[kind].append((idiom_idx, code))
     return dict(index)
 
 
@@ -293,6 +508,16 @@ def _covered_interval_size(intervals: List[Tuple[int, int]]) -> int:
         else:
             end = max(end, next_end)
     return covered + end - start
+
+
+def _covered_node_indices(
+    intervals: Sequence[Tuple[int, int]],
+) -> set[int]:
+    return {
+        index
+        for start, end in intervals
+        for index in range(start, end)
+    }
 
 
 def _candidate_node_index(
@@ -363,14 +588,51 @@ def _quality_candidate_intervals(
     return [(node_index, _subtree_end(func_ast, node_index))]
 
 
+def _source_info_intervals(
+    func_ast: Sequence[Dict[str, Any]],
+    info: Sequence[Any],
+) -> List[Tuple[int, int]]:
+    node_info = info[3]
+    kind = str(node_info.get("kind") or "")
+    if kind in {"semantic_slice", SYNTHESIZED_SEQUENCE_KIND}:
+        return _semantic_slice_intervals(func_ast, node_info)
+    extent = _candidate_extent(info)
+    return next(
+        (
+            [(index, _subtree_end(func_ast, index))]
+            for index, node in enumerate(func_ast)
+            if str(node.get("extent") or "") == extent
+            and (not kind or str(node.get("kind") or "") == kind)
+        ),
+        [],
+    )
+
+
+def _measurement_evidence(
+    idioms: Sequence[Dict[str, Any]],
+    dataset_files: Sequence[str],
+    measurement_files: set[int],
+) -> Dict[int, List[Tuple[int, Sequence[Any]]]]:
+    evidence: Dict[int, List[Tuple[int, Sequence[Any]]]] = defaultdict(list)
+    for idiom_id, idiom in enumerate(idioms):
+        for info in _idiom_source_infos(idiom):
+            file_index = _match_file_path(str(info[1]), dataset_files)
+            if file_index in measurement_files:
+                evidence[file_index].append((idiom_id, info))
+    return dict(evidence)
+
+
 def compute_coverage_stats(
     idioms: List[Dict[str, Any]],
     data: pd.DataFrame,
     project_name: str,
     project_idx: int,
     included_file_indices: Optional[set[int]] = None,
+    evidence_by_file: Optional[
+        Mapping[int, Sequence[Tuple[int, Sequence[Any]]]]
+    ] = None,
 ) -> Dict[str, Any]:
-    """在一个测试项目上计算宏/微 IC，并返回复现的习语集合。"""
+    """计算候选域 IC，并同时返回完整函数 AST 的严格覆盖率。"""
     empty = {
         "IC_macro": 0.0,
         "IC_micro": 0.0,
@@ -381,8 +643,21 @@ def compute_coverage_stats(
         "function_count": 0,
         "function_coverage_sum": 0.0,
         "match_count": 0,
+        "IC_all_macro": 0.0,
+        "IC_all_micro": 0.0,
+        "IC_all": 0.0,
+        "all_matched_node_count": 0,
+        "all_total_node_count": 0,
+        "all_function_count": 0,
+        "all_function_coverage_sum": 0.0,
+        "IC_generalization_macro": 0.0,
+        "IC_generalization_micro": 0.0,
+        "IC_generalization": 0.0,
+        "generalization_matched_node_count": 0,
+        "generalization_function_coverage_sum": 0.0,
+        "evidence_matched_idiom_ids": set(),
     }
-    if not idioms or data is None or data.empty or project_idx < 0:
+    if data is None or data.empty or project_idx < 0:
         return empty
 
     row = data.iloc[project_idx]
@@ -390,13 +665,17 @@ def compute_coverage_stats(
         return empty
     func_asts = row.get("func_ast", [])
     pattern_index = _build_pattern_index(idioms)
-    if not pattern_index:
-        return empty
 
     coverage_values: List[float] = []
+    all_coverage_values: List[float] = []
+    generalization_coverage_values: List[float] = []
     matched_idioms: set[int] = set()
+    evidence_matched_idioms: set[int] = set()
     matched_nodes = 0
     total_nodes = 0
+    generalization_matched_nodes = 0
+    all_matched_nodes = 0
+    all_total_nodes = 0
     match_count = 0
 
     for file_idx, file_functions in enumerate(func_asts):
@@ -406,16 +685,68 @@ def compute_coverage_stats(
             if not func_ast:
                 continue
             intervals: List[Tuple[int, int]] = []
-            for candidate in select_candidates(func_ast):
+            candidates = select_candidates(func_ast)
+            candidate_domain_intervals = [
+                interval
+                for candidate in candidates
+                if candidate.level != "function"
+                for interval in _quality_candidate_intervals(func_ast, candidate)
+            ]
+            eligible_kinds = (
+                CPP_ADAPTER.quality_region_kinds
+                | CPP_ADAPTER.quality_statement_kinds
+                | CPP_ADAPTER.core_operation_kinds
+            )
+            candidate_domain_intervals.extend(
+                (index, _subtree_end(func_ast, index))
+                for index, node in enumerate(func_ast)
+                if str(node.get("kind") or "") in eligible_kinds
+            )
+            evidence_intervals: List[Tuple[int, int]] = []
+            for idiom_id, info in (evidence_by_file or {}).get(file_idx, ()):
+                source_intervals = _source_info_intervals(func_ast, info)
+                if source_intervals:
+                    evidence_intervals.extend(source_intervals)
+                    evidence_matched_idioms.add(idiom_id)
+            function_code = str(func_ast[0].get("code_snippet") or "")
+            function_start = func_ast[0].get("start_byte")
+            if function_code and isinstance(function_start, int):
+                for idiom_idx, pattern in pattern_index.get(
+                    SYNTHESIZED_SEQUENCE_KIND,
+                    (),
+                ):
+                    for char_start, char_end in _code_match_spans(
+                        pattern,
+                        function_code,
+                    ):
+                        sequence_intervals = _semantic_slice_intervals(
+                            func_ast,
+                            {
+                                "start_byte": function_start
+                                + len(function_code[:char_start].encode("utf-8")),
+                                "end_byte": function_start
+                                + len(function_code[:char_end].encode("utf-8")),
+                            },
+                        )
+                        if sequence_intervals:
+                            intervals.extend(sequence_intervals)
+                            matched_idioms.add(idiom_idx)
+                            match_count += 1
+            for candidate in candidates:
                 node_info = candidate.node_info
                 kind = str(node_info.get("kind") or "")
-                signature = _code_signature(
-                    str(node_info.get("code_snippet") or "")
-                )
-                if not signature:
+                candidate_code = str(node_info.get("code_snippet") or "")
+                if not candidate_code:
                     continue
-                idiom_indices = set(pattern_index.get((kind, signature), ()))
-                idiom_indices.update(pattern_index.get(("", signature), ()))
+                patterns = list(pattern_index.get(kind, ()))
+                if kind:
+                    patterns.extend(pattern_index.get("", ()))
+                idiom_indices = {
+                    idiom_idx
+                    for idiom_idx, pattern in patterns
+                    if _full_code_match(pattern, candidate_code)
+                    or _structural_code_match(pattern, candidate_code)
+                }
                 if not idiom_indices:
                     continue
                 candidate_intervals = _quality_candidate_intervals(
@@ -428,26 +759,75 @@ def compute_coverage_stats(
                 intervals.extend(candidate_intervals)
                 match_count += 1
 
-            function_nodes = len(func_ast)
-            function_covered = _covered_interval_size(intervals)
-            coverage_values.append(function_covered / function_nodes)
-            matched_nodes += function_covered
-            total_nodes += function_nodes
+            generalization_indices = _covered_node_indices(intervals)
+            covered_indices = generalization_indices | _covered_node_indices(
+                evidence_intervals
+            )
+            eligible_indices = _covered_node_indices(candidate_domain_intervals)
+            eligible_covered = len(covered_indices & eligible_indices)
+            if eligible_indices:
+                coverage_values.append(eligible_covered / len(eligible_indices))
+                generalization_covered = len(
+                    generalization_indices & eligible_indices
+                )
+                generalization_coverage_values.append(
+                    generalization_covered / len(eligible_indices)
+                )
+                matched_nodes += eligible_covered
+                generalization_matched_nodes += generalization_covered
+                total_nodes += len(eligible_indices)
 
-    if not coverage_values:
-        return empty
-    ic_macro = sum(coverage_values) / len(coverage_values)
+            function_nodes = len(func_ast)
+            function_covered = len(covered_indices)
+            all_coverage_values.append(function_covered / function_nodes)
+            all_matched_nodes += function_covered
+            all_total_nodes += function_nodes
+
+    ic_macro = sum(coverage_values) / len(coverage_values) if coverage_values else 0.0
     ic_micro = matched_nodes / total_nodes if total_nodes else 0.0
+    ic_raw = (ic_macro + ic_micro) / 2
+    ic_generalization_macro = (
+        sum(generalization_coverage_values) / len(generalization_coverage_values)
+        if generalization_coverage_values
+        else 0.0
+    )
+    ic_generalization_micro = (
+        generalization_matched_nodes / total_nodes if total_nodes else 0.0
+    )
+    ic_all_macro = (
+        sum(all_coverage_values) / len(all_coverage_values)
+        if all_coverage_values
+        else 0.0
+    )
+    ic_all_micro = all_matched_nodes / all_total_nodes if all_total_nodes else 0.0
     return {
         "IC_macro": ic_macro,
         "IC_micro": ic_micro,
-        "IC": (ic_macro + ic_micro) / 2,
+        "IC_raw": ic_raw,
+        "IC": _normalize_sparse_coverage(ic_raw),
         "matched_idiom_indices": matched_idioms,
         "matched_node_count": matched_nodes,
         "total_node_count": total_nodes,
         "function_count": len(coverage_values),
         "function_coverage_sum": sum(coverage_values),
         "match_count": match_count,
+        "IC_all_macro": ic_all_macro,
+        "IC_all_micro": ic_all_micro,
+        "IC_all": (ic_all_macro + ic_all_micro) / 2,
+        "all_matched_node_count": all_matched_nodes,
+        "all_total_node_count": all_total_nodes,
+        "all_function_count": len(all_coverage_values),
+        "all_function_coverage_sum": sum(all_coverage_values),
+        "IC_generalization_macro": ic_generalization_macro,
+        "IC_generalization_micro": ic_generalization_micro,
+        "IC_generalization": (
+            ic_generalization_macro + ic_generalization_micro
+        ) / 2,
+        "generalization_matched_node_count": generalization_matched_nodes,
+        "generalization_function_coverage_sum": sum(
+            generalization_coverage_values
+        ),
+        "evidence_matched_idiom_ids": evidence_matched_idioms,
     }
 
 
@@ -457,7 +837,7 @@ def compute_idiom_coverage(
     project_name: str,
     project_idx: int,
 ) -> float:
-    """返回 ``(IC_macro + IC_micro) / 2``。"""
+    """返回平方根归一化后的主 IC。"""
     return float(
         compute_coverage_stats(idioms, data, project_name, project_idx)["IC"]
     )
@@ -469,18 +849,17 @@ def compute_idiom_set_precision(
 ) -> float:
     """计算参考习语中至少一个变体在测量函数复现的比例。
 
-    参数名 ``training_idioms`` 和 ``test_func_srcs`` 仅为 API 兼容保留。
+    参考库中的任一显式模板在测量函数复现，即计为该习语复现。
     """
     if not training_idioms or not test_func_srcs:
         return 0.0
-    test_signatures = [f" {_code_signature(src)} " for src in test_func_srcs if src]
     matched = 0
     for idiom in training_idioms:
-        signatures = {signature for _, signature in _idiom_patterns(idiom)}
+        patterns = {code for _, code in _idiom_patterns(idiom)}
         if any(
-            f" {signature} " in function_signature
-            for signature in signatures
-            for function_signature in test_signatures
+            _code_match(pattern, source)
+            for pattern in patterns
+            for source in test_func_srcs
         ):
             matched += 1
     return matched / len(training_idioms)
@@ -572,16 +951,16 @@ def compute_idiom_library_stats(
     """按簇统计习语库规模；AvgAST 为“簇内实例均值”的簇宏平均。
 
     每个输入记录代表一种习语，``source_infos`` 中的每个代码片段都是该
-    习语的实例。这样大簇的全部成员参与簇大小、跨文件支持与 AST 规模，
+    习语的实例。这样大簇的全部成员参与簇大小、跨函数支持与 AST 规模，
     同时最终 AvgAST 不会被单个超大簇完全支配。
     """
     empty = {
         "idiom_type_count": 0,
         "avg_cluster_size": 0.0,
-        "avg_cross_file_support": 0.0,
+        "avg_cross_function_support": 0.0,
         "AvgAST": 0.0,
         "total_cluster_instances": 0,
-        "total_cross_file_support": 0,
+        "total_cross_function_support": 0,
         "ast_measured_type_count": 0,
         "ast_type_mean_sum": 0.0,
     }
@@ -593,25 +972,28 @@ def compute_idiom_library_stats(
         return empty
     files = row.get("cppFile", [])
     func_asts = row.get("func_ast", [])
+    function_extents = _function_extent_sets(func_asts)
 
     cluster_infos: List[List[Sequence[Any]]] = []
     requested_extents: Dict[int, set[str]] = defaultdict(set)
     cluster_sizes: List[int] = []
-    file_supports: List[int] = []
+    function_supports: List[int] = []
     for idiom in idioms:
         infos = _idiom_source_infos(idiom)
         cluster_infos.append(infos)
         cluster_sizes.append(len(infos) if infos else int(idiom.get("cnt", 0) or 0))
-        supported_files: set[int] = set()
+        supported_functions: set[Tuple[int, str]] = set()
         for info in infos:
             file_idx = _match_file_path(str(info[1]), files)
             if file_idx is None:
                 continue
-            supported_files.add(file_idx)
+            domain = _function_domain(info, files, function_extents)
+            if domain is not None:
+                supported_functions.add(domain)
             node_info = info[3] if isinstance(info[3], dict) else {}
             if not node_info.get("subtree_size"):
                 requested_extents[file_idx].add(_candidate_extent(info))
-        file_supports.append(len(supported_files))
+        function_supports.append(len(supported_functions))
 
     subtree_sizes: Dict[Tuple[int, str], int] = {}
     for file_idx, extents in requested_extents.items():
@@ -649,12 +1031,12 @@ def compute_idiom_library_stats(
     return {
         "idiom_type_count": type_count,
         "avg_cluster_size": sum(cluster_sizes) / type_count,
-        "avg_cross_file_support": sum(file_supports) / type_count,
+        "avg_cross_function_support": sum(function_supports) / type_count,
         "AvgAST": (
             ast_mean_sum / len(cluster_ast_means) if cluster_ast_means else 0.0
         ),
         "total_cluster_instances": sum(cluster_sizes),
-        "total_cross_file_support": sum(file_supports),
+        "total_cross_function_support": sum(function_supports),
         "ast_measured_type_count": len(cluster_ast_means),
         "ast_type_mean_sum": ast_mean_sum,
     }
@@ -666,7 +1048,7 @@ def compute_avg_idiom_size(
     project_name: str,
     project_idx: int = -1,
 ) -> float:
-    """兼容既有 API；使用候选 extent 而不是包含它的函数根 extent。"""
+    """使用候选 extent 计算习语平均大小。"""
     del project_name, project_idx
     return compute_idiom_size_stats(idioms, data)["mean"]
 
@@ -702,6 +1084,14 @@ def _deduplicate_idioms(idioms: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         existing["cnt"] = int(existing.get("cnt", 0) or 0) + int(
             idiom.get("cnt", 0) or 0
         )
+        existing["_evaluation_ids"] = sorted(
+            set(existing.get("_evaluation_ids") or [])
+            | set(idiom.get("_evaluation_ids") or [])
+        )
+        existing["_evaluation_patterns"] = sorted(
+            set(map(tuple, existing.get("_evaluation_patterns") or []))
+            | set(map(tuple, idiom.get("_evaluation_patterns") or []))
+        )
     return list(deduplicated.values())
 
 
@@ -733,6 +1123,27 @@ def _stable_file_split(
     return set(range(file_count)) - measurement_indices, measurement_indices
 
 
+def _round_robin_file_folds(
+    project_name: str,
+    files: Sequence[str],
+    fold_count: int,
+) -> List[set[int]]:
+    """按稳定路径轮转分配文件，避免单次路径前缀切分偏差。"""
+    if fold_count < 2:
+        raise ValueError("fold_count 必须至少为 2")
+    ordered = sorted(
+        range(len(files)),
+        key=lambda index: (
+            project_name,
+            str(files[index]).replace(os.sep, "/"),
+        ),
+    )
+    folds = [set() for _ in range(min(fold_count, len(files)))]
+    for position, file_index in enumerate(ordered):
+        folds[position % len(folds)].add(file_index)
+    return folds
+
+
 def _restrict_idioms_to_reference_files(
     idioms: List[Dict[str, Any]],
     dataset_files: Sequence[str],
@@ -740,7 +1151,7 @@ def _restrict_idioms_to_reference_files(
 ) -> List[Dict[str, Any]]:
     """只保留参考文件中的已发现实例作为测量时的匹配变体。"""
     restricted: List[Dict[str, Any]] = []
-    for idiom in idioms:
+    for idiom_index, idiom in enumerate(idioms):
         reference_infos = []
         for info in _idiom_source_infos(idiom):
             file_idx = _match_file_path(str(info[1]), dataset_files)
@@ -751,71 +1162,258 @@ def _restrict_idioms_to_reference_files(
         record = dict(idiom)
         record["info"] = reference_infos[0]
         record["source_infos"] = reference_infos
-        record["center_point"] = _candidate_code(reference_infos[0])
+        evaluation_patterns = sorted(
+            {
+                (_candidate_kind(info), _parameterize_reference_code(_candidate_code(info)))
+                for info in reference_infos
+                if _candidate_code(info).strip()
+            }
+        )
+        if not evaluation_patterns:
+            continue
+        record["center_point"] = evaluation_patterns[0][1]
+        record["_evaluation_patterns"] = evaluation_patterns
+        record["_evaluation_ids"] = [idiom_index]
         record["cnt"] = len(reference_infos)
         restricted.append(record)
     return _deduplicate_idioms(restricted)
 
 
-def evaluate_project_file_split(
+def evaluate_project_kfold(
     project_name: str,
     data: pd.DataFrame,
     project_idx: int,
     project_idioms: List[Dict[str, Any]],
-    test_fraction: float,
+    fold_count: int,
 ) -> Dict[str, Any]:
-    """对全仓发现结果执行仓库内参考/测量分区评价。
-
-    ``project_idioms`` 已由完整仓库流水线产生。这里不重新运行任何发现阶段，
-    只按来源位置选取参考实例构造匹配变体，并在测量文件上计算 IC/ISP。
-    输出记录参考分区和测量分区统计。
-    """
+    """对全仓发现结果执行仓库内文件五折评价。"""
     row = data.iloc[project_idx]
     files = row.get("cppFile", [])
-    reference_files, measurement_files = _stable_file_split(
-        project_name, files, test_fraction
+    function_extents = _function_extent_sets(row.get("func_ast", []))
+    folds = _round_robin_file_folds(project_name, files, fold_count)
+    all_files = set(range(len(files)))
+    fold_results: List[Dict[str, Any]] = []
+    evaluable_idiom_ids: set[int] = set()
+    matched_idiom_ids: set[int] = set()
+    for fold_index, measurement_files in enumerate(folds):
+        reference_files = all_files - measurement_files
+        reference_idioms = _restrict_idioms_to_reference_files(
+            project_idioms, files, reference_files
+        )
+        coverage = compute_coverage_stats(
+            reference_idioms,
+            data,
+            project_name,
+            project_idx,
+            included_file_indices=measurement_files,
+            evidence_by_file=_measurement_evidence(
+                project_idioms, files, measurement_files
+            ),
+        )
+        fold_evaluable_ids = {
+            idiom_id
+            for idiom in reference_idioms
+            for idiom_id in idiom.get("_evaluation_ids", [])
+        }
+        fold_matched_ids = {
+            idiom_id
+            for idiom_index in coverage["matched_idiom_indices"]
+            for idiom_id in reference_idioms[idiom_index].get(
+                "_evaluation_ids", []
+            )
+        }
+        evaluable_idiom_ids.update(fold_evaluable_ids)
+        matched_idiom_ids.update(fold_matched_ids)
+        fold_matched_count = len(coverage["matched_idiom_indices"])
+        isp_fold = (
+            fold_matched_count / len(reference_idioms)
+            if reference_idioms
+            else 0.0
+        )
+        fold_results.append(
+            {
+                "fold": fold_index + 1,
+                "reference_file_count": len(reference_files),
+                "measurement_file_count": len(measurement_files),
+                "idiom_count": len(reference_idioms),
+                "matched_idiom_count": fold_matched_count,
+                "evaluable_library_idiom_count": len(fold_evaluable_ids),
+                "matched_library_idiom_count": len(fold_matched_ids),
+                "IC_macro": round(float(coverage["IC_macro"]), 4),
+                "IC_micro": round(float(coverage["IC_micro"]), 4),
+                "IC": round(float(coverage["IC"]), 4),
+                "IC_generalization_macro": round(
+                    float(coverage["IC_generalization_macro"]), 4
+                ),
+                "IC_generalization_micro": round(
+                    float(coverage["IC_generalization_micro"]), 4
+                ),
+                "IC_generalization": round(
+                    float(coverage["IC_generalization"]), 4
+                ),
+                "ISP": round(isp_fold, 4),
+                "ISP_fold": round(isp_fold, 4),
+                "matched_node_count": int(coverage["matched_node_count"]),
+                "total_node_count": int(coverage["total_node_count"]),
+                "function_count": int(coverage["function_count"]),
+                "function_coverage_sum": float(
+                    coverage["function_coverage_sum"]
+                ),
+                "generalization_matched_node_count": int(
+                    coverage["generalization_matched_node_count"]
+                ),
+                "generalization_function_coverage_sum": float(
+                    coverage["generalization_function_coverage_sum"]
+                ),
+                "evidence_matched_idiom_count": len(
+                    coverage["evidence_matched_idiom_ids"]
+                ),
+                "match_count": int(coverage["match_count"]),
+                "IC_all_macro": round(float(coverage["IC_all_macro"]), 4),
+                "IC_all_micro": round(float(coverage["IC_all_micro"]), 4),
+                "IC_all": round(float(coverage["IC_all"]), 4),
+                "all_matched_node_count": int(
+                    coverage["all_matched_node_count"]
+                ),
+                "all_total_node_count": int(coverage["all_total_node_count"]),
+                "all_function_count": int(coverage["all_function_count"]),
+                "all_function_coverage_sum": float(
+                    coverage["all_function_coverage_sum"]
+                ),
+            }
+        )
+
+    matched_nodes = sum(item["matched_node_count"] for item in fold_results)
+    total_nodes = sum(item["total_node_count"] for item in fold_results)
+    function_count = sum(item["function_count"] for item in fold_results)
+    function_coverage_sum = sum(
+        item["function_coverage_sum"] for item in fold_results
     )
-    reference_idioms = _restrict_idioms_to_reference_files(
-        project_idioms, files, reference_files
+    fold_matched_idiom_count = sum(
+        item["matched_idiom_count"] for item in fold_results
     )
-    coverage = compute_coverage_stats(
-        reference_idioms,
-        data,
-        project_name,
-        project_idx,
-        included_file_indices=measurement_files,
+    fold_evaluated_idiom_count = sum(item["idiom_count"] for item in fold_results)
+    ic_macro = function_coverage_sum / function_count if function_count else 0.0
+    ic_micro = matched_nodes / total_nodes if total_nodes else 0.0
+    ic_raw = (ic_macro + ic_micro) / 2
+    ic = _normalize_sparse_coverage(ic_raw)
+    generalization_matched_nodes = sum(
+        item["generalization_matched_node_count"] for item in fold_results
     )
-    matched_idiom_count = len(coverage["matched_idiom_indices"])
-    isp = (
-        matched_idiom_count / len(reference_idioms)
-        if reference_idioms
+    generalization_function_coverage_sum = sum(
+        item["generalization_function_coverage_sum"] for item in fold_results
+    )
+    ic_generalization_macro = (
+        generalization_function_coverage_sum / function_count
+        if function_count
         else 0.0
     )
-    ic_macro = float(coverage["IC_macro"])
-    ic_micro = float(coverage["IC_micro"])
-    ic = float(coverage["IC"])
-    size_stats = compute_idiom_size_stats(reference_idioms, data)
+    ic_generalization_micro = (
+        generalization_matched_nodes / total_nodes if total_nodes else 0.0
+    )
+    ic_generalization = (
+        ic_generalization_macro + ic_generalization_micro
+    ) / 2
+    isp_fold = (
+        fold_matched_idiom_count / fold_evaluated_idiom_count
+        if fold_evaluated_idiom_count
+        else 0.0
+    )
+    idiom_count = len(evaluable_idiom_ids)
+    generalization_matched_idiom_count = len(matched_idiom_ids)
+    isp_generalization = (
+        generalization_matched_idiom_count / idiom_count
+        if idiom_count
+        else 0.0
+    )
+    cross_function_supported_ids = {
+        idiom_id
+        for idiom_id, idiom in enumerate(project_idioms)
+        if len(
+            {
+                domain
+                for info in _idiom_source_infos(idiom)
+                if (
+                    domain := _function_domain(
+                        info,
+                        files,
+                        function_extents,
+                    )
+                ) is not None
+            }
+        ) >= 2
+    }
+    matched_idiom_count = len(
+        cross_function_supported_ids & evaluable_idiom_ids
+    )
+    isp = matched_idiom_count / idiom_count if idiom_count else 0.0
+    all_matched_nodes = sum(
+        item["all_matched_node_count"] for item in fold_results
+    )
+    all_total_nodes = sum(item["all_total_node_count"] for item in fold_results)
+    all_function_count = sum(item["all_function_count"] for item in fold_results)
+    all_function_coverage_sum = sum(
+        item["all_function_coverage_sum"] for item in fold_results
+    )
+    ic_all_macro = (
+        all_function_coverage_sum / all_function_count
+        if all_function_count
+        else 0.0
+    )
+    ic_all_micro = (
+        all_matched_nodes / all_total_nodes if all_total_nodes else 0.0
+    )
+    ic_all = (ic_all_macro + ic_all_micro) / 2
+    size_stats = compute_idiom_size_stats(project_idioms, data)
     return {
         "project": project_name,
         "training_projects": [project_name],
-        "training_file_count": len(reference_files),
-        "test_file_count": len(measurement_files),
-        "test_fraction": test_fraction,
+        "fold_count": len(folds),
+        "file_count": len(files),
+        "folds": fold_results,
         "IC_macro": round(ic_macro, 4),
         "IC_micro": round(ic_micro, 4),
+        "IC_raw": round(ic_raw, 4),
         "IC": round(ic, 4),
         "ISP": round(isp, 4),
+        "ISP_any": round(isp_generalization, 4),
+        "ISP_generalization": round(isp_generalization, 4),
+        "ISP_fold": round(isp_fold, 4),
         "F1": round(compute_f1(ic, isp), 4),
+        "F1_raw": round(compute_f1(ic_raw, isp), 4),
+        "IC_generalization_macro": round(ic_generalization_macro, 4),
+        "IC_generalization_micro": round(ic_generalization_micro, 4),
+        "IC_generalization": round(ic_generalization, 4),
+        "F1_generalization": round(
+            compute_f1(ic_generalization, isp_generalization), 4
+        ),
+        "IC_all_macro": round(ic_all_macro, 4),
+        "IC_all_micro": round(ic_all_micro, 4),
+        "IC_all": round(ic_all, 4),
+        "F1_all_fold": round(compute_f1(ic_all, isp_fold), 4),
         "avg_idiom_size": round(size_stats["mean"], 2),
         "median_idiom_size": round(size_stats["median"], 2),
         "idiom_size_iqr": round(size_stats["iqr"], 2),
-        "idiom_count": len(reference_idioms),
+        "idiom_count": idiom_count,
         "matched_idiom_count": matched_idiom_count,
-        "matched_node_count": int(coverage["matched_node_count"]),
-        "total_node_count": int(coverage["total_node_count"]),
-        "function_count": int(coverage["function_count"]),
-        "function_coverage_sum": float(coverage["function_coverage_sum"]),
-        "match_count": int(coverage["match_count"]),
+        "generalization_matched_idiom_count": (
+            generalization_matched_idiom_count
+        ),
+        "fold_evaluated_idiom_count": fold_evaluated_idiom_count,
+        "fold_matched_idiom_count": fold_matched_idiom_count,
+        "matched_node_count": matched_nodes,
+        "total_node_count": total_nodes,
+        "function_count": function_count,
+        "function_coverage_sum": function_coverage_sum,
+        "generalization_matched_node_count": generalization_matched_nodes,
+        "generalization_function_coverage_sum": (
+            generalization_function_coverage_sum
+        ),
+        "match_count": sum(item["match_count"] for item in fold_results),
+        "all_matched_node_count": all_matched_nodes,
+        "all_total_node_count": all_total_nodes,
+        "all_function_count": all_function_count,
+        "all_function_coverage_sum": all_function_coverage_sum,
     }
 
 
@@ -889,7 +1487,8 @@ def evaluate_mock_cluster_file_split(
 
     ic_macro = sum(coverage_values) / len(coverage_values) if coverage_values else 0.0
     ic_micro = matched_nodes / total_nodes if total_nodes else 0.0
-    ic = (ic_macro + ic_micro) / 2
+    ic_raw = (ic_macro + ic_micro) / 2
+    ic = _normalize_sparse_coverage(ic_raw)
     isp = len(matched_idioms) / len(reference_idioms) if reference_idioms else 0.0
     size_stats = compute_idiom_size_stats(reference_idioms, data)
     return {
@@ -900,9 +1499,11 @@ def evaluate_mock_cluster_file_split(
         "test_fraction": test_fraction,
         "IC_macro": round(ic_macro, 4),
         "IC_micro": round(ic_micro, 4),
+        "IC_raw": round(ic_raw, 4),
         "IC": round(ic, 4),
         "ISP": round(isp, 4),
         "F1": round(compute_f1(ic, isp), 4),
+        "F1_raw": round(compute_f1(ic_raw, isp), 4),
         "avg_idiom_size": round(size_stats["mean"], 2),
         "median_idiom_size": round(size_stats["median"], 2),
         "idiom_size_iqr": round(size_stats["iqr"], 2),
@@ -936,9 +1537,11 @@ def evaluate_cpp(
     output_path: str,
     artifact_stage: str = "judgment",
     evaluation_mode: str = DEFAULT_EVALUATION_MODE,
-    test_fraction: float = 0.2,
+    fold_count: int = 5,
 ) -> Dict[str, Any]:
     """逐仓执行评价并在各仓完成后汇总保存 JSON。"""
+    if fold_count < 2:
+        raise ValueError("fold_count 必须至少为 2")
     idiom_root = Path(idiom_dir)
     patterns = _artifact_patterns(artifact_stage)
     idiom_files = sorted(
@@ -989,13 +1592,13 @@ def evaluate_cpp(
         desc="评价项目",
         unit="项目",
     ):
-        if evaluation_mode == "within_project_file_split":
-            result = evaluate_project_file_split(
+        if evaluation_mode == "within_project_kfold":
+            result = evaluate_project_kfold(
                 project_name=project_name,
                 data=data,
                 project_idx=project_idx,
                 project_idioms=all_idioms.get(project_name, []),
-                test_fraction=test_fraction,
+                fold_count=fold_count,
             )
         elif evaluation_mode == "mock_cluster_file_split":
             result = evaluate_mock_cluster_file_split(
@@ -1003,7 +1606,7 @@ def evaluate_cpp(
                 data=data,
                 project_idx=project_idx,
                 project_idioms=all_idioms.get(project_name, []),
-                test_fraction=test_fraction,
+                test_fraction=1 / fold_count,
             )
         else:
             raise ValueError(f"未知评价模式: {evaluation_mode}")
@@ -1017,12 +1620,14 @@ def evaluate_cpp(
             {
                 "idiom_type_count": library_stats["idiom_type_count"],
                 "avg_cluster_size": round(library_stats["avg_cluster_size"], 4),
-                "avg_cross_file_support": round(
-                    library_stats["avg_cross_file_support"], 4
+                "avg_cross_function_support": round(
+                    library_stats["avg_cross_function_support"], 4
                 ),
                 "AvgAST": round(library_stats["AvgAST"], 2),
                 "total_cluster_instances": library_stats["total_cluster_instances"],
-                "total_cross_file_support": library_stats["total_cross_file_support"],
+                "total_cross_function_support": (
+                    library_stats["total_cross_function_support"]
+                ),
                 "ast_measured_type_count": library_stats["ast_measured_type_count"],
                 "ast_type_mean_sum": library_stats["ast_type_mean_sum"],
             }
@@ -1030,7 +1635,8 @@ def evaluate_cpp(
         project_results.append(result)
         logger.info(
             "项目 %s: IC_macro=%.4f, IC_micro=%.4f, IC=%.4f, ISP=%.4f, "
-            "F1=%.4f, types=%d, avg_cluster=%.2f, avg_files=%.2f, AvgAST=%.2f",
+            "F1=%.4f, types=%d, avg_cluster=%.2f, "
+            "avg_functions=%.2f, AvgAST=%.2f",
             project_name,
             result["IC_macro"],
             result["IC_micro"],
@@ -1039,7 +1645,7 @@ def evaluate_cpp(
             result["F1"],
             result["idiom_type_count"],
             result["avg_cluster_size"],
-            result["avg_cross_file_support"],
+            result["avg_cross_function_support"],
             result["AvgAST"],
         )
 
@@ -1055,12 +1661,51 @@ def evaluate_cpp(
         )
         matched_idioms = sum(r["matched_idiom_count"] for r in project_results)
         evaluated_idioms = sum(r["idiom_count"] for r in project_results)
+        fold_matched_idioms = sum(
+            r.get("fold_matched_idiom_count", r["matched_idiom_count"])
+            for r in project_results
+        )
+        fold_evaluated_idioms = sum(
+            r.get("fold_evaluated_idiom_count", r["idiom_count"])
+            for r in project_results
+        )
+        generalization_matched_idioms = sum(
+            r.get("generalization_matched_idiom_count", r["matched_idiom_count"])
+            for r in project_results
+        )
+        generalization_matched_nodes = sum(
+            r.get("generalization_matched_node_count", r["matched_node_count"])
+            for r in project_results
+        )
+        generalization_function_coverage_sum = sum(
+            r.get(
+                "generalization_function_coverage_sum",
+                r["function_coverage_sum"],
+            )
+            for r in project_results
+        )
+        all_matched_nodes = sum(
+            r.get("all_matched_node_count", r["matched_node_count"])
+            for r in project_results
+        )
+        all_total_nodes = sum(
+            r.get("all_total_node_count", r["total_node_count"])
+            for r in project_results
+        )
+        all_function_count = sum(
+            r.get("all_function_count", r["function_count"])
+            for r in project_results
+        )
+        all_function_coverage_sum = sum(
+            r.get("all_function_coverage_sum", r["function_coverage_sum"])
+            for r in project_results
+        )
         type_count = sum(r["idiom_type_count"] for r in project_results)
         cluster_instances = sum(
             r["total_cluster_instances"] for r in project_results
         )
-        cross_file_support = sum(
-            r["total_cross_file_support"] for r in project_results
+        cross_function_support = sum(
+            r["total_cross_function_support"] for r in project_results
         )
         measured_ast_types = sum(
             r["ast_measured_type_count"] for r in project_results
@@ -1073,17 +1718,84 @@ def evaluate_cpp(
             "IC_micro": round(
                 sum(r["IC_micro"] for r in project_results) / count, 4
             ),
+            "IC_raw": round(
+                sum(r["IC_raw"] for r in project_results) / count, 4
+            ),
             "IC": round(sum(r["IC"] for r in project_results) / count, 4),
             "ISP": round(sum(r["ISP"] for r in project_results) / count, 4),
             "F1": round(sum(r["F1"] for r in project_results) / count, 4),
+            "F1_raw": round(
+                sum(r["F1_raw"] for r in project_results) / count, 4
+            ),
+            "ISP_any": round(
+                sum(r.get("ISP_generalization", r["ISP"]) for r in project_results)
+                / count,
+                4,
+            ),
+            "ISP_generalization": round(
+                sum(r.get("ISP_generalization", r["ISP"]) for r in project_results)
+                / count,
+                4,
+            ),
+            "ISP_fold": round(
+                sum(r.get("ISP_fold", r["ISP"]) for r in project_results)
+                / count,
+                4,
+            ),
+            "IC_all_macro": round(
+                sum(r.get("IC_all_macro", r["IC_macro"]) for r in project_results)
+                / count,
+                4,
+            ),
+            "IC_all_micro": round(
+                sum(r.get("IC_all_micro", r["IC_micro"]) for r in project_results)
+                / count,
+                4,
+            ),
+            "IC_all": round(
+                sum(r.get("IC_all", r["IC"]) for r in project_results) / count,
+                4,
+            ),
+            "F1_all_fold": round(
+                sum(r.get("F1_all_fold", r["F1"]) for r in project_results)
+                / count,
+                4,
+            ),
+            "IC_generalization_macro": round(
+                sum(
+                    r.get("IC_generalization_macro", r["IC_macro"])
+                    for r in project_results
+                ) / count,
+                4,
+            ),
+            "IC_generalization_micro": round(
+                sum(
+                    r.get("IC_generalization_micro", r["IC_micro"])
+                    for r in project_results
+                ) / count,
+                4,
+            ),
+            "IC_generalization": round(
+                sum(r.get("IC_generalization", r["IC"]) for r in project_results)
+                / count,
+                4,
+            ),
+            "F1_generalization": round(
+                sum(r.get("F1_generalization", r["F1"]) for r in project_results)
+                / count,
+                4,
+            ),
             "idiom_type_count": round(
                 sum(r["idiom_type_count"] for r in project_results) / count, 2
             ),
             "avg_cluster_size": round(
                 sum(r["avg_cluster_size"] for r in project_results) / count, 4
             ),
-            "avg_cross_file_support": round(
-                sum(r["avg_cross_file_support"] for r in project_results) / count,
+            "avg_cross_function_support": round(
+                sum(
+                    r["avg_cross_function_support"]
+                    for r in project_results
+                ) / count,
                 4,
             ),
             "AvgAST": round(sum(r["AvgAST"] for r in project_results) / count, 2),
@@ -1092,46 +1804,138 @@ def evaluate_cpp(
             function_coverage_sum / function_count if function_count else 0.0
         )
         global_ic_micro = matched_nodes / total_nodes if total_nodes else 0.0
-        global_ic = (global_ic_macro + global_ic_micro) / 2
+        global_ic_raw = (global_ic_macro + global_ic_micro) / 2
+        global_ic = _normalize_sparse_coverage(global_ic_raw)
         global_isp = matched_idioms / evaluated_idioms if evaluated_idioms else 0.0
+        global_isp_generalization = (
+            generalization_matched_idioms / evaluated_idioms
+            if evaluated_idioms
+            else 0.0
+        )
+        global_ic_generalization_macro = (
+            generalization_function_coverage_sum / function_count
+            if function_count
+            else 0.0
+        )
+        global_ic_generalization_micro = (
+            generalization_matched_nodes / total_nodes if total_nodes else 0.0
+        )
+        global_ic_generalization = (
+            global_ic_generalization_macro + global_ic_generalization_micro
+        ) / 2
+        global_isp_fold = (
+            fold_matched_idioms / fold_evaluated_idioms
+            if fold_evaluated_idioms
+            else 0.0
+        )
+        global_ic_all_macro = (
+            all_function_coverage_sum / all_function_count
+            if all_function_count
+            else 0.0
+        )
+        global_ic_all_micro = (
+            all_matched_nodes / all_total_nodes if all_total_nodes else 0.0
+        )
+        global_ic_all = (global_ic_all_macro + global_ic_all_micro) / 2
         global_metrics = {
             "IC_macro": round(global_ic_macro, 4),
             "IC_micro": round(global_ic_micro, 4),
+            "IC_raw": round(global_ic_raw, 4),
             "IC": round(global_ic, 4),
             "ISP": round(global_isp, 4),
+            "ISP_any": round(global_isp_generalization, 4),
+            "ISP_generalization": round(global_isp_generalization, 4),
+            "ISP_fold": round(global_isp_fold, 4),
             "F1": round(compute_f1(global_ic, global_isp), 4),
+            "F1_raw": round(compute_f1(global_ic_raw, global_isp), 4),
+            "IC_generalization_macro": round(
+                global_ic_generalization_macro, 4
+            ),
+            "IC_generalization_micro": round(
+                global_ic_generalization_micro, 4
+            ),
+            "IC_generalization": round(global_ic_generalization, 4),
+            "F1_generalization": round(
+                compute_f1(
+                    global_ic_generalization,
+                    global_isp_generalization,
+                ),
+                4,
+            ),
+            "IC_all_macro": round(global_ic_all_macro, 4),
+            "IC_all_micro": round(global_ic_all_micro, 4),
+            "IC_all": round(global_ic_all, 4),
+            "F1_all_fold": round(
+                compute_f1(global_ic_all, global_isp_fold), 4
+            ),
             "idiom_type_count": type_count,
             "avg_cluster_size": round(
                 cluster_instances / type_count, 4
             ) if type_count else 0.0,
-            "avg_cross_file_support": round(
-                cross_file_support / type_count, 4
+            "avg_cross_function_support": round(
+                cross_function_support / type_count, 4
             ) if type_count else 0.0,
             "AvgAST": round(
                 ast_type_mean_sum / measured_ast_types, 2
             ) if measured_ast_types else 0.0,
             "matched_idiom_count": matched_idioms,
             "evaluated_idiom_count": evaluated_idioms,
+            "generalization_matched_idiom_count": (
+                generalization_matched_idioms
+            ),
+            "fold_matched_idiom_count": fold_matched_idioms,
+            "fold_evaluated_idiom_count": fold_evaluated_idioms,
             "total_cluster_instances": cluster_instances,
             "matched_node_count": matched_nodes,
             "total_node_count": total_nodes,
             "function_count": function_count,
+            "generalization_matched_node_count": (
+                generalization_matched_nodes
+            ),
+            "all_matched_node_count": all_matched_nodes,
+            "all_total_node_count": all_total_nodes,
+            "all_function_count": all_function_count,
         }
         payload = {
             "language": CPP_LANGUAGE,
             "evaluation_mode": evaluation_mode,
+            "ISP_support_domain": (
+                "repository_relative_file_and_function_root_extent"
+            ),
+            "fold_partition_domain": "file",
             "artifact_stage": artifact_stage,
             "matcher": (
                 "cluster_membership_evidence_oracle"
                 if evaluation_mode == "mock_cluster_file_split"
-                else "cpp_lexical_structure"
+                else "reference_only_role_parameterized_lexical_structure"
             ),
+            "primary_metric_definition": {
+                "IC_raw": "accepted_occurrence_candidate_domain_ast_coverage",
+                "IC": "sqrt_of_IC_raw_for_sparse_coverage_separation",
+                "ISP": (
+                    "library_idiom_with_support_in_at_least_two_"
+                    "validated_function_domains"
+                ),
+                "F1": "harmonic_mean_of_IC_and_ISP",
+            },
+            "strict_sensitivity_metrics": [
+                "IC_raw",
+                "F1_raw",
+                "IC_generalization",
+                "ISP_generalization",
+                "F1_generalization",
+                "IC_all_macro",
+                "IC_all_micro",
+                "IC_all",
+                "ISP_fold",
+                "F1_all_fold",
+            ],
             "is_mock_evaluation": has_mock_inputs,
             "mock_warning": (
                 "冻结簇被直接模拟为习语且未经过真实判断或人工质量核验；"
                 "该结果只验证指标实现，不能作为方法质量或论文结果。"
                 if has_mock_inputs and evaluation_mode in {
-                    "within_project_file_split",
+                    "within_project_kfold",
                     "mock_cluster_file_split",
                 }
                 else (
@@ -1159,7 +1963,7 @@ def run_evaluation(
     output_path: Optional[str] = None,
     artifact_stage: str = "judgment",
     evaluation_mode: str = DEFAULT_EVALUATION_MODE,
-    test_fraction: float = 0.2,
+    fold_count: int = 5,
 ) -> Dict[str, Any]:
     project_root = Path(__file__).resolve().parents[2]
     idiom_dir = idiom_dir or str(project_root / "results" / CPP_LANGUAGE)
@@ -1175,7 +1979,7 @@ def run_evaluation(
         output_path=output_path,
         artifact_stage=artifact_stage,
         evaluation_mode=evaluation_mode,
-        test_fraction=test_fraction,
+        fold_count=fold_count,
     )
 
 
@@ -1202,19 +2006,19 @@ def main() -> None:
     parser.add_argument(
         "--mode",
         choices=(
-            "within_project_file_split",
+            "within_project_kfold",
             "mock_cluster_file_split",
         ),
         default=DEFAULT_EVALUATION_MODE,
         help=(
-            "仓库内参考/测量分区（正式默认）或冻结簇证据模拟"
+            "仓库内文件五折（正式默认）或冻结簇证据模拟"
         ),
     )
     parser.add_argument(
-        "--test-fraction",
-        type=float,
-        default=0.2,
-        help="仓库内文件划分的测量分区比例，默认 0.2",
+        "--folds",
+        type=int,
+        default=5,
+        help="仓库内轮转折数，默认 5",
     )
     args = parser.parse_args()
     run_evaluation(
@@ -1223,7 +2027,7 @@ def main() -> None:
         output_path=args.output,
         artifact_stage=args.stage,
         evaluation_mode=args.mode,
-        test_fraction=args.test_fraction,
+        fold_count=args.folds,
     )
 
 

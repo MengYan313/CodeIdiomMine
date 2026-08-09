@@ -1,4 +1,4 @@
-"""习语判断内部对象与阶段间兼容投影。"""
+"""习语判断内部对象与阶段间记录。"""
 
 from __future__ import annotations
 
@@ -232,7 +232,7 @@ class IdiomJudgmentResult:
             "cluster_id": self.candidate.cluster_id,
             "status": self.status,
             "template_code": self.template_code,
-            # 兼容既有阶段4/评价字段，但明确它是阶段3候选模板视图。
+            # 阶段4与评价器共同使用的阶段3候选模板视图。
             "center_point": self.template_code,
             "representative_code": self.candidate.representative_code,
             "member_codes": list(self.candidate.member_codes),
@@ -280,7 +280,22 @@ def build_judgment_artifact(
     *,
     rule_only: bool,
 ) -> Dict[str, Any]:
-    records = [result.to_record() for result in results]
+    return build_judgment_artifact_from_records(
+        project,
+        [result.to_record() for result in results],
+        rule_only=rule_only,
+    )
+
+
+def build_judgment_artifact_from_records(
+    project: str,
+    records: Sequence[Dict[str, Any]],
+    *,
+    rule_only: bool,
+) -> Dict[str, Any]:
+    """从当前阶段3记录重建分区和汇总。"""
+
+    records = list(records)
     by_status: Dict[str, List[Dict[str, Any]]] = {
         "accepted": [],
         "rejected": [],

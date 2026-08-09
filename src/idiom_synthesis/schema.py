@@ -12,7 +12,7 @@ from ..idiom_judgment.idiom_taxonomy import (
     empty_idiom_classification,
 )
 
-SYNTHESIS_ARTIFACT_SEMANTICS = "synthesis_delta"
+SYNTHESIS_ARTIFACT_SEMANTICS = "final_library"
 
 
 def _node_info(info: Any) -> Mapping[str, Any]:
@@ -68,7 +68,7 @@ class IdiomCandidate:
         identity = _source_identity(self.context_info)
         if identity is not None and identity[0] == self.project:
             return identity
-        # loc_label 是历史显示字段，不能证明两个候选来自同一源码区域。缺少
+        # loc_label 只用于显示，不能证明两个候选来自同一源码区域。缺少
         # 区域成员或代表范围时为每个候选生成独立键，使其无法误入阶段4合成组。
         return self.project, "", f"unlocated:{self.candidate_id}"
 
@@ -134,30 +134,9 @@ class SynthesisResult:
     decision_reason: str = ""
 
     def to_record(self) -> Dict[str, Any]:
-        infos: List[Any] = []
         matched_infos: List[Any] = []
-        cnt = 0
-        ast_total = 0.0
-        ast_weight = 0
-        subtree_total = 0.0
-        subtree_weight = 0
         for candidate in self.selected:
             matched_infos.extend(candidate.region_source_infos)
-            if candidate.source_infos:
-                infos.extend(candidate.source_infos)
-            elif candidate.representative_info is not None:
-                infos.append(candidate.representative_info)
-            weight = max(1, int(candidate.support_count or 0))
-            cnt += weight
-            node = _node_info(candidate.representative_info)
-            ast = float(node.get("ast_num", 0) or 0)
-            subtree = float(node.get("subtree_size", 0) or 0)
-            if ast:
-                ast_total += ast * weight
-                ast_weight += weight
-            if subtree:
-                subtree_total += subtree * weight
-                subtree_weight += weight
         loc_labels = sorted(
             {candidate.loc_label for candidate in self.selected if candidate.loc_label}
         )
@@ -184,6 +163,7 @@ class SynthesisResult:
         source_judgments = [
             {
                 "candidate_id": candidate.candidate_id,
+                "support_count": candidate.support_count,
                 "judgment_status": candidate.judgment_status,
                 "intent": candidate.intent,
                 "judgment_reason": candidate.judgment_reason,
@@ -212,6 +192,39 @@ class SynthesisResult:
         region_identity = dict(
             self.context_evidence.get("source_identity") or {}
         )
+        node_count = int(
+            self.deterministic_checks.get("synthesized_ast_node_count", 0)
+            or 0
+        )
+        starts = [
+            occurrence["start_byte"]
+            for occurrence in matched_occurrences
+            if isinstance(occurrence.get("start_byte"), int)
+        ]
+        ends = [
+            occurrence["end_byte"]
+            for occurrence in matched_occurrences
+            if isinstance(occurrence.get("end_byte"), int)
+        ]
+        synthesized_info = None
+        if self.merged_code and region_identity:
+            synthesized_info = [
+                self.project,
+                region_identity["relative_path"],
+                region_identity["extent"],
+                {
+                    "extent": region_identity["extent"],
+                    "kind": "synthesized_sequence",
+                    "code_snippet": self.merged_code,
+                    "ast_num": node_count,
+                    "subtree_size": node_count,
+                    **(
+                        {"start_byte": min(starts), "end_byte": max(ends)}
+                        if starts and ends
+                        else {}
+                    ),
+                },
+            ]
         return {
             "project": self.project,
             "status": self.status,
@@ -223,24 +236,20 @@ class SynthesisResult:
             "source_judgments": source_judgments,
             "loc_label": loc_labels[0] if len(loc_labels) == 1 else "",
             "source_loc_labels": loc_labels,
-            "info": matched_infos[0] if matched_infos else (
-                infos[0] if infos else None
-            ),
-            "source_infos": infos,
+            "info": synthesized_info,
+            "source_infos": [synthesized_info] if synthesized_info else [],
             "matched_source_infos": matched_infos,
             "matched_occurrences": matched_occurrences,
             "region_identity": region_identity,
             "source_order_candidate_ids": source_order_candidate_ids,
             "cooccurrence_evidence": {
-                "grouping": "member_source_region_cooccurrence",
+                "grouping": "unique_candidate_set_member_cooccurrence",
                 "selected_candidate_count": len(self.selected),
                 "matched_occurrence_count": len(matched_occurrences),
             },
-            "cnt": cnt,
-            "avg_ast_num": ast_total / ast_weight if ast_weight else 0.0,
-            "avg_subtree_size": (
-                subtree_total / subtree_weight if subtree_weight else 0.0
-            ),
+            "cnt": 1 if synthesized_info else 0,
+            "avg_ast_num": node_count,
+            "avg_subtree_size": node_count,
             "context_evidence": self.context_evidence,
             "region_planning": self.region_planning,
             "combination_key": str(
@@ -285,6 +294,7 @@ def build_synthesis_artifact(
     related_group_count: int | None = None,
     grouped_candidate_count: int | None = None,
     region_candidate_membership_count: int | None = None,
+    base_records: Sequence[Dict[str, Any]] = (),
 ) -> Dict[str, Any]:
     records = [result.to_record() for result in results]
     unsupported_statuses = sorted(
@@ -299,8 +309,19 @@ def build_synthesis_artifact(
             "阶段4只支持 accepted/rejected，收到: "
             + ", ".join(unsupported_statuses)
         )
-    accepted = [record for record in records if record["status"] == "accepted"]
+    synthesized = [record for record in records if record["status"] == "accepted"]
     rejected = [record for record in records if record["status"] == "rejected"]
+    unique_synthesized: Dict[str, Dict[str, Any]] = {}
+    for record in synthesized:
+        unique_synthesized.setdefault(record["combination_key"], record)
+    synthesized = list(unique_synthesized.values())
+    accepted: List[Dict[str, Any]] = []
+    seen_code: set[str] = set()
+    for record in [*base_records, *synthesized]:
+        code = " ".join(str(record["center_point"]).split())
+        if code not in seen_code:
+            seen_code.add(code)
+            accepted.append(record)
     regions = {
         str(planning["region_key"]): planning
         for record in records
@@ -328,12 +349,13 @@ def build_synthesis_artifact(
         "stage": 4,
         "project": project,
         "artifact_semantics": SYNTHESIS_ARTIFACT_SEMANTICS,
-        "passthrough_included": False,
         "accepted": accepted,
+        "synthesized": synthesized,
         "rejected": rejected,
         "summary": {
             "attempt_count": len(records),
             "accepted_count": len(accepted),
+            "synthesis_accepted_count": len(synthesized),
             "rejected_count": len(rejected),
             "input_candidate_count": (
                 int(input_candidate_count)
@@ -375,7 +397,7 @@ def build_synthesis_artifact(
                 )
                 for planning in regions.values()
             ),
-            "passthrough_candidate_count": 0,
+            "base_candidate_count": len(base_records),
             "accepted_classification_kind_counts": (
                 classification_kind_counts
             ),

@@ -105,15 +105,28 @@ def load_idiom_candidates(
     return project, candidates
 
 
+def load_accepted_judgments(path: str | Path) -> List[Dict[str, Any]]:
+    """读取阶段3基础习语库，供阶段4构造最终库。"""
+
+    with Path(path).open("rb") as stream:
+        data = pickle.load(stream)
+    if not isinstance(data, dict) or data.get("artifact_type") != "idiom_judgment":
+        raise ValueError("合成输入必须是习语判断 artifact")
+    accepted = data.get("accepted")
+    if not isinstance(accepted, list):
+        raise TypeError("习语判断 artifact 的 accepted 必须是列表")
+    return accepted
+
+
 def group_related_idioms(
     candidates: Iterable[IdiomCandidate],
 ) -> List[List[IdiomCandidate]]:
     """
     使用完整簇成员位置发现同一函数/区域内的习语共现。
 
-    每个阶段3习语在一个区域内最多形成一个区域绑定候选，同一簇的重复成员不会
-    被误算为多个习语。没有同区域伙伴的阶段3习语继续保留在阶段3产物，不复制
-    进阶段4。
+    每个阶段3习语在一个区域内最多形成一个区域绑定候选；相同候选集合跨区域
+    只保留首个稳定代表，避免重复规划和相反裁决。没有同区域伙伴的习语仍由
+    阶段3基础库保留。
     """
 
     candidates_by_id: Dict[str, IdiomCandidate] = {}
@@ -142,7 +155,7 @@ def group_related_idioms(
                 {},
             ).setdefault(occurrence_key, info)
 
-    groups: List[List[IdiomCandidate]] = []
+    groups: Dict[tuple[str, ...], List[IdiomCandidate]] = {}
     for _, region_candidates in sorted(regions.items()):
         if len(region_candidates) < 2:
             continue
@@ -154,13 +167,13 @@ def group_related_idioms(
             )
             for candidate_id, occurrences in region_candidates.items()
         ]
-        groups.append(
-            sorted(
-                group,
-                key=lambda candidate: (
-                    -candidate.support_count,
-                    candidate.candidate_id,
-                ),
-            )
+        group = sorted(
+            group,
+            key=lambda candidate: (
+                -candidate.support_count,
+                candidate.candidate_id,
+            ),
         )
-    return groups
+        key = tuple(sorted(candidate.candidate_id for candidate in group))
+        groups.setdefault(key, group)
+    return list(groups.values())

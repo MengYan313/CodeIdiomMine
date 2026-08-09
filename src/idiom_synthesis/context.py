@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Iterable, List, Sequence
 
 from ..parser.cpp_adapter import CPP_ADAPTER
+from ..parser.cpp_lex import lexical_tokens, lexically_equivalent
 from ..idiom_judgment.abstraction import sanitize_template_for_parser
 from ..idiom_judgment.source_context import (
     load_verified_source_context,
@@ -192,3 +193,25 @@ def syntax_structure_valid(source: str) -> bool:
         + b"\n}"
     )
     return not parser.parse(wrapped).root_node.has_error
+
+
+def code_occurs_in_context(code: str, context: str) -> bool:
+    """判断合成代码的去注释词法序列是否来自已核验上下文。"""
+
+    pattern = lexical_tokens(code)
+    tokens = lexical_tokens(context)
+    size = len(pattern)
+    return bool(pattern) and any(
+        tokens[index : index + size] == pattern
+        for index in range(len(tokens) - size + 1)
+    )
+
+
+def adds_semantics(code: str, sources: Iterable[str]) -> bool:
+    """合成结果不能只是任一输入习语的排版变体。"""
+
+    return all(not lexically_equivalent(code, source) for source in sources)
+
+
+def fragment_node_count(source: str) -> int:
+    return len(_fragment_nodes(source))

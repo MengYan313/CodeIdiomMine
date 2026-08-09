@@ -14,7 +14,6 @@ from .schema import AbstractionProposal, ClusterCandidate
 
 _IDENTIFIER_KINDS = {
     "identifier",
-    "field_identifier",
 }
 _LITERAL_KINDS = {
     "number_literal",
@@ -50,7 +49,7 @@ _SENTINEL_LITERALS = {
     "null",
     "true",
 }
-_PLACEHOLDER_RE = re.compile(r"<(?:VAR|LIT)_\d+>")
+_PLACEHOLDER_RE = re.compile(r"<(VAR|LIT)_\d+>")
 
 
 @dataclass(frozen=True)
@@ -74,8 +73,8 @@ class _Token:
 
     @property
     def shape(self) -> str:
-        if self.category == "VAR":
-            return "<VAR>"
+        if self.category == "VAR" or self.alignment_category == "ID":
+            return "<ID>"
         if self.category == "LIT" and self.low_semantic:
             return "<LIT>"
         if self.alignment_category:
@@ -120,7 +119,6 @@ def _is_declaration_identifier(node: Node) -> bool:
     for ancestor in _ancestors(node):
         if ancestor.type not in {
             "declaration",
-            "field_declaration",
             "for_range_loop",
             "init_declarator",
             "optional_parameter_declaration",
@@ -139,7 +137,7 @@ def _is_declaration_identifier(node: Node) -> bool:
 def _classify_leaf(
     node: Node,
     source: bytes,
-    local_declarations: set[str],
+    variable_names: set[str],
 ) -> tuple[str, bool, str]:
     text = source[node.start_byte : node.end_byte].decode("utf-8", errors="replace")
     ancestors = _ancestors(node)
@@ -149,9 +147,9 @@ def _classify_leaf(
             return "KEEP", False, ""
         if ancestor_kinds & _TYPE_ANCESTORS:
             return "KEEP", False, ""
-        if text not in local_declarations:
-            return "KEEP", False, "ID"
-        return "VAR", True, ""
+        if text in variable_names:
+            return "VAR", True, ""
+        return "KEEP", False, "ID"
     if node.type in _LITERAL_KINDS:
         low_semantic = (
             text.strip().lower() not in _SENTINEL_LITERALS
@@ -163,7 +161,10 @@ def _classify_leaf(
     return "KEEP", False, ""
 
 
-def _leaf_tokens(source_text: str) -> List[_Token]:
+def _leaf_tokens(
+    source_text: str,
+    extra_variable_names: set[str] | None = None,
+) -> List[_Token]:
     """解析片段；语句/区域使用固定函数包装，失败时安全地不提出抽象。"""
 
     code = source_text.encode("utf-8")
@@ -189,19 +190,20 @@ def _leaf_tokens(source_text: str) -> List[_Token]:
             if node.start_byte < start or node.end_byte > end:
                 continue
             leaves.append(node)
-        local_declarations = {
+        variable_names = {
             wrapped[node.start_byte : node.end_byte].decode(
                 "utf-8", errors="replace"
             )
             for node in leaves
             if _is_declaration_identifier(node)
         }
+        variable_names.update(extra_variable_names or ())
         tokens: List[_Token] = []
         for node in leaves:
             category, low_semantic, alignment_category = _classify_leaf(
                 node,
                 wrapped,
-                local_declarations,
+                variable_names,
             )
             text = wrapped[node.start_byte : node.end_byte].decode(
                 "utf-8", errors="replace"
@@ -223,9 +225,19 @@ def _leaf_tokens(source_text: str) -> List[_Token]:
     return []
 
 
+def _declared_identifiers(source_text: str) -> set[str]:
+    return {
+        token.text
+        for token in _leaf_tokens(source_text)
+        if token.category == "VAR"
+    }
+
+
 def propose_abstractions(
     candidate: ClusterCandidate,
     policy: AbstractionPolicy | None = None,
+    *,
+    context_code: str = "",
 ) -> List[AbstractionProposal]:
     """
     只在多数实例具有完全相同的词法/语法形状时提出抽象。
@@ -235,7 +247,10 @@ def propose_abstractions(
     """
 
     policy = policy or AbstractionPolicy()
-    representative_tokens = _leaf_tokens(candidate.representative_code)
+    representative_tokens = _leaf_tokens(
+        candidate.representative_code,
+        _declared_identifiers(context_code),
+    )
     if not representative_tokens:
         return []
     tokenized = [_leaf_tokens(code) for code in candidate.member_codes]
@@ -302,7 +317,7 @@ def propose_abstractions(
                 distinct_count=len(set(values)),
                 support_ratio=round(support_ratio, 6),
                 reason=(
-                    "局部变量在相同结构角色中高频换名"
+                    "变量在相同结构角色中高频换名"
                     if category == "VAR"
                     else "低语义字面量在相同结构角色中高频变化"
                 ),
@@ -338,4 +353,7 @@ def apply_approved_abstractions(
 def sanitize_template_for_parser(source: str) -> str:
     """把阶段3占位符替换为可解析的保守哑元，仅用于语法结构检查。"""
 
-    return _PLACEHOLDER_RE.sub("__idiom_placeholder", source)
+    return _PLACEHOLDER_RE.sub(
+        lambda match: "__idiom_value" if match.group(1) == "VAR" else "0",
+        source,
+    )

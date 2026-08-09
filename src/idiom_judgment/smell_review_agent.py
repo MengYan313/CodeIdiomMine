@@ -100,6 +100,7 @@ class SmellReviewRequest:
     candidate_code: str
     related_examples: List[str]
     deterministic_evidence: dict
+    context_code: str = ""
 
 
 @dataclass
@@ -188,6 +189,11 @@ class SmellReviewAgent(JsonLLMAgent):
 ## 候选代码
 ```cpp
 {message.candidate_code}
+```
+
+## 已核验的当前源码上下文
+```cpp
+{message.context_code}
 ```
 
 ## 相关代码证据

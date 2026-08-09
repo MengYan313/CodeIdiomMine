@@ -65,6 +65,12 @@ cp .env.example .env
   --checkpoint outputs/cpp/cli11/idiom-synthesis.sqlite3 \
   --output results/cpp/cli11/idiom-synthesis.pkl \
   --report results/cpp/cli11/idiom-synthesis-report.json
+
+.venv/bin/python -m src.evaluation.idiom_metrics \
+  --idiom-dir results/cpp/cli11 \
+  --dataset outputs/cpp/cli11/dataset.pkl \
+  --output results/cpp/cli11/eval.json \
+  --mode within_project_kfold --folds 5
 ```
 
 `--resume` 仅按 checkpoint 中已经完成的位置续跑，不比较模型、提示词或输入摘要。LLM JSON 响应保留一次修复和有限重试。

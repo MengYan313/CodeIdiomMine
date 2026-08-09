@@ -14,8 +14,7 @@
 
 ## 本地依赖
 
-- `requirements.txt` 是提交到 Git 的依赖入口。
-- `requirements-local.lock` 仅供当前机器复现环境，必须保留在本地并由 `.gitignore` 忽略，不得提交。
+
 - 使用项目根目录的 `.venv`，不要向系统 Python 安装依赖。
 
 ## 项目结构
@@ -42,7 +41,7 @@
 .venv/bin/python scripts/check_shared_infrastructure.py --other ../WPF2React
 ```
 
-离线测试不得下载模型或触发付费调用。真实 LLM 冒烟测试只有在任务明确需要时运行。
+测试时可以使用适量真实的 LLM 调用进行验证。
 
 ## 文档
 

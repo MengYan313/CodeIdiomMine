@@ -32,8 +32,21 @@ _SYSTEM_MESSAGE = build_json_system_prompt(
         "或执行语义安全的抽象。"
     ),
     success_criteria=(
-        "区分高频代码与具有稳定意图、完整边界和复用价值的代码习语。",
+        (
+            "采用包容的候选习语定义：只要代码段自身表达可识别、可重复应用的"
+            "编程意图或约束，即使只含一个完整语句、只在当前仓库复用或无法归入"
+            "通用目录，也可以是习语。"
+        ),
+        (
+            "上下文只用于核验代表代码的含义和边界，不得把上下文中未包含在代表"
+            "代码里的操作算入该代码段；单个完整调用、检查、状态转换、所有权操作"
+            "或特殊成员声明不能仅因短小而否决。"
+        ),
         "semantic_score 衡量意图稳定性与完整性，reuse_score 衡量复用价值，范围均为 0–100。",
+        (
+            "reuse_score 同时认可仓库内复用：跨文件证据更强，但同一文件中多个"
+            "独立位置的稳定重复也具有复用价值，不要求跨仓库通用。"
+        ),
         "审查代表代码、按 C++ 词法 token 去重的代码变体和支持度统计。",
         "规则初步证据和抽象提案只用于约束裁决，不得把它们当作额外源码实例。",
         "abstraction_decision 为 abstract 时，approved_abstraction_ids 至少包含一个输入提案中确实不影响意图、约束、API 与控制语义的编号。",
@@ -51,7 +64,11 @@ _SYSTEM_MESSAGE = build_json_system_prompt(
         "调用名、类型、控制条件、返回值、哨兵值和错误码默认具有语义，不因多个实例不同就批准抽象。",
         "只能批准规则提供的 proposal_id，不得自行新增抽象位置、占位符或改写代码。",
         "不得编造源码外的业务背景、类型关系或运行时行为。",
-        "纯样板、过度项目化、语义不完整或只有表面词法相似的簇必须反映为低分。",
+        (
+            "只有随机语法片段、边界截断、无稳定意图的机械样板、明显错误代码或"
+            "仅有表面词法相似时才返回 is_idiom=false；项目专属和短小本身不是"
+            "否决理由。"
+        ),
         (
             "is_idiom 为 false 时 idiom_classification.kind 必须为 "
             "not_applicable 且 catalog_ids 为空。"
@@ -123,6 +140,7 @@ class SemanticReviewRequest:
     cluster_statistics: dict
     rule_evidence: dict
     abstraction_proposals: List[dict]
+    context_code: str
 
 
 @dataclass
@@ -171,6 +189,11 @@ class SemanticReviewAgent(JsonLLMAgent):
 ## 代表代码
 ```cpp
 {message.representative_code}
+```
+
+## 已核验的当前源码上下文
+```cpp
+{message.context_code}
 ```
 
 ## 去重后的其他代码变体（共 {len(message.code_variants)} 个）
