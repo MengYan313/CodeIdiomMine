@@ -1,8 +1,8 @@
-"""仅规则分析、代码嵌入与聚类的 baseline。
+"""Stage 2 高频聚类消融。
 
-该方法把 DBSCAN 簇直接视为习语种类，不调用 LLM，也不执行主方法的判断、
-合成或回流。产物依次经过最小簇大小、保留比例和种类数量上限三项规则；
-数量上限不是评价指标，也不适用于其他方法。
+该消融把 Stage 2 DBSCAN 簇直接视为习语种类，不调用 LLM，也不执行 Stage 3
+判断或 Stage 4 合成。它与 IC 机会域共享聚类来源，因此自动覆盖指标只用于诊断
+Stage 2 频率上界；Stage 3/4 的质量增益必须通过盲化人工标注比较。
 """
 
 from __future__ import annotations
@@ -56,7 +56,7 @@ def _select_clusters(
     return eligible.head(limit).drop(columns=["_stable_label"])
 
 
-def build_rules_embedding_baseline(
+def build_stage2_frequency_ablation(
     clusters_path: str | Path,
     output_dir: str | Path,
     *,
@@ -64,7 +64,7 @@ def build_rules_embedding_baseline(
     min_cluster_size: int = 3,
     max_types: int = 100,
 ) -> Dict[str, int]:
-    """从规范聚类产物生成正式 baseline 习语文件。"""
+    """从冻结的 Stage 2 聚类生成频率消融习语文件。"""
     clusters_path = Path(clusters_path)
     with clusters_path.open("rb") as file:
         project_results = pickle.load(file)
@@ -95,23 +95,24 @@ def build_rules_embedding_baseline(
             source_infos = list(infos) if isinstance(infos, list) else []
             if not center_point or not source_infos:
                 continue
-            idioms.append(
-                make_idiom_record(
-                    center_point=center_point,
-                    source_infos=source_infos,
-                    provenance={
-                        "method": "rules_embedding_clustering",
-                        "cluster_label": int(row["label"]),
-                        "selection_score": int(row["cluster_size"]),
-                        "selection_rule": {
-                            "min_cluster_size": min_cluster_size,
-                            "selection_ratio": selection_ratio,
-                            "max_types": max_types,
-                        },
-                        "source_clusters": str(clusters_path),
+            record = make_idiom_record(
+                center_point=center_point,
+                source_infos=source_infos,
+                provenance={
+                    "method": "stage2_frequency_ablation",
+                    "comparison_role": "quality_ablation",
+                    "cluster_label": int(row["label"]),
+                    "selection_score": int(row["cluster_size"]),
+                    "selection_rule": {
+                        "min_cluster_size": min_cluster_size,
+                        "selection_ratio": selection_ratio,
+                        "max_types": max_types,
                     },
-                )
+                    "source_clusters": str(clusters_path),
+                },
             )
+            record["ablation_provenance"] = record.pop("baseline_provenance")
+            idioms.append(record)
 
         output_path = write_project_idioms(output_dir, project_name, idioms)
         counts[project_name] = len(idioms)
@@ -126,7 +127,7 @@ def build_rules_embedding_baseline(
             }
         )
         logger.info(
-            "规则+嵌入聚类 baseline %s: %d/%d -> %s",
+            "Stage 2 高频聚类消融 %s: %d/%d -> %s",
             project_name,
             len(idioms),
             len(clusters),
@@ -136,11 +137,14 @@ def build_rules_embedding_baseline(
     write_run_manifest(
         output_dir,
         {
-            "method": "rules_embedding_clustering",
+            "method": "stage2_frequency_ablation",
+            "comparison_role": "quality_ablation",
+            "automatic_metrics_role": "stage2_coverage_upper_bound_diagnostic",
+            "primary_comparison": "blinded_manual_idiom_quality_annotation",
             "is_mock": False,
             "description": (
                 "Tree-sitter 规则候选、预训练代码嵌入和 DBSCAN 聚类；"
-                "簇依次经最小簇大小、保留比例和种类数量上限截断后直接作为习语。"
+                "簇依次经最小簇大小、保留比例和种类数量上限截断后直接作为人工质量对照。"
             ),
             "source_clusters": str(clusters_path),
             "selection_rule": {
@@ -156,18 +160,19 @@ def build_rules_embedding_baseline(
             },
             "projects": project_manifest,
         },
+        filename="ablation-manifest.json",
     )
     return counts
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="构造仅规则分析、嵌入和聚类的 C++ 习语 baseline"
+        description="构造 Stage 2 高频聚类消融的 C++ 习语样本"
     )
-    parser.add_argument("--clusters", default="outputs/cpp/clusters.pkl")
+    parser.add_argument("--clusters", default="outputs/cli11/stage2/clusters.pkl")
     parser.add_argument(
         "--output-dir",
-        default="results/baselines/rules-embedding-clustering/cpp",
+        default="results/ablations/stage2-frequency/cli11",
     )
     parser.add_argument("--min-cluster-size", type=int, default=3)
     parser.add_argument(
@@ -183,7 +188,7 @@ def main() -> None:
         help="比例截断后每项目最多输出的习语种类数（默认 100）",
     )
     args = parser.parse_args()
-    build_rules_embedding_baseline(
+    build_stage2_frequency_ablation(
         args.clusters,
         args.output_dir,
         selection_ratio=args.selection_ratio,

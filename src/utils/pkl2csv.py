@@ -148,12 +148,12 @@ def main():
 # 使用示例（从项目根目录运行）：
 # 
 # 单文件转换:
-#   运行：python -m src.utils.pkl2csv outputs/cpp/clusters.pkl
-#   生成: outputs/cpp/clusters.csv
+#   运行：python -m src.utils.pkl2csv outputs/cli11/stage2/clusters.pkl
+#   生成: outputs/cli11/stage2/clusters.csv
 # 
 # 目录转换:
-#   运行：python -m src.utils.pkl2csv outputs/cpp
-#   生成: outputs/cpp/*.csv
+#   运行：python -m src.utils.pkl2csv outputs/cli11
+#   生成: outputs/cli11/*.csv
 # 
 # 递归目录转换:
 #   运行：python -m src.utils.pkl2csv outputs --recursive

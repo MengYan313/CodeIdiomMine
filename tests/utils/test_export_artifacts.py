@@ -15,7 +15,7 @@ class ArtifactExportTests(unittest.TestCase):
             root = Path(temporary_directory)
             inputs = root / "inputs"
             outputs = root / "outputs"
-            inputs.mkdir()
+            (inputs / "stage0").mkdir(parents=True)
             node_infos = [
                 {
                     "depth": 0,
@@ -35,7 +35,7 @@ class ArtifactExportTests(unittest.TestCase):
                     }
                 ]
             )
-            dataset.to_pickle(inputs / "dataset.pkl")
+            dataset.to_pickle(inputs / "stage0" / "dataset.pkl")
 
             summaries = export_artifacts(
                 input_dir=inputs,
@@ -55,9 +55,8 @@ class ArtifactExportTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
             inputs = root / "inputs"
-            results = inputs / "sample"
+            results = inputs / "stage3" / "sample"
             outputs = root / "outputs"
-            inputs.mkdir()
             results.mkdir(parents=True)
             info = [
                 "sample",

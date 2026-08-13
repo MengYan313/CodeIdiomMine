@@ -1933,9 +1933,13 @@ def run_evaluation(
     fold_count: int = 5,
 ) -> Dict[str, Any]:
     project_root = Path(__file__).resolve().parents[2]
-    idiom_dir = idiom_dir or str(project_root / "results" / CPP_LANGUAGE)
-    dataset_path = dataset_path or str(project_root / "outputs" / CPP_LANGUAGE / "dataset.pkl")
-    output_path = output_path or str(project_root / "results" / CPP_LANGUAGE / "eval.json")
+    idiom_dir = idiom_dir or str(project_root / "results" / "main" / "cli11")
+    dataset_path = dataset_path or str(
+        project_root / "outputs" / "cli11" / "stage0" / "dataset.pkl"
+    )
+    output_path = output_path or str(
+        project_root / "results" / "main" / "cli11" / "evaluation.json"
+    )
     logger.info("代码习语评估，模式: %s", evaluation_mode)
     logger.info("习语目录: %s", idiom_dir)
     logger.info("数据集: %s", dataset_path)
@@ -1961,14 +1965,26 @@ def main() -> None:
             "及习语库规模结构"
         )
     )
-    parser.add_argument("--idiom-dir", "-i", default=None, help="默认 results/cpp")
-    parser.add_argument("--dataset", "-d", default=None, help="默认 outputs/cpp/dataset.pkl")
+    parser.add_argument(
+        "--idiom-dir", "-i", default=None, help="默认 results/main/cli11"
+    )
+    parser.add_argument(
+        "--dataset",
+        "-d",
+        default=None,
+        help="默认 outputs/cli11/stage0/dataset.pkl",
+    )
     parser.add_argument(
         "--clusters",
         required=True,
         help="Stage 3 实际使用的 Stage 2 非噪声聚类产物",
     )
-    parser.add_argument("--output", "-o", default=None, help="默认 results/cpp/eval.json")
+    parser.add_argument(
+        "--output",
+        "-o",
+        default=None,
+        help="默认 results/main/cli11/evaluation.json",
+    )
     parser.add_argument(
         "--stage",
         choices=("judgment", "synthesis"),

@@ -747,7 +747,7 @@ def export_artifacts(
     input_dir: Path,
     output_dir: Path,
     stages: Sequence[str],
-    result_dir: Path = Path("results/cpp"),
+    result_dir: Path = Path("results/main/cli11"),
     limit: int = 100,
     cluster_top: int = 100,
     text_limit: int = 2000,
@@ -779,13 +779,13 @@ def export_artifacts(
     embedding_counts: dict[str, int] | None = None
 
     if "dataset" in stages:
-        path = input_dir / "dataset.pkl"
+        path = input_dir / "stage0" / "dataset.pkl"
         print(f"导出 dataset: {path}")
         summaries["dataset"] = export_dataset(path, output_dir, limit, text_limit)
         inputs["dataset"] = _path_metadata(path)
 
     if "embeddings" in stages:
-        path = input_dir / "embeddings.pkl"
+        path = input_dir / "stage2" / "embeddings.pkl"
         print(f"导出 embeddings: {path}")
         summaries["embeddings"] = export_embeddings(
             path, output_dir, limit, text_limit, vector_head
@@ -795,8 +795,8 @@ def export_artifacts(
             for project in summaries["embeddings"]["projects"]
         }
         inputs["embeddings"] = _path_metadata(path)
-    elif "clusters" in stages and (input_dir / "embeddings.pkl").exists():
-        embedding_path = input_dir / "embeddings.pkl"
+    elif "clusters" in stages and (input_dir / "stage2" / "embeddings.pkl").exists():
+        embedding_path = input_dir / "stage2" / "embeddings.pkl"
         embedding_data = pd.read_pickle(embedding_path)
         _validate_columns(embedding_data, EMBEDDING_COLUMNS, "embeddings")
         embedding_counts = {
@@ -808,7 +808,7 @@ def export_artifacts(
         inputs["embeddings_reference"] = _path_metadata(embedding_path)
 
     if "clusters" in stages:
-        path = input_dir / "clusters.pkl"
+        path = input_dir / "stage2" / "clusters.pkl"
         print(f"导出 clusters: {path}")
         summaries["clusters"] = export_clusters(
             path,
@@ -823,7 +823,7 @@ def export_artifacts(
 
     for stage in ("judgment", "synthesis"):
         if stage in stages:
-            artifact_root = input_dir if stage == "judgment" else result_dir
+            artifact_root = input_dir / "stage3" if stage == "judgment" else result_dir
             print(f"导出 {stage}: {artifact_root}")
             summary, path_metadata = export_agent_results(
                 artifact_root,
@@ -892,11 +892,13 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="将流水线 PKL 导出为全量汇总 JSON 与限量分析预览"
     )
-    parser.add_argument("--input-dir", type=Path, default=Path("outputs/cpp"))
+    parser.add_argument("--input-dir", type=Path, default=Path("outputs/cli11"))
     parser.add_argument(
-        "--output-dir", type=Path, default=Path("outputs/cpp/readables")
+        "--output-dir", type=Path, default=Path("outputs/cli11/readables")
     )
-    parser.add_argument("--result-dir", type=Path, default=Path("results/cpp"))
+    parser.add_argument(
+        "--result-dir", type=Path, default=Path("results/main/cli11")
+    )
     parser.add_argument(
         "--stages",
         nargs="+",

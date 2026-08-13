@@ -109,10 +109,15 @@ def write_project_idioms(
     return output_path
 
 
-def write_run_manifest(output_dir: str | Path, manifest: Mapping[str, Any]) -> Path:
+def write_run_manifest(
+    output_dir: str | Path,
+    manifest: Mapping[str, Any],
+    *,
+    filename: str = "baseline-manifest.json",
+) -> Path:
     output_root = Path(output_dir)
     output_root.mkdir(parents=True, exist_ok=True)
-    output_path = output_root / "baseline-manifest.json"
+    output_path = output_root / filename
     output_path.write_text(
         json.dumps(dict(manifest), ensure_ascii=False, indent=2, sort_keys=True),
         encoding="utf-8",

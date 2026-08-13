@@ -17,6 +17,8 @@
 
 同一仓库的所有方法、裁决策略和消融必须显式传入同一份冻结聚类产物，不能根据最终接受习语反向筛选函数或节点。主指标衡量最终知识库在当前仓库预先存在的聚类机会中的实际足迹，不声称未知数据泛化。主 `ISP` 衡量独立函数域支持，不是人工 Precision。
 
+`Stage2-Frequency-Ablation` 直接从定义机会域的 Stage 2 聚类中选择最大簇，其来源证据天然覆盖同一分母，大簇也天然具有较高跨函数支持。因此该消融的 IC、ISP、F1 只作为 Stage 2 覆盖上界诊断，不参加外部 baseline 的自动指标质量排名。Stage 2 高频簇与 Stage 4 最终习语的质量差异必须通过等量、分层、盲化人工标注验证，不能用自动覆盖指标单独证明。
+
 JSON 保留与主指标相等的 `IC_raw` 及以下敏感性指标：
 
 - `IC_generalization_macro`、`IC_generalization_micro`、`IC_generalization`：不使用测量折来源位置，只以其余折源码确定性归纳模板后外推；
@@ -25,7 +27,7 @@ JSON 保留与主指标相等的 `IC_raw` 及以下敏感性指标：
 - `IC_all_macro`、`IC_all_micro`、`IC_all`：把完整函数 AST 作为分母；
 - `F1_generalization`、`F1_all_fold`：对应敏感性指标的调和平均。
 
-参考模板完全由参考文件生成：局部变量、参数和字面量转换为 `<VAR_n>`、`<LIT_n>`，相同占位符必须绑定同一 token；调用目标、限定名、成员、类型、控制关键字和关键运算符保持一致。除精确匹配外，结构匹配允许有限局部语句差异，但要求语义锚点不变且参考 token 有至少 `0.72` 的有序覆盖。该规则、冻结机会域和分母对 CIMAS 与全部 baseline 完全相同，不按方法或仓库调参。ISP 使用函数域，五折仍按文件划分：同一文件的所有函数始终属于同一折，不能分别进入参考折和测量折。因此主 ISP 衡量仓库内跨函数复用，`ISP_generalization` 与 `ISP_fold` 仍衡量更严格的跨文件折外推。
+参考模板完全由参考文件生成：局部变量、参数和字面量转换为 `<VAR_n>`、`<LIT_n>`，相同占位符必须绑定同一 token；调用目标、限定名、成员、类型、控制关键字和关键运算符保持一致。除精确匹配外，结构匹配允许有限局部语句差异，但要求语义锚点不变且参考 token 有至少 `0.72` 的有序覆盖。该规则、冻结机会域和分母对 CIMAS、全部 baseline 与 Stage 2 消融完全相同，不按方法或仓库调参。ISP 使用函数域，五折仍按文件划分：同一文件的所有函数始终属于同一折，不能分别进入参考折和测量折。因此主 ISP 衡量仓库内跨函数复用，`ISP_generalization` 与 `ISP_fold` 仍衡量更严格的跨文件折外推。
 
 形式上，令 `E_f` 为函数 `f` 的冻结聚类机会域节点，`A_f` 为已接受来源证据和参考模板额外命中的节点并集，`I` 为可定位习语集合，`S(i)` 为习语 `i` 的独立来源函数域集合，则：
 
@@ -42,10 +44,10 @@ F1       = 2 * IC * ISP / (IC + ISP)
 
 ```bash
 .venv/bin/python -m src.evaluation.idiom_metrics \
-  --idiom-dir results/cpp/cli11 \
-  --dataset outputs/cpp/cli11/dataset.pkl \
-  --clusters outputs/cpp/cli11/clusters-merged.pkl \
-  --output results/cpp/cli11/evaluation.json \
+  --idiom-dir results/main/cli11 \
+  --dataset outputs/cli11/stage0/dataset.pkl \
+  --clusters outputs/cli11/stage2/clusters.pkl \
+  --output results/main/cli11/evaluation.json \
   --mode within_project_kfold --folds 5
 ```
 

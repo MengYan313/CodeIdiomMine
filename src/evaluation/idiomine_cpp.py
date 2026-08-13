@@ -944,10 +944,10 @@ def estimate_idiomine_cpp_run(
     embedding_paths: Iterable[str | Path],
     *,
     embedding_model: str,
-    eps: float = 0.25,
+    eps: float = 0.5,
     min_samples: int = 2,
-    max_examples_per_judgment: int = 5,
-    max_output_tokens: int = 512,
+    max_examples_per_judgment: int = 10,
+    max_output_tokens: int = 1024,
 ) -> Dict[str, Any]:
     """从 embedding 开始估计完整 IdioMine-CPP 的调用与 token 上界。"""
     paths = [Path(path) for path in embedding_paths]
@@ -978,12 +978,12 @@ async def run_idiomine_cpp_baseline(
     output_dir: str | Path,
     *,
     embedding_model: str,
-    eps: float = 0.25,
+    eps: float = 0.5,
     min_samples: int = 2,
     model: str | None = None,
     token_budget: int,
-    max_output_tokens: int = 512,
-    max_examples_per_judgment: int = 5,
+    max_output_tokens: int = 1024,
+    max_examples_per_judgment: int = 10,
     model_client: Any | None = None,
 ) -> Dict[str, int]:
     """从 embedding 到最终习语执行单一 IdioMine-CPP baseline。"""
@@ -1022,14 +1022,14 @@ def main() -> None:
     )
     parser.add_argument(
         "--output-dir",
-        default="results/baselines/idiomine-cpp/cpp",
+        default="results/baselines/idiomine-cpp/cli11",
     )
     parser.add_argument(
         "--embedding-model",
         required=True,
         help="生成输入 embedding 的模型名，只用于可复现 provenance",
     )
-    parser.add_argument("--eps", type=float, default=0.25)
+    parser.add_argument("--eps", type=float, default=0.5)
     parser.add_argument("--min-samples", type=int, default=2)
     parser.add_argument("--model", default=None, help="默认读取 OPENAI_MODEL_LOW")
     parser.add_argument(
@@ -1038,8 +1038,8 @@ def main() -> None:
         default=0,
         help="真实运行必须显式设置正数；估算模式忽略",
     )
-    parser.add_argument("--max-output-tokens", type=int, default=512)
-    parser.add_argument("--max-examples-per-judgment", type=int, default=5)
+    parser.add_argument("--max-output-tokens", type=int, default=1024)
+    parser.add_argument("--max-examples-per-judgment", type=int, default=10)
     parser.add_argument("--estimate-only", action="store_true")
     args = parser.parse_args()
 

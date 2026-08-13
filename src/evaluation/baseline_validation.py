@@ -1,4 +1,4 @@
-"""对 baseline/CIMAS 产物执行统一评价并验证九项指标合同。"""
+"""对 baseline、质量消融和 CIMAS 产物执行统一评价并验证九项指标合同。"""
 
 from __future__ import annotations
 
@@ -27,10 +27,15 @@ def _validate_output_selection_contract(
 ) -> Dict[str, Any]:
     """拒绝把公共种类上限套到非规则方法或沿用旧规则配置。"""
     normalized_method = method.strip().lower().replace("_", "-")
-    manifest_path = Path(idiom_dir) / "baseline-manifest.json"
+    manifest_name = (
+        "ablation-manifest.json"
+        if normalized_method.startswith("stage2-frequency-ablation")
+        else "baseline-manifest.json"
+    )
+    manifest_path = Path(idiom_dir) / manifest_name
     if not manifest_path.exists():
         if require_baseline_provenance:
-            raise ValueError(f"{manifest_path} 不存在，无法核对 baseline 输出选择合同")
+            raise ValueError(f"{manifest_path} 不存在，无法核对方法输出选择合同")
         return {
             "policy": "main_method_complete_output",
             "final_idiom_count_cap": None,
@@ -46,22 +51,35 @@ def _validate_output_selection_contract(
         parameters = manifest.get("parameters")
         if isinstance(parameters, Mapping) and "max_types" in parameters:
             raise ValueError(f"{method} manifest 含有旧 max_types 截断")
+        if normalized_method.startswith("llm-direct-budget") and (
+            manifest.get("complete") is not True
+            or manifest.get("token_budget_exhausted") is True
+        ):
+            raise ValueError("LLM-Direct-Budget 产物不完整，不能进入正式评价")
         return dict(output_selection)
 
-    if normalized_method.startswith("rules-embedding-clustering"):
+    if normalized_method.startswith("stage2-frequency-ablation"):
         selection_rule = manifest.get("selection_rule")
         if not isinstance(selection_rule, Mapping):
-            raise ValueError(f"{manifest_path} 缺少规则 baseline 组合截断配置")
+            raise ValueError(f"{manifest_path} 缺少 Stage 2 频率消融选择配置")
         if "max_cluster_size" in selection_rule:
-            raise ValueError("规则 baseline 只能使用最小簇大小、比例和数量上限组合")
+            raise ValueError("Stage 2 频率消融只能使用最小簇大小、比例和数量上限组合")
         try:
             min_cluster_size = int(selection_rule["min_cluster_size"])
             selection_ratio = float(selection_rule["selection_ratio"])
             max_types = int(selection_rule["max_types"])
         except (KeyError, TypeError, ValueError) as error:
-            raise ValueError("规则 baseline 组合截断参数不完整") from error
+            raise ValueError("Stage 2 频率消融选择参数不完整") from error
         if min_cluster_size < 1 or not 0 < selection_ratio < 1 or max_types < 1:
-            raise ValueError("规则 baseline 组合截断参数无效")
+            raise ValueError("Stage 2 频率消融选择参数无效")
+        if (
+            manifest.get("comparison_role") != "quality_ablation"
+            or manifest.get("automatic_metrics_role")
+            != "stage2_coverage_upper_bound_diagnostic"
+            or manifest.get("primary_comparison")
+            != "blinded_manual_idiom_quality_annotation"
+        ):
+            raise ValueError("Stage 2 频率消融缺少质量实验定位")
         return dict(selection_rule)
 
     if normalized_method.startswith("idiomine-cpp-"):
@@ -99,13 +117,13 @@ def _validate_output_selection_contract(
         except (KeyError, TypeError, ValueError) as error:
             raise ValueError("IdioMine-CPP 参数不完整") from error
         if (
-            not 0 < eps <= 1
-            or min_samples < 2
+            eps != 0.5
+            or min_samples != 2
             or token_budget < 1
             or max_output_tokens < 1
             or max_examples < 1
         ):
-            raise ValueError("IdioMine-CPP 参数无效")
+            raise ValueError("IdioMine-CPP 参数无效，正式配置要求 eps=0.5、min_samples=2")
 
         adaptation = manifest.get("adaptation")
         if (
@@ -151,7 +169,7 @@ def _validate_artifacts(
     idiom_dir: str | Path,
     *,
     artifact_stage: str,
-    require_baseline_provenance: bool,
+    provenance_field: str | None,
 ) -> Dict[str, int]:
     root = Path(idiom_dir)
     pattern = "*_idiom.pkl" if artifact_stage == "judgment" else "*_idiom_syn.pkl"
@@ -183,8 +201,8 @@ def _validate_artifacts(
                 raise ValueError(f"{path}[{index}] cnt 与 source_infos 数量不一致")
             if "mock_provenance" in idiom:
                 raise ValueError(f"{path}[{index}] 是 mock，不能作为正式方法产物")
-            if require_baseline_provenance and "baseline_provenance" not in idiom:
-                raise ValueError(f"{path}[{index}] 缺少 baseline_provenance")
+            if provenance_field and provenance_field not in idiom:
+                raise ValueError(f"{path}[{index}] 缺少 {provenance_field}")
         counts[project] = len(idioms)
     if not counts:
         raise ValueError(f"{root} 下没有 {pattern}")
@@ -213,7 +231,13 @@ def validate_method_metrics(
     artifact_counts = _validate_artifacts(
         idiom_dir,
         artifact_stage=artifact_stage,
-        require_baseline_provenance=require_baseline_provenance,
+        provenance_field=(
+            "ablation_provenance"
+            if method.strip().lower().replace("_", "-").startswith(
+                "stage2-frequency-ablation"
+            )
+            else "baseline_provenance" if require_baseline_provenance else None
+        ),
     )
     payload = evaluate_cpp(
         str(idiom_dir),
@@ -252,7 +276,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="评价一个方法并验证固定九项指标")
     parser.add_argument("--method", required=True)
     parser.add_argument("--idiom-dir", required=True)
-    parser.add_argument("--dataset", default="outputs/cpp/dataset.pkl")
+    parser.add_argument("--dataset", default="outputs/cli11/stage0/dataset.pkl")
     parser.add_argument("--clusters", required=True)
     parser.add_argument("--output", default=None)
     parser.add_argument(

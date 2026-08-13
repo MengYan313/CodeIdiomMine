@@ -707,30 +707,14 @@ class MetricHelperTests(unittest.TestCase):
 
     def test_existing_three_repository_artifacts_can_be_reevaluated(self):
         root = Path(__file__).resolve().parents[2]
-        replay_root = (
-            root
-            / "outputs"
-            / "experiments"
-            / "stage34-three-policy-replay-20260809"
-        )
-        isolated_root = (
-            root / "outputs" / "experiments" / "repo-isolated-v1" / "repos"
-        )
+        output_root = root / "outputs"
+        result_root = root / "results" / "main"
         repositories = ("leveldb", "ninja", "tomlplusplus")
         paths = [
             (
-                replay_root / repository / "stage4",
-                root
-                / "outputs"
-                / "dataset-experiment"
-                / "final"
-                / repository
-                / "dataset.pkl",
-                isolated_root
-                / repository
-                / "stage2"
-                / "clustering-merged"
-                / "clusters.pkl",
+                result_root / repository,
+                output_root / repository / "stage0" / "dataset.pkl",
+                output_root / repository / "stage2" / "clusters.pkl",
             )
             for repository in repositories
         ]

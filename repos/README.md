@@ -4,8 +4,9 @@
 
 正式论文主数据集由 `docs/research/cpp-dataset-selection.json` 中状态为“保留”
 或“条件保留”的 23 个固定版本仓库组成。`cpp-httplib`、`entt` 和 `simdjson`
-属于“阶段2后排除”：本地源码与历史阶段1/2产物保留用于筛选复核，但不得进入
-后续 LLM、合成或主结果统计。`gsl` 已淘汰且不得留在本地。Haggis 的
+属于“阶段2后排除”：本地源码可用于筛选复核，但不得进入后续 LLM、合成或主结果
+统计；其历史阶段1/2产物已移除。只有正式 23 仓保留统一全量产物。`gsl` 已淘汰且
+不得留在本地。Haggis 的
 `codemining-treelm` 只作为文献与实现来源引用，不作为数据集仓库存放。
 
 ## 快速使用
@@ -15,8 +16,8 @@
 ```bash
 .venv/bin/python -m src.parser.repo2data \
   --input repos --project cli11 \
-  --output outputs/cpp/cli11/dataset.pkl \
-  --fragment-output outputs/cpp/cli11/fragments.pkl \
+  --output outputs/cli11/stage0/dataset.pkl \
+  --fragment-output outputs/cli11/stage1/fragments.pkl \
   --embedding-model unixcoder --local-files-only
 ```
 
@@ -25,7 +26,7 @@
 ```bash
 .venv/bin/python -m scripts.analyze_cpp_dataset analyze-repo \
   --repo repos/cli11 --project cli11 \
-  --output outputs/dataset-experiment/final/cli11/analysis.json
+  --output outputs/cli11/stage0/analysis.json
 ```
 
 仓库版本、稀疏路径、许可与筛选证据见

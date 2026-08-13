@@ -28,7 +28,7 @@
   "generated_at": "2026-07-24",
   "parser": {
     "backend": "tree-sitter-cpp",
-    "analysis_root": "outputs/dataset-experiment/analysis",
+    "analysis_root": "outputs",
     "zero_build_parsing": true
   },
   "projects": [
@@ -75,7 +75,7 @@
       },
       "parse": {
         "analysis": {
-          "artifact_path": "outputs/dataset-experiment/final/btop/analysis.json",
+          "artifact_path": "outputs/btop/stage0/analysis.json",
           "artifact_size_bytes": 65745,
           "candidates": {
             "function": 1477,
@@ -315,7 +315,7 @@
       },
       "parse": {
         "analysis": {
-          "artifact_path": "outputs/dataset-experiment/final/catch2/analysis.json",
+          "artifact_path": "outputs/catch2/stage0/analysis.json",
           "artifact_size_bytes": 257075,
           "candidates": {
             "function": 3396,
@@ -574,7 +574,7 @@
       },
       "parse": {
         "analysis": {
-          "artifact_path": "outputs/dataset-experiment/final/cereal/analysis.json",
+          "artifact_path": "outputs/cereal/stage0/analysis.json",
           "artifact_size_bytes": 141743,
           "candidates": {
             "function": 1230,
@@ -813,7 +813,7 @@
       },
       "parse": {
         "analysis": {
-          "artifact_path": "outputs/dataset-experiment/final/cli11/analysis.json",
+          "artifact_path": "outputs/cli11/stage0/analysis.json",
           "artifact_size_bytes": 41677,
           "candidates": {
             "function": 407,
@@ -1077,7 +1077,7 @@
       },
       "parse": {
         "analysis": {
-          "artifact_path": "outputs/dataset-experiment/final/concurrentqueue/analysis.json",
+          "artifact_path": "outputs/concurrentqueue/stage0/analysis.json",
           "artifact_size_bytes": 10691,
           "candidates": {
             "function": 202,
@@ -1317,7 +1317,7 @@
       },
       "parse": {
         "analysis": {
-          "artifact_path": "outputs/dataset-experiment/final/drogon/analysis.json",
+          "artifact_path": "outputs/drogon/stage0/analysis.json",
           "artifact_size_bytes": 263182,
           "candidates": {
             "function": 2259,
@@ -1563,7 +1563,7 @@
       },
       "parse": {
         "analysis": {
-          "artifact_path": "outputs/dataset-experiment/final/envoy/analysis.json",
+          "artifact_path": "outputs/envoy/stage0/analysis.json",
           "artifact_size_bytes": 4045695,
           "candidates": {
             "function": 32885,
@@ -1829,7 +1829,7 @@
       },
       "parse": {
         "analysis": {
-          "artifact_path": "outputs/dataset-experiment/final/fmt/analysis.json",
+          "artifact_path": "outputs/fmt/stage0/analysis.json",
           "artifact_size_bytes": 22842,
           "candidates": {
             "function": 1064,
@@ -2068,7 +2068,7 @@
       },
       "parse": {
         "analysis": {
-          "artifact_path": "outputs/dataset-experiment/final/json/analysis.json",
+          "artifact_path": "outputs/json/stage0/analysis.json",
           "artifact_size_bytes": 71320,
           "candidates": {
             "function": 1632,
@@ -2352,7 +2352,7 @@
       },
       "parse": {
         "analysis": {
-          "artifact_path": "outputs/dataset-experiment/final/leveldb/analysis.json",
+          "artifact_path": "outputs/leveldb/stage0/analysis.json",
           "artifact_size_bytes": 99516,
           "candidates": {
             "function": 1033,
@@ -2583,7 +2583,7 @@
       },
       "parse": {
         "analysis": {
-          "artifact_path": "outputs/dataset-experiment/final/libzmq/analysis.json",
+          "artifact_path": "outputs/libzmq/stage0/analysis.json",
           "artifact_size_bytes": 291180,
           "candidates": {
             "function": 1837,
@@ -2835,7 +2835,7 @@
       },
       "parse": {
         "analysis": {
-          "artifact_path": "outputs/dataset-experiment/final/magic_enum/analysis.json",
+          "artifact_path": "outputs/magic_enum/stage0/analysis.json",
           "artifact_size_bytes": 12687,
           "candidates": {
             "function": 298,
@@ -3088,7 +3088,7 @@
       },
       "parse": {
         "analysis": {
-          "artifact_path": "outputs/dataset-experiment/final/mosh/analysis.json",
+          "artifact_path": "outputs/mosh/stage0/analysis.json",
           "artifact_size_bytes": 68479,
           "candidates": {
             "function": 653,
@@ -3319,7 +3319,7 @@
       },
       "parse": {
         "analysis": {
-          "artifact_path": "outputs/dataset-experiment/final/ninja/analysis.json",
+          "artifact_path": "outputs/ninja/stage0/analysis.json",
           "artifact_size_bytes": 98003,
           "candidates": {
             "function": 673,
@@ -3552,7 +3552,7 @@
       },
       "parse": {
         "analysis": {
-          "artifact_path": "outputs/dataset-experiment/final/polybar/analysis.json",
+          "artifact_path": "outputs/polybar/stage0/analysis.json",
           "artifact_size_bytes": 228811,
           "candidates": {
             "function": 1544,
@@ -3796,7 +3796,7 @@
       },
       "parse": {
         "analysis": {
-          "artifact_path": "outputs/dataset-experiment/final/qbittorrent/analysis.json",
+          "artifact_path": "outputs/qbittorrent/stage0/analysis.json",
           "artifact_size_bytes": 532172,
           "candidates": {
             "function": 4226,
@@ -4039,7 +4039,7 @@
       },
       "parse": {
         "analysis": {
-          "artifact_path": "outputs/dataset-experiment/final/react-native/analysis.json",
+          "artifact_path": "outputs/react-native/stage0/analysis.json",
           "artifact_size_bytes": 1155609,
           "candidates": {
             "function": 6436,
@@ -4299,7 +4299,7 @@
       },
       "parse": {
         "analysis": {
-          "artifact_path": "outputs/dataset-experiment/final/spdlog/analysis.json",
+          "artifact_path": "outputs/spdlog/stage0/analysis.json",
           "artifact_size_bytes": 124479,
           "candidates": {
             "function": 1523,
@@ -4533,7 +4533,7 @@
       },
       "parse": {
         "analysis": {
-          "artifact_path": "outputs/dataset-experiment/final/taskflow/analysis.json",
+          "artifact_path": "outputs/taskflow/stage0/analysis.json",
           "artifact_size_bytes": 113806,
           "candidates": {
             "function": 1355,
@@ -4820,7 +4820,7 @@
       },
       "parse": {
         "analysis": {
-          "artifact_path": "outputs/dataset-experiment/final/tomlplusplus/analysis.json",
+          "artifact_path": "outputs/tomlplusplus/stage0/analysis.json",
           "artifact_size_bytes": 47147,
           "candidates": {
             "function": 244,
@@ -5068,7 +5068,7 @@
       },
       "parse": {
         "analysis": {
-          "artifact_path": "outputs/dataset-experiment/final/uwebsockets/analysis.json",
+          "artifact_path": "outputs/uwebsockets/stage0/analysis.json",
           "artifact_size_bytes": 57650,
           "candidates": {
             "function": 431,
@@ -5305,7 +5305,7 @@
       },
       "parse": {
         "analysis": {
-          "artifact_path": "outputs/dataset-experiment/final/yaml-cpp/analysis.json",
+          "artifact_path": "outputs/yaml-cpp/stage0/analysis.json",
           "artifact_size_bytes": 101558,
           "candidates": {
             "function": 1088,
@@ -5557,7 +5557,7 @@
       },
       "parse": {
         "analysis": {
-          "artifact_path": "outputs/dataset-experiment/final/yoga/analysis.json",
+          "artifact_path": "outputs/yoga/stage0/analysis.json",
           "artifact_size_bytes": 106133,
           "candidates": {
             "function": 1826,

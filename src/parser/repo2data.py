@@ -35,7 +35,7 @@ def parse_repository(
     
     Args:
         input_path: 输入路径，例如 CodeIdiomMine/repos
-        output_path: 输出路径，例如 CodeIdiomMine/outputs/cpp
+        output_path: 输出路径，例如 outputs/cli11/stage0/dataset.pkl
         fragment_output_path: 可选的 Parser model-ready 片段输出路径
         projects: 可选的精确项目目录名列表；省略时解析全部项目
     """
@@ -335,8 +335,8 @@ def main():
     )
     parser.add_argument(
         '--output', '-o',
-        default='outputs/cpp/dataset.pkl',
-        help='输出数据文件路径（例如: outputs/cpp/dataset.pkl）'
+        default='outputs/cli11/stage0/dataset.pkl',
+        help='输出数据文件路径（例如: outputs/cli11/stage0/dataset.pkl）'
     )
     parser.add_argument(
         '--audit-output',

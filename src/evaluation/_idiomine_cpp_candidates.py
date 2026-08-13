@@ -212,7 +212,7 @@ def build_idiomine_cpp_candidate_artifacts(
     output_dir: str | Path,
     *,
     embedding_model: str,
-    eps: float = 0.25,
+    eps: float = 0.5,
     min_samples: int = 2,
 ) -> Dict[str, int]:
     """为单一 IdioMine-CPP baseline 构造内部候选簇产物。"""

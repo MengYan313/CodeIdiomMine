@@ -528,10 +528,10 @@ def mine_haggis_cpp(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="运行 Haggis-CPP DP-pTSG baseline")
-    parser.add_argument("--dataset", default="outputs/cpp/dataset.pkl")
+    parser.add_argument("--dataset", default="outputs/cli11/stage0/dataset.pkl")
     parser.add_argument(
         "--output-dir",
-        default="results/baselines/haggis-cpp/cpp",
+        default="results/baselines/haggis-cpp/cli11",
     )
     parser.add_argument("--iterations", type=int, default=50)
     parser.add_argument("--burn-in-fraction", type=float, default=0.75)

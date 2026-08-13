@@ -42,7 +42,8 @@ htmlcov/
 
 # Project-generated artifacts
 /outputs/
-/results/
+/results/*
+!/results/README.md
 /logs/
 *.log
 nohup.out

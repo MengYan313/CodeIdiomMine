@@ -121,16 +121,16 @@ def build_mock_idioms(
 def main() -> None:
     parser = argparse.ArgumentParser(description="从冻结的聚类集合构造无排序离线模拟习语")
     parser.add_argument(
-        "--clusters", default="outputs/cpp/clusters.pkl", help="聚类 PKL"
+        "--clusters", default="outputs/cli11/stage2/clusters.pkl", help="聚类 PKL"
     )
     parser.add_argument(
         "--output-dir",
-        default="results/evaluation-mock/cpp",
+        default="outputs/cli11/mock",
         help="模拟习语输出目录",
     )
     parser.add_argument(
         "--selection-manifest",
-        default="outputs/cpp/readables/clusters.top100.json",
+        default="outputs/cli11/readables/clusters.top100.json",
         help="已有簇选择清单；只读取 project/label，不使用其中 rank",
     )
     args = parser.parse_args()
