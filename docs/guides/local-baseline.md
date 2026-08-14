@@ -8,7 +8,7 @@ python3.12 -m venv .venv
 .venv/bin/python -m unittest discover -s tests -t . -v
 ```
 
-数据集清单只包含 [`cpp-dataset-selection.json`](../research/cpp-dataset-selection.json) 中的 23 个正式项目。当前统计见 [`cpp-dataset-statistics.json`](../research/cpp-dataset-statistics.json)，当前分析清单见 [`cpp-dataset-manifest.json`](../research/cpp-dataset-manifest.json)。
+数据集清单是 [`cpp-dataset-selection.json`](../research/cpp-dataset-selection.json) 中的 15 个 Project 仓库和 15 个 Library 目标，共 30 个实验分组。当前统计见 [`cpp-dataset-statistics.json`](../research/cpp-dataset-statistics.json)，当前分析清单见 [`cpp-dataset-manifest.json`](../research/cpp-dataset-manifest.json)。
 
 离线测试是代码变更的必要基线。真实 Parser、embedding、聚类和 LLM 实验按根 `README.md` 的当前命令运行；中间产物写入 `outputs/`，最终产物写入 `results/`。
 

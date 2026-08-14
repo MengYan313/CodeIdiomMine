@@ -203,7 +203,7 @@ LLM 发现阶段只看到原始函数源码和机械生成的 `evidence_id`。AS
 | `processed_function_count` | 已完成 map 块覆盖的函数数 | 与输入函数总数共同审计完整性 |
 | `token_budget_exhausted` | 本次是否因全局预算停止 | 为 `true` 时 validator 拒绝正式评价 |
 
-若预算在 map 或 reduce 中耗尽，manifest 会记录不完整项目、已处理块/函数数和 `token_budget_exhausted=true`，不写该项目最终产物；统一 validator 拒绝其进入正式评价。真实调用还必须记录模型标识、日期、端点用量和源码披露范围。默认 checkpoint 位于 `outputs/cli11/llm-direct-budget/checkpoint.sqlite3`，不会写入 `results/`。
+若预算在 map 或 reduce 中耗尽，manifest 会记录不完整项目、已处理块/函数数和 `token_budget_exhausted=true`，不写该项目最终产物；统一 validator 拒绝其进入正式评价。真实调用还必须记录模型标识、日期、端点用量和源码披露范围。默认 checkpoint 位于 `outputs/leveldb/llm-direct-budget/checkpoint.sqlite3`，不会写入 `results/`。
 
 证据映射使用 AST 只是为了满足当前评价器的数据合同，不会把节点类型或聚类信息反馈给 LLM。不过，这项投影会使无法落到当前候选粒度的 LLM 结果被丢弃，正式报告必须把它作为公共测量适配限制，而不能宣称纯 LLM 自身主动进行了 AST 过滤。
 
@@ -367,7 +367,7 @@ Stage 2 非噪声聚类产物；IC 的函数和节点分母由该产物固定，
 
 ## 7. 复现命令
 
-以下命令以 `cli11` 展示单仓运行。正式 baseline 使用
+以下命令以 `leveldb` 展示单仓运行。正式 baseline 使用
 `outputs/<repo>/stage0` 和 `outputs/<repo>/stage2` 的标准输入，输出到
 `results/baselines/<method>/<repo>`；所有正式结果只追加到
 [全仓实验记录](../../results/README.md)。
@@ -376,17 +376,17 @@ Stage 2 非噪声聚类产物；IC 的函数和节点分母由该产物固定，
 
 ```bash
 .venv/bin/python -m src.evaluation.haggis_cpp \
-  --dataset outputs/cli11/stage0/dataset.pkl \
-  --output-dir results/baselines/haggis-cpp/cli11 \
+  --dataset outputs/leveldb/stage0/dataset.pkl \
+  --output-dir results/baselines/haggis-cpp/leveldb \
   --iterations 50 --burn-in-fraction 0.75 --alpha 1.0 \
   --min-posterior-support 0.5 --min-occurrences 3 \
   --min-files 2 --min-fragment-nodes 3
 
 .venv/bin/python -m src.evaluation.baseline_validation \
   --method haggis-cpp \
-  --idiom-dir results/baselines/haggis-cpp/cli11 \
-  --dataset outputs/cli11/stage0/dataset.pkl \
-  --clusters outputs/cli11/stage2/clusters.pkl
+  --idiom-dir results/baselines/haggis-cpp/leveldb \
+  --dataset outputs/leveldb/stage0/dataset.pkl \
+  --clusters outputs/leveldb/stage2/clusters.pkl
 ```
 
 `--max-functions-per-project` 和 `--max-nodes-per-function` 只用于有界 smoke 或资源保护；正式运行必须在 manifest 中说明是否使用。
@@ -395,18 +395,18 @@ Stage 2 非噪声聚类产物；IC 的函数和节点分母由该产物固定，
 
 ```bash
 .venv/bin/python -m src.evaluation.llm_direct_baseline \
-  --dataset outputs/cli11/stage0/dataset.pkl \
-  --output-dir results/baselines/llm-direct-budget/cli11 \
-  --checkpoint outputs/cli11/llm-direct-budget/checkpoint.sqlite3 \
+  --dataset outputs/leveldb/stage0/dataset.pkl \
+  --output-dir results/baselines/llm-direct-budget/leveldb \
+  --checkpoint outputs/leveldb/llm-direct-budget/checkpoint.sqlite3 \
   --token-budget <与CIMAS匹配的总输入输出token预算> \
   --chunk-tokens 3000 --reduce-chunk-tokens 4000 \
   --max-output-tokens 2048
 
 # 中断后使用完全相同的输入、分块和预算续跑
 .venv/bin/python -m src.evaluation.llm_direct_baseline \
-  --dataset outputs/cli11/stage0/dataset.pkl \
-  --output-dir results/baselines/llm-direct-budget/cli11 \
-  --checkpoint outputs/cli11/llm-direct-budget/checkpoint.sqlite3 \
+  --dataset outputs/leveldb/stage0/dataset.pkl \
+  --output-dir results/baselines/llm-direct-budget/leveldb \
+  --checkpoint outputs/leveldb/llm-direct-budget/checkpoint.sqlite3 \
   --resume \
   --token-budget <与CIMAS匹配的总输入输出token预算> \
   --chunk-tokens 3000 --reduce-chunk-tokens 4000 \
@@ -414,9 +414,9 @@ Stage 2 非噪声聚类产物；IC 的函数和节点分母由该产物固定，
 
 .venv/bin/python -m src.evaluation.baseline_validation \
   --method llm-direct-budget \
-  --idiom-dir results/baselines/llm-direct-budget/cli11 \
-  --dataset outputs/cli11/stage0/dataset.pkl \
-  --clusters outputs/cli11/stage2/clusters.pkl
+  --idiom-dir results/baselines/llm-direct-budget/leveldb \
+  --dataset outputs/leveldb/stage0/dataset.pkl \
+  --clusters outputs/leveldb/stage2/clusters.pkl
 ```
 
 真实入口会发送源码到配置的模型端点。先用合成代码与 `--max-functions-per-project` 做 smoke，再单独审批公开语料范围、调用数和成本。
@@ -425,16 +425,16 @@ Stage 2 非噪声聚类产物；IC 的函数和节点分母由该产物固定，
 
 ```bash
 .venv/bin/python -m src.evaluation.stage2_frequency_ablation \
-  --clusters outputs/cli11/stage2/clusters.pkl \
-  --output-dir results/ablations/stage2-frequency/cli11 \
+  --clusters outputs/leveldb/stage2/clusters.pkl \
+  --output-dir results/ablations/stage2-frequency/leveldb \
   --min-cluster-size 3 \
   --selection-ratio <预注册固定值或无监督规则确定值> --max-types 100
 
 .venv/bin/python -m src.evaluation.baseline_validation \
   --method stage2-frequency-ablation \
-  --idiom-dir results/ablations/stage2-frequency/cli11 \
-  --dataset outputs/cli11/stage0/dataset.pkl \
-  --clusters outputs/cli11/stage2/clusters.pkl
+  --idiom-dir results/ablations/stage2-frequency/leveldb \
+  --dataset outputs/leveldb/stage0/dataset.pkl \
+  --clusters outputs/leveldb/stage2/clusters.pkl
 ```
 
 运行 manifest 同时记录质量消融定位、原始簇数、最小簇大小过滤后的合格簇数、比例截断数量、数量上限和最终产物数。比例与阈值不得用最终参考/测量指标或人工标签调参；输出进入统一盲化人工质量池。
@@ -443,14 +443,14 @@ Stage 2 非噪声聚类产物；IC 的函数和节点分母由该产物固定，
 
 ```bash
 .venv/bin/python -m src.evaluation.idiomine_cpp \
-  --embeddings outputs/cli11/stage2/embeddings.pkl \
+  --embeddings outputs/leveldb/stage2/embeddings.pkl \
   --embedding-model microsoft/unixcoder-base \
   --eps 0.5 --min-samples 2 \
   --estimate-only --max-output-tokens 1024 --max-examples-per-judgment 10
 
 .venv/bin/python -m src.evaluation.idiomine_cpp \
-  --embeddings outputs/cli11/stage2/embeddings.pkl \
-  --output-dir results/baselines/idiomine-cpp/cli11 \
+  --embeddings outputs/leveldb/stage2/embeddings.pkl \
+  --output-dir results/baselines/idiomine-cpp/leveldb \
   --embedding-model microsoft/unixcoder-base \
   --eps 0.5 --min-samples 2 \
   --token-budget <审批后的总输入输出token预算> \
@@ -458,9 +458,9 @@ Stage 2 非噪声聚类产物；IC 的函数和节点分母由该产物固定，
 
 .venv/bin/python -m src.evaluation.baseline_validation \
   --method idiomine-cpp \
-  --idiom-dir results/baselines/idiomine-cpp/cli11 \
-  --dataset outputs/cli11/stage0/dataset.pkl \
-  --clusters outputs/cli11/stage2/clusters.pkl
+  --idiom-dir results/baselines/idiomine-cpp/leveldb \
+  --dataset outputs/leveldb/stage0/dataset.pkl \
+  --clusters outputs/leveldb/stage2/clusters.pkl
 ```
 
 `--embeddings` 可以重复传入，但每个项目只能出现一次。正式实验应逐仓生成输入并
@@ -473,28 +473,28 @@ Stage 2 非噪声聚类产物；IC 的函数和节点分母由该产物固定，
 
 ```bash
 .venv/bin/python -m src.idiom_judgment.judge_clusters \
-  --input outputs/cli11/stage2/clusters.pkl \
-  --source-root repos/cli11 --require-context \
-  --output outputs/cli11/stage3/idiom-judgment.pkl
+  --input outputs/leveldb/stage2/clusters.pkl \
+  --source-root repos/project/leveldb --require-context \
+  --output outputs/leveldb/stage3/idiom-judgment.pkl
 
 .venv/bin/python -m src.idiom_synthesis.synthesize_idioms \
-  --input outputs/cli11/stage3/idiom-judgment.pkl \
-  --source-root repos/cli11 \
-  --output outputs/cli11/stage4/idiom-synthesis.pkl
+  --input outputs/leveldb/stage3/idiom-judgment.pkl \
+  --source-root repos/project/leveldb \
+  --output outputs/leveldb/stage4/idiom-synthesis.pkl
 
-mkdir -p results/main/cli11
-cp outputs/cli11/stage4/idiom-synthesis.pkl \
-  results/main/cli11/idiom-synthesis.pkl
+mkdir -p results/main/leveldb
+cp outputs/leveldb/stage4/idiom-synthesis.pkl \
+  results/main/leveldb/idiom-synthesis.pkl
 
 .venv/bin/python -m src.evaluation.baseline_validation \
-  --method cimas-cpp --idiom-dir results/main/cli11 \
-  --dataset outputs/cli11/stage0/dataset.pkl \
-  --clusters outputs/cli11/stage2/clusters.pkl --allow-main-method
+  --method cimas-cpp --idiom-dir results/main/leveldb \
+  --dataset outputs/leveldb/stage0/dataset.pkl \
+  --clusters outputs/leveldb/stage2/clusters.pkl --allow-main-method
 ```
 
 阶段4的 `accepted` 是阶段3基础习语与去重后新增合成的最终知识库；
 `synthesized` 单独保留新增合成，来源候选只作证据。正式主方法评价使用
-`--stage synthesis`。不能把 `outputs/cli11/mock/` 传给
+`--stage synthesis`。不能把 `outputs/leveldb/mock/` 传给
 `--allow-main-method`。
 
 ## 8. 当前验证状态

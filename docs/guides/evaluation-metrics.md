@@ -44,10 +44,10 @@ F1       = 2 * IC * ISP / (IC + ISP)
 
 ```bash
 .venv/bin/python -m src.evaluation.idiom_metrics \
-  --idiom-dir results/main/cli11 \
-  --dataset outputs/cli11/stage0/dataset.pkl \
-  --clusters outputs/cli11/stage2/clusters.pkl \
-  --output results/main/cli11/evaluation.json \
+  --idiom-dir results/main/leveldb \
+  --dataset outputs/leveldb/stage0/dataset.pkl \
+  --clusters outputs/leveldb/stage2/clusters.pkl \
+  --output results/main/leveldb/evaluation.json \
   --mode within_project_kfold --folds 5
 ```
 

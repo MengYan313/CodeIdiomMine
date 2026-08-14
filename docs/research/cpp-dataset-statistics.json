@@ -1,421 +1,552 @@
 {
-  "candidates": {
-    "function": 67719,
-    "region": 36668,
-    "semantic_def_use": 8600,
-    "statement": 90622
-  },
-  "classification": {
-    "analysis_complexity_tiers": {
-      "中": 8,
-      "低": 8,
-      "高": 7
-    },
-    "primary_domain_by_analysis_complexity": {
-      "存储与并发基础设施": {
-        "中": 2,
-        "低": 1,
-        "高": 0
-      },
-      "应用与跨平台界面": {
-        "中": 2,
-        "低": 0,
-        "高": 3
-      },
-      "开发工具与工程基础设施": {
-        "中": 1,
-        "低": 2,
-        "高": 1
-      },
-      "数据表示与泛型基础库": {
-        "中": 3,
-        "低": 3,
-        "高": 0
-      },
-      "网络与分布式系统": {
-        "中": 0,
-        "低": 2,
-        "高": 3
-      }
-    },
-    "primary_domains": {
-      "存储与并发基础设施": 3,
-      "应用与跨平台界面": 5,
-      "开发工具与工程基础设施": 4,
-      "数据表示与泛型基础库": 6,
-      "网络与分布式系统": 5
-    }
-  },
-  "classification_policy": {
-    "analysis_complexity": {
-      "indicators": [
-        "effective_line_count",
-        "selected_file_count",
-        "candidate_count"
-      ],
-      "name": "相对分析复杂度",
-      "prohibited_interpretation": "该层级不是圈复杂度、可维护性或项目质量标签，不参与项目去留、DBSCAN参数、LLM提示词或阈值选择。",
-      "score": "对三项阶段1指标分别计算正式23仓内升序平均秩百分位，再等权平均；分数越高表示本流水线的输入规模和候选处理负荷越高。",
-      "strata": "按综合分数升序确定近似等频三层；当前23仓为低8、中8、高7，分界相同时以 slug 保证确定性。"
-    },
-    "primary_domain": {
-      "assignment_basis": "按项目核心生产用途人工指定一个互斥主领域；跨领域能力继续由 project_type 与 idiom_focus 表达。",
-      "categories": [
-        "数据表示与泛型基础库",
-        "开发工具与工程基础设施",
-        "网络与分布式系统",
-        "应用与跨平台界面",
-        "存储与并发基础设施"
-      ],
-      "field": "primary_domain"
-    },
-    "scope": "仅对“保留”和“条件保留”的正式项目分类"
-  },
-  "diversity": {
-    "build_systems": {
-      "Autotools": 2,
-      "Bazel": 6,
-      "Buck": 1,
-      "CMake": 20,
-      "Make": 4,
-      "Meson": 5
-    },
-    "cpp_standards": {
-      "C++11": 10,
-      "C++14": 1,
-      "C++17": 9,
-      "C++20": 3
-    },
-    "idiom_focus": {
-      "Qt 对象模型": 1,
-      "RAII": 10,
-      "SFINAE": 1,
-      "STL 容器": 5,
-      "事件循环": 1,
-      "事件驱动": 1,
-      "任务图": 1,
-      "值类型": 1,
-      "内存序": 1,
-      "加密封装": 1,
-      "原子操作": 1,
-      "回调": 4,
-      "图算法": 1,
-      "字符串处理": 1,
-      "字符串视图": 1,
-      "存储引擎": 1,
-      "宏接口": 1,
-      "工作窃取": 1,
-      "工程分层": 3,
-      "工程模式": 1,
-      "布局算法": 1,
-      "平台抽象": 1,
-      "并发": 7,
-      "异常处理": 5,
-      "异步回调": 1,
-      "异步网络": 1,
-      "文件系统": 1,
-      "无锁并发": 1,
-      "智能指针": 4,
-      "树遍历": 1,
-      "格式化": 1,
-      "模块化": 1,
-      "模板": 10,
-      "模板元编程": 2,
-      "泛型序列化": 2,
-      "流式接口": 1,
-      "状态同步": 1,
-      "状态机": 1,
-      "移动语义": 2,
-      "策略对象": 1,
-      "类型安全": 2,
-      "类型擦除": 2,
-      "类型特征": 2,
-      "系统资源封装": 2,
-      "缓存": 2,
-      "编译期计算": 2,
-      "网络": 1,
-      "网络 I/O": 2,
-      "网络协议": 2,
-      "自定义类型": 1,
-      "自定义迭代器": 1,
-      "节点树": 1,
-      "解析器": 2,
-      "访问器": 1,
-      "跨平台接口": 1,
-      "跨语言桥接": 1,
-      "迭代器": 2,
-      "错误传播": 1,
-      "错误处理": 3,
-      "错误状态": 1
-    },
-    "licenses": {
-      "Apache-2.0": 4,
-      "BSD-2-Clause": 1,
-      "BSD-3-Clause": 3,
-      "BSL-1.0": 1,
-      "GPL-2.0-or-later": 1,
-      "GPL-3.0": 1,
-      "MIT": 11,
-      "MPL-2.0": 1
-    },
-    "project_types": {
-      "YAML 解析与序列化库": 1,
-      "命令行系统监控应用": 1,
-      "大型桌面网络应用": 1,
-      "大型网络代理": 1,
-      "头文件型 JSON 库": 1,
-      "头文件型 TOML 库": 1,
-      "头文件型命令行解析库": 1,
-      "头文件型序列化库": 1,
-      "头文件型无锁并发队列": 1,
-      "头文件型枚举反射库": 1,
-      "嵌入式键值存储库": 1,
-      "并行任务图编程库": 1,
-      "异步 Web 框架": 1,
-      "日志基础库": 1,
-      "构建系统命令行工具": 1,
-      "格式化基础库": 1,
-      "桌面状态栏应用": 1,
-      "测试框架": 1,
-      "消息通信库": 1,
-      "移动网络终端": 1,
-      "跨平台布局引擎": 1,
-      "跨平台运行时的 C++ 子系统": 1,
-      "高性能异步网络库": 1
-    }
-  },
-  "entities": {
-    "call": 337695,
-    "class": 9589,
-    "enum": 1417,
-    "function_definition": 71986,
-    "include": 47223,
-    "lambda": 5410,
-    "method_definition": 29536,
-    "namespace": 16812,
-    "struct": 6903,
-    "template": 39785,
-    "type": 25579
-  },
-  "errors": {
-    "empty_function_output": 1399,
-    "preprocessor_or_macro": 391,
-    "syntax_or_recovery": 1857
-  },
   "generated_from": "docs/research/cpp-dataset-manifest.json",
-  "metadata_distribution": {
-    "active_within_365_days_count": 23,
-    "activity_age_days": {
-      "count": 23,
-      "max": 302,
-      "median": 3,
-      "min": 0,
-      "sum": 779
-    },
-    "archived_project_count": 0,
-    "forks": {
-      "count": 23,
-      "max": 25188,
-      "median": 1857,
-      "min": 206,
-      "sum": 81967
-    },
-    "star_buckets": {
-      "10,000～24,999": 11,
-      "5,000～9,999": 2,
-      "<5,000": 3,
-      ">=25,000": 7
-    },
-    "stars": {
-      "count": 23,
-      "max": 126249,
-      "median": 15315,
-      "min": 2107,
-      "sum": 544475
-    }
-  },
-  "scale_distribution": {
-    "effective_line_buckets": {
-      "10,000～99,999": 18,
-      "2,000～9,999": 4,
-      ">=100,000": 1
-    },
-    "effective_lines": {
-      "count": 23,
-      "max": 428842,
-      "median": 22330,
-      "min": 2911,
-      "sum": 1013071
-    },
-    "source_file_buckets": {
-      "100～999": 9,
-      "10～99": 10,
-      "<10": 2,
-      ">=1,000": 2
-    },
-    "source_files": {
-      "count": 23,
-      "max": 3780,
-      "median": 97,
-      "min": 7,
-      "sum": 7505
-    }
-  },
-  "screened_at": "2026-07-29",
-  "selection": {
-    "project_count": 23,
-    "status_counts": {
-      "保留": 16,
-      "条件保留": 7
-    }
-  },
-  "selection_policy": {
-    "sampling_method": "有明确约束的目的性最大差异抽样",
-    "formal_statuses": [
-      "保留",
-      "条件保留"
-    ],
-    "notes": "当前统计仅覆盖正式实验项目。"
-  },
-  "selection_source": "docs/research/cpp-dataset-selection.json",
+  "generated_at": "2026-08-14",
   "totals": {
-    "ast_coverage": 0.9108641364319137,
-    "candidate_count": 203609,
-    "effective_line_count": 1013071,
-    "error_count": 18712,
-    "failed_file_count": 0,
-    "file_success_rate": 1.0,
-    "missing_count": 4900,
-    "parsed_file_count": 7505,
-    "project_count": 23,
-    "reliable_significant_byte_count": 38223417,
-    "seed_project_count": 3,
-    "selected_function_count": 72090,
-    "significant_byte_count": 41963906,
-    "source_file_count": 7505
+    "experimental_group_count": 30,
+    "membership_file_count": 36189,
+    "effective_line_count": 9049534,
+    "Project": {
+      "group_count": 15,
+      "file_count": 6248,
+      "effective_line_count": 748364,
+      "train_file_count": 3415,
+      "train_effective_line_count": 523832,
+      "test_file_count": 2833,
+      "test_effective_line_count": 224532
+    },
+    "Library": {
+      "group_count": 15,
+      "unique_client_repository_count": 1257,
+      "membership_file_count": 29941,
+      "effective_line_count": 8301170,
+      "train_unique_client_repository_count": 881,
+      "test_unique_client_repository_count": 376,
+      "train_membership_file_count": 21566,
+      "train_effective_line_count": 5787098,
+      "test_membership_file_count": 8375,
+      "test_effective_line_count": 2514072
+    }
   },
-  "parser_statistics": {
-    "candidates": {
-      "function": 67719,
-      "region": 36668,
-      "semantic_def_use": 8600,
-      "statement": 90622
+  "scale_control": {
+    "within_500_to_5000_group_count": 13,
+    "at_5000_limit": [],
+    "accepted_small_samples": {
+      "cli11": 238,
+      "rocksdb": 306
+    }
+  },
+  "acceptance_audit": {
+    "input_file_count": 31066,
+    "excluded_file_count": 1125,
+    "excluded_by_reason": {
+      "amalgamated_source": 2,
+      "copied_external_example": 1,
+      "cross_target_source_tree": 43,
+      "embedded_dependency_tree": 164,
+      "generated_banner": 187,
+      "generated_path": 1,
+      "target_binary_headers": 34,
+      "target_source_tree": 382,
+      "vendored_path": 287,
+      "vendored_path_variant": 24
     },
-    "entities": {
-      "call": 337695,
-      "class": 9589,
-      "enum": 1417,
-      "function_definition": 71986,
-      "include": 47223,
-      "lambda": 5410,
-      "method_definition": 29536,
-      "namespace": 16812,
-      "struct": 6903,
-      "template": 39785,
-      "type": 25579
-    },
-    "errors": {
-      "affected_projects": {
-        "empty_function_output": [
-          "btop",
-          "catch2",
-          "cereal",
-          "cli11",
-          "concurrentqueue",
-          "drogon",
-          "envoy",
-          "fmt",
-          "json",
-          "leveldb",
-          "libzmq",
-          "magic_enum",
-          "mosh",
-          "ninja",
-          "polybar",
-          "qbittorrent",
-          "react-native",
-          "spdlog",
-          "taskflow",
-          "tomlplusplus",
-          "uwebsockets",
-          "yaml-cpp",
-          "yoga"
-        ],
-        "preprocessor_or_macro": [
-          "btop",
-          "catch2",
-          "cereal",
-          "cli11",
-          "concurrentqueue",
-          "drogon",
-          "envoy",
-          "fmt",
-          "json",
-          "leveldb",
-          "libzmq",
-          "magic_enum",
-          "mosh",
-          "ninja",
-          "polybar",
-          "qbittorrent",
-          "react-native",
-          "spdlog",
-          "taskflow",
-          "tomlplusplus",
-          "uwebsockets",
-          "yaml-cpp",
-          "yoga"
-        ],
-        "syntax_or_recovery": [
-          "btop",
-          "catch2",
-          "cereal",
-          "cli11",
-          "concurrentqueue",
-          "drogon",
-          "envoy",
-          "fmt",
-          "json",
-          "leveldb",
-          "libzmq",
-          "magic_enum",
-          "mosh",
-          "ninja",
-          "polybar",
-          "qbittorrent",
-          "react-native",
-          "spdlog",
-          "taskflow",
-          "tomlplusplus",
-          "uwebsockets",
-          "yaml-cpp",
-          "yoga"
-        ]
+    "final_file_count": 29941
+  },
+  "groups": [
+    {
+      "type": "Project",
+      "name": "btop",
+      "repository": "aristocratos/btop",
+      "client_repository_count": 1,
+      "file_count": 33,
+      "effective_line_count": 17241,
+      "train": {
+        "file_count": 20,
+        "effective_line_count": 12044
       },
-      "counts": {
-        "empty_function_output": 1399,
-        "preprocessor_or_macro": 391,
-        "syntax_or_recovery": 1857
+      "test": {
+        "file_count": 13,
+        "effective_line_count": 5197
       }
     },
-    "totals": {
-      "anomalous_file_count": 2248,
-      "anomalous_file_rate": 0.2995336442371752,
-      "ast_coverage": 0.9108641364319137,
-      "candidate_count": 203609,
-      "duplicate_relative_path_count": 0,
-      "effective_line_count": 1013071,
-      "error_count": 18712,
-      "failed_file_count": 0,
-      "file_success_rate": 1.0,
-      "missing_count": 4900,
-      "parsed_file_count": 7505,
-      "path_escape_count": 0,
-      "reliable_significant_byte_count": 38223417,
-      "selected_function_count": 72090,
-      "significant_byte_count": 41963906,
-      "source_file_count": 7505,
-      "symlink_file_count": 0
+    {
+      "type": "Project",
+      "name": "catch2",
+      "repository": "catchorg/Catch2",
+      "client_repository_count": 1,
+      "file_count": 240,
+      "effective_line_count": 17060,
+      "train": {
+        "file_count": 133,
+        "effective_line_count": 11940
+      },
+      "test": {
+        "file_count": 107,
+        "effective_line_count": 5120
+      }
+    },
+    {
+      "type": "Project",
+      "name": "drogon",
+      "repository": "drogonframework/drogon",
+      "client_repository_count": 1,
+      "file_count": 251,
+      "effective_line_count": 44987,
+      "train": {
+        "file_count": 144,
+        "effective_line_count": 31495
+      },
+      "test": {
+        "file_count": 107,
+        "effective_line_count": 13492
+      }
+    },
+    {
+      "type": "Project",
+      "name": "envoy",
+      "repository": "envoyproxy/envoy",
+      "client_repository_count": 1,
+      "file_count": 4063,
+      "effective_line_count": 440438,
+      "train": {
+        "file_count": 2214,
+        "effective_line_count": 308307
+      },
+      "test": {
+        "file_count": 1849,
+        "effective_line_count": 132131
+      }
+    },
+    {
+      "type": "Project",
+      "name": "fmt",
+      "repository": "fmtlib/fmt",
+      "client_repository_count": 1,
+      "file_count": 19,
+      "effective_line_count": 13646,
+      "train": {
+        "file_count": 10,
+        "effective_line_count": 9561
+      },
+      "test": {
+        "file_count": 9,
+        "effective_line_count": 4085
+      }
+    },
+    {
+      "type": "Project",
+      "name": "leveldb",
+      "repository": "google/leveldb",
+      "client_repository_count": 1,
+      "file_count": 96,
+      "effective_line_count": 12108,
+      "train": {
+        "file_count": 53,
+        "effective_line_count": 8476
+      },
+      "test": {
+        "file_count": 43,
+        "effective_line_count": 3632
+      }
+    },
+    {
+      "type": "Project",
+      "name": "libzmq",
+      "repository": "zeromq/libzmq",
+      "client_repository_count": 1,
+      "file_count": 280,
+      "effective_line_count": 37797,
+      "train": {
+        "file_count": 158,
+        "effective_line_count": 26453
+      },
+      "test": {
+        "file_count": 122,
+        "effective_line_count": 11344
+      }
+    },
+    {
+      "type": "Project",
+      "name": "mosh",
+      "repository": "mobile-shell/mosh",
+      "client_repository_count": 1,
+      "file_count": 64,
+      "effective_line_count": 9657,
+      "train": {
+        "file_count": 38,
+        "effective_line_count": 6760
+      },
+      "test": {
+        "file_count": 26,
+        "effective_line_count": 2897
+      }
+    },
+    {
+      "type": "Project",
+      "name": "ninja",
+      "repository": "ninja-build/ninja",
+      "client_repository_count": 1,
+      "file_count": 93,
+      "effective_line_count": 12692,
+      "train": {
+        "file_count": 48,
+        "effective_line_count": 8882
+      },
+      "test": {
+        "file_count": 45,
+        "effective_line_count": 3810
+      }
+    },
+    {
+      "type": "Project",
+      "name": "polybar",
+      "repository": "polybar/polybar",
+      "client_repository_count": 1,
+      "file_count": 221,
+      "effective_line_count": 22330,
+      "train": {
+        "file_count": 122,
+        "effective_line_count": 15631
+      },
+      "test": {
+        "file_count": 99,
+        "effective_line_count": 6699
+      }
+    },
+    {
+      "type": "Project",
+      "name": "qbittorrent",
+      "repository": "qbittorrent/qBittorrent",
+      "client_repository_count": 1,
+      "file_count": 526,
+      "effective_line_count": 74241,
+      "train": {
+        "file_count": 280,
+        "effective_line_count": 51968
+      },
+      "test": {
+        "file_count": 246,
+        "effective_line_count": 22273
+      }
+    },
+    {
+      "type": "Project",
+      "name": "spdlog",
+      "repository": "gabime/spdlog",
+      "client_repository_count": 1,
+      "file_count": 100,
+      "effective_line_count": 8136,
+      "train": {
+        "file_count": 55,
+        "effective_line_count": 5695
+      },
+      "test": {
+        "file_count": 45,
+        "effective_line_count": 2441
+      }
+    },
+    {
+      "type": "Project",
+      "name": "taskflow",
+      "repository": "taskflow/taskflow",
+      "client_repository_count": 1,
+      "file_count": 70,
+      "effective_line_count": 14107,
+      "train": {
+        "file_count": 40,
+        "effective_line_count": 9874
+      },
+      "test": {
+        "file_count": 30,
+        "effective_line_count": 4233
+      }
+    },
+    {
+      "type": "Project",
+      "name": "yaml-cpp",
+      "repository": "jbeder/yaml-cpp",
+      "client_repository_count": 1,
+      "file_count": 93,
+      "effective_line_count": 12708,
+      "train": {
+        "file_count": 49,
+        "effective_line_count": 8894
+      },
+      "test": {
+        "file_count": 44,
+        "effective_line_count": 3814
+      }
+    },
+    {
+      "type": "Project",
+      "name": "yoga",
+      "repository": "facebook/yoga",
+      "client_repository_count": 1,
+      "file_count": 99,
+      "effective_line_count": 11216,
+      "train": {
+        "file_count": 51,
+        "effective_line_count": 7852
+      },
+      "test": {
+        "file_count": 48,
+        "effective_line_count": 3364
+      }
+    },
+    {
+      "type": "Library",
+      "name": "abseil",
+      "client_repository_count": 139,
+      "file_count": 3537,
+      "effective_line_count": 1018059,
+      "train": {
+        "repository_count": 99,
+        "file_count": 2526,
+        "effective_line_count": 723600
+      },
+      "test": {
+        "repository_count": 40,
+        "file_count": 1011,
+        "effective_line_count": 294459
+      }
+    },
+    {
+      "type": "Library",
+      "name": "boost-asio",
+      "client_repository_count": 122,
+      "file_count": 877,
+      "effective_line_count": 205950,
+      "train": {
+        "repository_count": 85,
+        "file_count": 567,
+        "effective_line_count": 141735
+      },
+      "test": {
+        "repository_count": 37,
+        "file_count": 310,
+        "effective_line_count": 64215
+      }
+    },
+    {
+      "type": "Library",
+      "name": "catch2",
+      "client_repository_count": 138,
+      "file_count": 2766,
+      "effective_line_count": 677775,
+      "train": {
+        "repository_count": 97,
+        "file_count": 2246,
+        "effective_line_count": 460757
+      },
+      "test": {
+        "repository_count": 41,
+        "file_count": 520,
+        "effective_line_count": 217018
+      }
+    },
+    {
+      "type": "Library",
+      "name": "cli11",
+      "client_repository_count": 44,
+      "file_count": 238,
+      "effective_line_count": 59089,
+      "train": {
+        "repository_count": 31,
+        "file_count": 171,
+        "effective_line_count": 41361
+      },
+      "test": {
+        "repository_count": 13,
+        "file_count": 67,
+        "effective_line_count": 17728
+      }
+    },
+    {
+      "type": "Library",
+      "name": "eigen",
+      "client_repository_count": 275,
+      "file_count": 3460,
+      "effective_line_count": 646633,
+      "train": {
+        "repository_count": 192,
+        "file_count": 2398,
+        "effective_line_count": 451145
+      },
+      "test": {
+        "repository_count": 83,
+        "file_count": 1062,
+        "effective_line_count": 195488
+      }
+    },
+    {
+      "type": "Library",
+      "name": "fmt",
+      "client_repository_count": 215,
+      "file_count": 3467,
+      "effective_line_count": 1537267,
+      "train": {
+        "repository_count": 152,
+        "file_count": 2417,
+        "effective_line_count": 1075803
+      },
+      "test": {
+        "repository_count": 63,
+        "file_count": 1050,
+        "effective_line_count": 461464
+      }
+    },
+    {
+      "type": "Library",
+      "name": "glm",
+      "client_repository_count": 98,
+      "file_count": 1395,
+      "effective_line_count": 458381,
+      "train": {
+        "repository_count": 67,
+        "file_count": 956,
+        "effective_line_count": 318412
+      },
+      "test": {
+        "repository_count": 31,
+        "file_count": 439,
+        "effective_line_count": 139969
+      }
+    },
+    {
+      "type": "Library",
+      "name": "googletest",
+      "client_repository_count": 379,
+      "file_count": 4837,
+      "effective_line_count": 1316718,
+      "train": {
+        "repository_count": 269,
+        "file_count": 3578,
+        "effective_line_count": 915960
+      },
+      "test": {
+        "repository_count": 110,
+        "file_count": 1259,
+        "effective_line_count": 400758
+      }
+    },
+    {
+      "type": "Library",
+      "name": "grpc",
+      "client_repository_count": 60,
+      "file_count": 518,
+      "effective_line_count": 113753,
+      "train": {
+        "repository_count": 44,
+        "file_count": 355,
+        "effective_line_count": 80018
+      },
+      "test": {
+        "repository_count": 16,
+        "file_count": 163,
+        "effective_line_count": 33735
+      }
+    },
+    {
+      "type": "Library",
+      "name": "nlohmann-json",
+      "client_repository_count": 226,
+      "file_count": 2306,
+      "effective_line_count": 815279,
+      "train": {
+        "repository_count": 159,
+        "file_count": 1703,
+        "effective_line_count": 566211
+      },
+      "test": {
+        "repository_count": 67,
+        "file_count": 603,
+        "effective_line_count": 249068
+      }
+    },
+    {
+      "type": "Library",
+      "name": "opencv",
+      "client_repository_count": 207,
+      "file_count": 2496,
+      "effective_line_count": 478601,
+      "train": {
+        "repository_count": 145,
+        "file_count": 1724,
+        "effective_line_count": 330354
+      },
+      "test": {
+        "repository_count": 62,
+        "file_count": 772,
+        "effective_line_count": 148247
+      }
+    },
+    {
+      "type": "Library",
+      "name": "pybind11",
+      "client_repository_count": 253,
+      "file_count": 1980,
+      "effective_line_count": 341341,
+      "train": {
+        "repository_count": 178,
+        "file_count": 1467,
+        "effective_line_count": 239604
+      },
+      "test": {
+        "repository_count": 75,
+        "file_count": 513,
+        "effective_line_count": 101737
+      }
+    },
+    {
+      "type": "Library",
+      "name": "rocksdb",
+      "client_repository_count": 37,
+      "file_count": 306,
+      "effective_line_count": 126870,
+      "train": {
+        "repository_count": 26,
+        "file_count": 204,
+        "effective_line_count": 88892
+      },
+      "test": {
+        "repository_count": 11,
+        "file_count": 102,
+        "effective_line_count": 37978
+      }
+    },
+    {
+      "type": "Library",
+      "name": "spdlog",
+      "client_repository_count": 131,
+      "file_count": 1217,
+      "effective_line_count": 351797,
+      "train": {
+        "repository_count": 90,
+        "file_count": 890,
+        "effective_line_count": 245999
+      },
+      "test": {
+        "repository_count": 41,
+        "file_count": 327,
+        "effective_line_count": 105798
+      }
+    },
+    {
+      "type": "Library",
+      "name": "yaml-cpp",
+      "client_repository_count": 112,
+      "file_count": 541,
+      "effective_line_count": 153657,
+      "train": {
+        "repository_count": 78,
+        "file_count": 364,
+        "effective_line_count": 107247
+      },
+      "test": {
+        "repository_count": 34,
+        "file_count": 177,
+        "effective_line_count": 46410
+      }
     }
-  }
+  ]
 }

@@ -1,617 +1,96 @@
 {
-  "retrieved_at": "2026-07-24",
-  "screened_at": "2026-07-29",
-  "selection_policy": {
-    "sampling_method": "有明确约束的目的性最大差异抽样",
-    "formal_statuses": [
-      "保留",
-      "条件保留"
-    ],
-    "candidate_criteria": [
-      "公开且许可可核验的真实生产项目",
-      "C++ 主体且核心源码可按统一入口读取",
-      "非归档并在元数据快照日前365天内有上游push",
-      "与已有候选在领域、规模或习语重点上形成互补"
-    ],
-    "non_selection_signals": [
-      "star与fork不作为硬阈值",
-      "低AST覆盖率本身不作为淘汰理由",
-      "真实LLM结果和最终IC、ISP、F1不参与项目去留"
-    ],
-    "standard_extensions": [
-      ".c",
-      ".cc",
-      ".cpp",
-      ".cxx",
-      ".c++",
-      ".h",
-      ".hh",
-      ".hpp",
-      ".hxx"
-    ],
-    "notes": "当前清单仅包含正式实验项目。"
+  "dataset_name": "CodeIdiomMine C++ 15+15 Corpus",
+  "t0": "2026-08-13T16:54:48Z",
+  "active_after": "2021-08-13T16:54:48Z",
+  "group_model": {
+    "project": "一个完整上游 C++ 仓库构成一个实验分组，研究仓库内复现的项目特定习语。",
+    "library": "一个目标 C++ 库构成一个实验分组，聚合多个外部客户端仓库中同时具有目标 include 和明确 API 使用的文件，不包含目标库实现。",
+    "relationship": "两类语料共享解析和质量过滤合同，但观察边界不同；Project 不跨仓聚合，Library 按目标 API 跨客户端聚合。"
   },
-  "classification_policy": {
-    "scope": "仅对“保留”和“条件保留”的正式项目分类",
-    "primary_domain": {
-      "field": "primary_domain",
-      "assignment_basis": "按项目核心生产用途人工指定一个互斥主领域；跨领域能力继续由 project_type 与 idiom_focus 表达。",
-      "categories": [
-        "数据表示与泛型基础库",
-        "开发工具与工程基础设施",
-        "网络与分布式系统",
-        "应用与跨平台界面",
-        "存储与并发基础设施"
-      ]
-    },
-    "analysis_complexity": {
-      "name": "相对分析复杂度",
-      "indicators": [
-        "effective_line_count",
-        "selected_file_count",
-        "candidate_count"
-      ],
-      "score": "对三项阶段1指标分别计算正式23仓内升序平均秩百分位，再等权平均；分数越高表示本流水线的输入规模和候选处理负荷越高。",
-      "strata": "按综合分数升序确定近似等频三层；当前23仓为低8、中8、高7，分界相同时以 slug 保证确定性。",
-      "prohibited_interpretation": "该层级不是圈复杂度、可维护性或项目质量标签，不参与项目去留、DBSCAN参数、LLM提示词或阈值选择。"
+  "repository_policy": {
+    "source": "Sourcegraph public index of GitHub default branches, followed by GitHub public repository metadata and raw default-branch retrieval",
+    "requirements": [
+      "GitHub public repository",
+      "非 fork、archive、mirror、template",
+      "默认分支在 T0 前 60 个月内存在新提交并可读取",
+      "至少 1 个 fork 或 10 stars；本次索引候选均满足 10 stars 分支",
+      "统一过滤后至少 5 个有效 C/C++ 文件",
+      "GitHub 可识别 SPDX license"
+    ],
+    "identity": "身份比较与全局划分查表使用小写规范 owner/repo，文件记录和目录名保留 GitHub 展示大小写；不使用提交 SHA 或内容哈希作为数据身份"
+  },
+  "file_policy": {
+    "extensions": [".c", ".cc", ".cpp", ".cxx", ".c++", ".h", ".hh", ".hpp", ".hxx"],
+    "requirements": [
+      "同一文件同时具有目标 include 和明确 API 类型、namespace、调用或宏使用",
+      "当前 tree-sitter-cpp 解析器可解析且 AST coverage 不低于 0.50",
+      "优先 production；允许手写 test 和客户端自有 example"
+    ],
+    "exclusions": [
+      "目标库本体、fork、mirror 与未标记重复项目",
+      "vendored、third-party、external、deps、dependencies、libs、libraries、submodule 路径",
+      "generated、protobuf/grpc 生成物、moc/ui 文件",
+      "amalgamated、single-header、官方源码副本与复制的官方示例",
+      "只有 include、依赖声明或注释而无目标 API 使用",
+      "规范化源码完全相同的文件副本"
+    ],
+    "limits": {
+      "candidate_buffer_per_client": 65,
+      "final_files_per_client": 50,
+      "final_files_per_library": 5000,
+      "target_range": "500-5000",
+      "small_sample_policy": "统一规则下不足 500 的目标可以作为预注册小样本组保留，并单独报告不确定性，不为其放宽门槛。"
     }
   },
-  "projects": [
-    {
-      "slug": "btop",
-      "github_full_name": "aristocratos/btop",
-      "status": "保留",
-      "seed_project": false,
-      "project_type": "命令行系统监控应用",
-      "primary_domain": "应用与跨平台界面",
-      "cpp_standard": "C++20",
-      "build_systems": [
-        "CMake",
-        "Make"
-      ],
-      "license_spdx": "Apache-2.0",
-      "idiom_focus": [
-        "RAII",
-        "STL 容器",
-        "并发",
-        "系统资源封装",
-        "错误处理"
-      ],
-      "rationale": "真实跨平台应用，包含并发、系统接口封装和现代 C++ 工程模式。",
-      "limitations": []
-    },
-    {
-      "slug": "catch2",
-      "github_full_name": "catchorg/Catch2",
-      "status": "条件保留",
-      "seed_project": false,
-      "project_type": "测试框架",
-      "primary_domain": "开发工具与工程基础设施",
-      "cpp_standard": "C++14",
-      "build_systems": [
-        "CMake",
-        "Meson",
-        "Bazel"
-      ],
-      "license_spdx": "BSL-1.0",
-      "idiom_focus": [
-        "模板",
-        "宏接口",
-        "异常处理",
-        "类型擦除",
-        "STL 容器"
-      ],
-      "rationale": "框架本体是长期维护的生产库，可补充宏密集、模板与类型擦除习语。",
-      "limitations": [
-        "领域是测试基础设施；仅保留框架核心源码，排除其自测与基准目录。"
-      ]
-    },
-    {
-      "slug": "cereal",
-      "github_full_name": "USCiLab/cereal",
-      "status": "保留",
-      "seed_project": false,
-      "project_type": "头文件型序列化库",
-      "primary_domain": "数据表示与泛型基础库",
-      "cpp_standard": "C++11",
-      "build_systems": [
-        "CMake"
-      ],
-      "license_spdx": "BSD-3-Clause",
-      "idiom_focus": [
-        "模板元编程",
-        "类型特征",
-        "RAII",
-        "泛型序列化",
-        "SFINAE"
-      ],
-      "rationale": "成熟泛型库，能覆盖模板元编程、类型特征和归档对象生命周期。",
-      "limitations": [
-        "头文件型项目，函数与模板定义密度高。"
-      ]
-    },
-    {
-      "slug": "cli11",
-      "github_full_name": "CLIUtils/CLI11",
-      "status": "保留",
-      "seed_project": false,
-      "project_type": "头文件型命令行解析库",
-      "primary_domain": "开发工具与工程基础设施",
-      "cpp_standard": "C++11",
-      "build_systems": [
-        "CMake",
-        "Meson",
-        "Bazel"
-      ],
-      "license_spdx": "BSD-3-Clause",
-      "idiom_focus": [
-        "模板",
-        "回调",
-        "异常处理",
-        "STL 容器",
-        "流式接口"
-      ],
-      "rationale": "规模适中且 API 风格清晰，适合验证头文件、回调与配置解析习语。",
-      "limitations": [
-        "头文件型项目。"
-      ]
-    },
-    {
-      "slug": "concurrentqueue",
-      "github_full_name": "cameron314/concurrentqueue",
-      "status": "条件保留",
-      "seed_project": false,
-      "project_type": "头文件型无锁并发队列",
-      "primary_domain": "存储与并发基础设施",
-      "cpp_standard": "C++11",
-      "build_systems": [
-        "CMake",
-        "Make"
-      ],
-      "license_spdx": "BSD-2-Clause",
-      "idiom_focus": [
-        "原子操作",
-        "无锁并发",
-        "模板",
-        "内存序",
-        "RAII"
-      ],
-      "rationale": "核心源码虽小，但无锁并发与内存序习语具有不可替代性。",
-      "limitations": [
-        "核心语料仅有少量大型头文件；示例、基准与测试被排除。"
-      ]
-    },
-    {
-      "slug": "drogon",
-      "github_full_name": "drogonframework/drogon",
-      "status": "保留",
-      "seed_project": false,
-      "project_type": "异步 Web 框架",
-      "primary_domain": "网络与分布式系统",
-      "cpp_standard": "C++17",
-      "build_systems": [
-        "CMake"
-      ],
-      "license_spdx": "MIT",
-      "idiom_focus": [
-        "异步回调",
-        "智能指针",
-        "网络 I/O",
-        "模板",
-        "工程分层"
-      ],
-      "rationale": "大型真实框架，覆盖异步网络、对象生命周期和模块化工程结构。",
-      "limitations": []
-    },
-    {
-      "slug": "envoy",
-      "github_full_name": "envoyproxy/envoy",
-      "status": "条件保留",
-      "seed_project": true,
-      "project_type": "大型网络代理",
-      "primary_domain": "网络与分布式系统",
-      "cpp_standard": "C++17",
-      "build_systems": [
-        "Bazel"
-      ],
-      "license_spdx": "Apache-2.0",
-      "sparse_paths": [
-        "source",
-        "envoy",
-        "contrib",
-        "mobile/library/common"
-      ],
-      "idiom_focus": [
-        "网络协议",
-        "RAII",
-        "智能指针",
-        "回调",
-        "工程分层",
-        "并发"
-      ],
-      "rationale": "保留原有种子项目，并以固定稀疏源码范围提供大型工程与网络代理代表。",
-      "limitations": [
-        "采用稀疏克隆，仅包含 source、envoy、contrib 与 mobile/library/common；不代表完整仓库。"
-      ]
-    },
-    {
-      "slug": "fmt",
-      "github_full_name": "fmtlib/fmt",
-      "status": "保留",
-      "seed_project": false,
-      "project_type": "格式化基础库",
-      "primary_domain": "数据表示与泛型基础库",
-      "cpp_standard": "C++11",
-      "build_systems": [
-        "CMake"
-      ],
-      "license_spdx": "MIT",
-      "idiom_focus": [
-        "模板",
-        "类型安全",
-        "编译期计算",
-        "错误处理",
-        "自定义类型"
-      ],
-      "rationale": "成熟基础库，规模适中并覆盖模板、类型安全和编译期格式化模式。",
-      "limitations": []
-    },
-    {
-      "slug": "json",
-      "github_full_name": "nlohmann/json",
-      "status": "条件保留",
-      "seed_project": false,
-      "project_type": "头文件型 JSON 库",
-      "primary_domain": "数据表示与泛型基础库",
-      "cpp_standard": "C++11",
-      "build_systems": [
-        "CMake",
-        "Meson",
-        "Make",
-        "Bazel"
-      ],
-      "license_spdx": "MIT",
-      "idiom_focus": [
-        "模板",
-        "泛型序列化",
-        "异常处理",
-        "STL 容器",
-        "自定义迭代器"
-      ],
-      "rationale": "高知名度通用库，补充序列化、泛型容器和异常处理习语。",
-      "limitations": [
-        "头文件型项目；宏与泛型语法使可靠 AST 字节覆盖率低于 0.5，使用时应结合逐文件诊断。"
-      ]
-    },
-    {
-      "slug": "leveldb",
-      "github_full_name": "google/leveldb",
-      "status": "保留",
-      "seed_project": false,
-      "project_type": "嵌入式键值存储库",
-      "primary_domain": "存储与并发基础设施",
-      "cpp_standard": "C++11",
-      "build_systems": [
-        "CMake"
-      ],
-      "license_spdx": "BSD-3-Clause",
-      "idiom_focus": [
-        "RAII",
-        "缓存",
-        "迭代器",
-        "错误状态",
-        "存储引擎"
-      ],
-      "rationale": "成熟存储系统，覆盖资源管理、缓存、迭代器和状态对象模式。",
-      "limitations": []
-    },
-    {
-      "slug": "libzmq",
-      "github_full_name": "zeromq/libzmq",
-      "status": "保留",
-      "seed_project": false,
-      "project_type": "消息通信库",
-      "primary_domain": "网络与分布式系统",
-      "cpp_standard": "C++11",
-      "build_systems": [
-        "CMake",
-        "Autotools"
-      ],
-      "license_spdx": "MPL-2.0",
-      "idiom_focus": [
-        "网络 I/O",
-        "并发",
-        "状态机",
-        "RAII",
-        "平台抽象"
-      ],
-      "rationale": "成熟跨平台通信核心，覆盖状态机、线程与平台抽象。",
-      "limitations": []
-    },
-    {
-      "slug": "magic_enum",
-      "github_full_name": "Neargye/magic_enum",
-      "status": "条件保留",
-      "seed_project": false,
-      "project_type": "头文件型枚举反射库",
-      "primary_domain": "数据表示与泛型基础库",
-      "cpp_standard": "C++17",
-      "build_systems": [
-        "CMake",
-        "Meson",
-        "Bazel"
-      ],
-      "license_spdx": "MIT",
-      "idiom_focus": [
-        "编译期计算",
-        "模板元编程",
-        "类型特征",
-        "字符串视图"
-      ],
-      "rationale": "规模较小但编译期反射与模板技巧独特，可改善现代 C++ 习语覆盖。",
-      "limitations": [
-        "核心文件数较少，不用于规模代表性。"
-      ]
-    },
-    {
-      "slug": "mosh",
-      "github_full_name": "mobile-shell/mosh",
-      "status": "保留",
-      "seed_project": false,
-      "project_type": "移动网络终端",
-      "primary_domain": "网络与分布式系统",
-      "cpp_standard": "C++11",
-      "build_systems": [
-        "Autotools"
-      ],
-      "license_spdx": "GPL-3.0",
-      "idiom_focus": [
-        "网络协议",
-        "状态同步",
-        "加密封装",
-        "RAII",
-        "错误处理"
-      ],
-      "rationale": "真实网络命令行应用，补充状态同步、协议与系统接口习语。",
-      "limitations": []
-    },
-    {
-      "slug": "ninja",
-      "github_full_name": "ninja-build/ninja",
-      "status": "保留",
-      "seed_project": false,
-      "project_type": "构建系统命令行工具",
-      "primary_domain": "开发工具与工程基础设施",
-      "cpp_standard": "C++17",
-      "build_systems": [
-        "CMake"
-      ],
-      "license_spdx": "Apache-2.0",
-      "idiom_focus": [
-        "图算法",
-        "字符串处理",
-        "文件系统",
-        "错误传播",
-        "工程模式"
-      ],
-      "rationale": "成熟工具型项目，结构紧凑且覆盖图、解析器和文件系统模式。",
-      "limitations": [
-        "仓库包含生成脚本，但本任务未执行任何目标仓库脚本。"
-      ]
-    },
-    {
-      "slug": "polybar",
-      "github_full_name": "polybar/polybar",
-      "status": "保留",
-      "seed_project": false,
-      "project_type": "桌面状态栏应用",
-      "primary_domain": "应用与跨平台界面",
-      "cpp_standard": "C++17",
-      "build_systems": [
-        "CMake"
-      ],
-      "license_spdx": "MIT",
-      "idiom_focus": [
-        "事件驱动",
-        "RAII",
-        "并发",
-        "模块化",
-        "系统资源封装"
-      ],
-      "rationale": "真实桌面应用，补充事件、模块、系统服务与资源生命周期模式。",
-      "limitations": []
-    },
-    {
-      "slug": "qbittorrent",
-      "github_full_name": "qbittorrent/qBittorrent",
-      "status": "保留",
-      "seed_project": true,
-      "project_type": "大型桌面网络应用",
-      "primary_domain": "应用与跨平台界面",
-      "cpp_standard": "C++17",
-      "build_systems": [
-        "CMake"
-      ],
-      "license_spdx": "GPL-2.0-or-later",
-      "idiom_focus": [
-        "Qt 对象模型",
-        "网络",
-        "智能指针",
-        "回调",
-        "工程分层"
-      ],
-      "rationale": "保留原有种子项目，并补充大型 Qt 桌面网络应用代表。",
-      "limitations": []
-    },
-    {
-      "slug": "react-native",
-      "github_full_name": "facebook/react-native",
-      "status": "条件保留",
-      "seed_project": true,
-      "project_type": "跨平台运行时的 C++ 子系统",
-      "primary_domain": "应用与跨平台界面",
-      "cpp_standard": "C++20",
-      "build_systems": [
-        "CMake",
-        "Buck"
-      ],
-      "license_spdx": "MIT",
-      "sparse_paths": [
-        "packages/react-native/ReactCommon"
-      ],
-      "idiom_focus": [
-        "跨语言桥接",
-        "智能指针",
-        "移动语义",
-        "并发",
-        "类型擦除"
-      ],
-      "rationale": "保留原有种子项目，以固定 ReactCommon 稀疏范围覆盖跨语言运行时与平台抽象。",
-      "limitations": [
-        "采用稀疏克隆，仅包含 packages/react-native/ReactCommon；不代表完整仓库。"
-      ]
-    },
-    {
-      "slug": "spdlog",
-      "github_full_name": "gabime/spdlog",
-      "status": "保留",
-      "seed_project": false,
-      "project_type": "日志基础库",
-      "primary_domain": "开发工具与工程基础设施",
-      "cpp_standard": "C++11",
-      "build_systems": [
-        "CMake"
-      ],
-      "license_spdx": "MIT",
-      "idiom_focus": [
-        "并发",
-        "模板",
-        "RAII",
-        "策略对象",
-        "格式化"
-      ],
-      "rationale": "成熟通用基础库，覆盖同步、异步日志、策略与资源管理。",
-      "limitations": []
-    },
-    {
-      "slug": "taskflow",
-      "github_full_name": "taskflow/taskflow",
-      "status": "保留",
-      "seed_project": false,
-      "project_type": "并行任务图编程库",
-      "primary_domain": "存储与并发基础设施",
-      "cpp_standard": "C++17",
-      "build_systems": [
-        "CMake"
-      ],
-      "license_spdx": "MIT",
-      "idiom_focus": [
-        "任务图",
-        "并发",
-        "模板",
-        "移动语义",
-        "工作窃取"
-      ],
-      "rationale": "并行领域代表项目，可补充任务图、调度和现代并发习语。",
-      "limitations": [
-        "示例、测试和基准目录被排除。"
-      ]
-    },
-    {
-      "slug": "tomlplusplus",
-      "github_full_name": "marzer/tomlplusplus",
-      "status": "保留",
-      "seed_project": false,
-      "project_type": "头文件型 TOML 库",
-      "primary_domain": "数据表示与泛型基础库",
-      "cpp_standard": "C++17",
-      "build_systems": [
-        "CMake",
-        "Meson"
-      ],
-      "license_spdx": "MIT",
-      "idiom_focus": [
-        "模板",
-        "解析器",
-        "类型安全",
-        "访问器",
-        "异常处理"
-      ],
-      "rationale": "现代配置解析库，补充泛型访问、解析器与值类型习语。",
-      "limitations": [
-        "头文件型项目。"
-      ]
-    },
-    {
-      "slug": "uwebsockets",
-      "github_full_name": "uNetworking/uWebSockets",
-      "status": "保留",
-      "seed_project": false,
-      "project_type": "高性能异步网络库",
-      "primary_domain": "网络与分布式系统",
-      "cpp_standard": "C++17",
-      "build_systems": [
-        "Make"
-      ],
-      "license_spdx": "Apache-2.0",
-      "idiom_focus": [
-        "异步网络",
-        "回调",
-        "模板",
-        "RAII",
-        "事件循环"
-      ],
-      "rationale": "高性能网络库，可补充事件循环、回调与资源生命周期模式。",
-      "limitations": [
-        "部分低层依赖作为外部组件存在，本任务不构建或链接目标项目。"
-      ]
-    },
-    {
-      "slug": "yaml-cpp",
-      "github_full_name": "jbeder/yaml-cpp",
-      "status": "保留",
-      "seed_project": false,
-      "project_type": "YAML 解析与序列化库",
-      "primary_domain": "数据表示与泛型基础库",
-      "cpp_standard": "C++11",
-      "build_systems": [
-        "CMake",
-        "Bazel"
-      ],
-      "license_spdx": "MIT",
-      "idiom_focus": [
-        "解析器",
-        "迭代器",
-        "异常处理",
-        "节点树",
-        "STL 容器"
-      ],
-      "rationale": "成熟解析库，覆盖节点树、迭代器与序列化错误处理。",
-      "limitations": []
-    },
-    {
-      "slug": "yoga",
-      "github_full_name": "facebook/yoga",
-      "status": "条件保留",
-      "seed_project": false,
-      "project_type": "跨平台布局引擎",
-      "primary_domain": "应用与跨平台界面",
-      "cpp_standard": "C++20",
-      "build_systems": [
-        "CMake"
-      ],
-      "license_spdx": "MIT",
-      "idiom_focus": [
-        "树遍历",
-        "值类型",
-        "缓存",
-        "布局算法",
-        "跨平台接口"
-      ],
-      "rationale": "算法型跨平台库，补充树结构、缓存和布局计算习语。",
-      "limitations": [
-        "宏与平台条件语法使可靠 AST 字节覆盖率低于 0.5，使用时应结合逐文件诊断。"
-      ]
-    }
+  "split_policy": {
+    "ratio": "approximately 70/30 by eLOC",
+    "project": "仓库内按同 stem 头文件/实现文件及平台变体组成的文件组划分",
+    "library": "按完整客户端 owner/repo 全局划分；多库客户端在全部 Library 分组保持同侧"
+  },
+  "project": {
+    "selected": [
+      {"name": "btop", "repository": "aristocratos/btop", "reason": "完整现代 C++ 应用，系统资源、并发与平台抽象重复充分。"},
+      {"name": "catch2", "repository": "catchorg/Catch2", "reason": "测试框架核心具有宏、模板、类型擦除和跨文件实现重复。"},
+      {"name": "drogon", "repository": "drogonframework/drogon", "reason": "大型异步服务框架，API、回调和资源管理习语丰富。"},
+      {"name": "envoy", "repository": "envoyproxy/envoy", "reason": "大规模生产代理，跨文件工程模式和组件约定覆盖高。"},
+      {"name": "fmt", "repository": "fmtlib/fmt", "reason": "紧凑但高质量的泛型格式化实现，模板结构稳定。"},
+      {"name": "leveldb", "repository": "google/leveldb", "reason": "存储引擎的状态、迭代器、错误处理和资源管理边界清晰。"},
+      {"name": "libzmq", "repository": "zeromq/libzmq", "reason": "成熟消息中间件，协议、状态机和平台封装跨文件复现。"},
+      {"name": "mosh", "repository": "mobile-shell/mosh", "reason": "完整网络应用，协议状态和系统资源封装集中且污染低。"},
+      {"name": "ninja", "repository": "ninja-build/ninja", "reason": "成熟构建工具，解析、图处理和错误传播模式清晰。"},
+      {"name": "polybar", "repository": "polybar/polybar", "reason": "跨平台桌面应用，模块、事件与资源生命周期模式充分。"},
+      {"name": "qbittorrent", "repository": "qbittorrent/qBittorrent", "reason": "大型 Qt 应用，项目约定、异步和对象生命周期重复丰富。"},
+      {"name": "spdlog", "repository": "gabime/spdlog", "reason": "日志框架核心边界清晰，排除 bundled fmt 后污染可控。"},
+      {"name": "taskflow", "repository": "taskflow/taskflow", "reason": "任务图、并发和模板 API 的项目内复现质量高。"},
+      {"name": "yaml-cpp", "repository": "jbeder/yaml-cpp", "reason": "解析器与值对象实现完整，跨文件重复和项目特定性均衡。"},
+      {"name": "yoga", "repository": "facebook/yoga", "reason": "布局引擎与多语言边界完整，核心 C++ 项目模式稳定。"}
+    ],
+    "excluded_from_original_23": [
+      {"name": "cereal", "reason": "头文件模板与 archive 适配集中，跨文件聚类证据弱于入选组。"},
+      {"name": "cli11", "reason": "有效核心范围较小，single-header/示例副本污染风险高。"},
+      {"name": "concurrentqueue", "reason": "核心文件过少，内联模板集中，跨文件测量不稳。"},
+      {"name": "json", "reason": "header-only/single-header 发行结构易受聚合源码副本主导。"},
+      {"name": "magic_enum", "reason": "有效源码和文件数过小，模式集中在单一模板头。"},
+      {"name": "react-native", "reason": "本地副本为 ReactCommon 稀疏范围，不满足完整仓库合同。"},
+      {"name": "tomlplusplus", "reason": "header-only/单头发行结构且冻结有效簇产量偏低。"},
+      {"name": "uwebsockets", "reason": "核心规模较小并与外部 uSockets 边界紧密。"}
+    ]
+  },
+  "library": [
+    {"name": "abseil", "official_repository": "abseil/abseil-cpp", "include": "absl/<component>.h", "api": "absl::Status/StatusOr/strings/hash containers/Mutex/Time/Span/Cleanup"},
+    {"name": "boost-asio", "official_repository": "boostorg/asio", "include": "boost/asio*", "api": "boost::asio::* or explicit asio networking/event-loop API"},
+    {"name": "catch2", "official_repository": "catchorg/Catch2", "include": "catch2/* or catch.hpp", "api": "TEST_CASE/TEMPLATE_TEST_CASE/SCENARIO/REQUIRE/CHECK/SECTION"},
+    {"name": "cli11", "official_repository": "CLIUtils/CLI11", "include": "CLI/*.hpp", "api": "CLI::App/Option/validators or CLI11_PARSE", "status": "accepted_small_sample"},
+    {"name": "eigen", "official_repository": "eigen-mirror/eigen", "include": "Eigen/* or eigen3/Eigen/*", "api": "Eigen::Matrix/Array/Map/Ref/Vector/Quaternion/Transform/Sparse"},
+    {"name": "fmt", "official_repository": "fmtlib/fmt", "include": "fmt/*", "api": "fmt::format/print/println/format_to/vformat/join/formatter/buffer"},
+    {"name": "glm", "official_repository": "g-truc/glm", "include": "glm/*", "api": "glm::vec/mat/quat/transform/projection/vector operations"},
+    {"name": "googletest", "official_repository": "google/googletest", "include": "gtest/* or gmock/*", "api": "TEST*/EXPECT_*/ASSERT_*/MOCK_METHOD/testing::*"},
+    {"name": "grpc", "official_repository": "grpc/grpc", "include": "grpcpp/*", "api": "grpc:: contexts/status/builders/channels/readers/writers"},
+    {"name": "nlohmann-json", "official_repository": "nlohmann/json", "include": "nlohmann/json*.hpp", "api": "nlohmann::json/ordered_json/basic_json, conversion macros or _json"},
+    {"name": "opencv", "official_repository": "opencv/opencv", "include": "opencv2/*", "api": "cv:: image/video/geometry/dnn/cuda/ml operations"},
+    {"name": "pybind11", "official_repository": "pybind/pybind11", "include": "pybind11/*", "api": "PYBIND11_MODULE, pybind11::* or explicit py::* binding API"},
+    {"name": "rocksdb", "official_repository": "facebook/rocksdb", "include": "rocksdb/*", "api": "rocksdb::DB/options/status/slice/batch/iterator/column family/cache", "status": "accepted_small_sample"},
+    {"name": "spdlog", "official_repository": "gabime/spdlog", "include": "spdlog/*", "api": "spdlog::* or SPDLOG_* logging macros"},
+    {"name": "yaml-cpp", "official_repository": "jbeder/yaml-cpp", "include": "yaml-cpp/*", "api": "YAML::Node/Load/LoadFile/Emitter/convert/Exception/Parser"}
   ]
 }
