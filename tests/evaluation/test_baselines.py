@@ -53,7 +53,7 @@ def _function_ast(prefix, name, value):
                 f"int sample(int {name}) {{ {condition_code} return 0; }}"
             ),
             "ast_num": 8,
-            "subtree_size": 9,
+            "subtree_size": 12,
         },
         {
             "depth": 1,
@@ -127,15 +127,29 @@ def _fixture():
     clusters = []
     evidence_code = {}
     for project_index, project in enumerate(("alpha", "beta", "gamma")):
-        files = [f"{project}/a.cpp", f"{project}/b.cpp"]
+        files = [
+            f"{project}/a.cpp",
+            f"{project}/b.cpp",
+            f"{project}/test.cpp",
+        ]
         ast_a = _function_ast(1 + project_index * 20, f"value{project_index}", project_index + 1)
         ast_b = _function_ast(10 + project_index * 20, f"ready{project_index}", project_index + 2)
+        ast_test = _function_ast(
+            100 + project_index * 20,
+            f"test{project_index}",
+            project_index + 3,
+        )
         rows.append(
             {
                 "project": project,
                 "cppFile": files,
-                "func_ast": [[ast_a], [ast_b]],
-                "func_src": [[ast_a[0]["code_snippet"]], [ast_b[0]["code_snippet"]]],
+                "func_ast": [[ast_a], [ast_b], [ast_test]],
+                "func_src": [
+                    [ast_a[0]["code_snippet"]],
+                    [ast_b[0]["code_snippet"]],
+                    [ast_test[0]["code_snippet"]],
+                ],
+                "split": ["train", "train", "test"],
             }
         )
         infos = [
@@ -1278,7 +1292,7 @@ class BaselineEndToEndTests(unittest.TestCase):
                 self.assertEqual(report["status"], "passed")
                 self.assertEqual(
                     report["evaluation_mode"],
-                    "within_project_kfold",
+                    "haggis_holdout",
                 )
                 self.assertEqual(
                     report["metric_contract"]["metric_names"],

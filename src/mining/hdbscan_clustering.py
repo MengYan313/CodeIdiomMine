@@ -244,13 +244,13 @@ def main() -> None:
     parser.add_argument(
         "--input",
         "-i",
-        default="outputs/cli11/stage2/embeddings.pkl",
+        default="outputs/library/cli11/stage2/embeddings.pkl",
         help="输入 embedding pickle",
     )
     parser.add_argument(
         "--output",
         "-o",
-        default="outputs/cli11/stage2/clusters-hdbscan.pkl",
+        default="outputs/library/cli11/stage2/clusters-hdbscan.pkl",
         help="输出聚类 pickle",
     )
     parser.add_argument("--min-cluster-size", type=int, default=2)

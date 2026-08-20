@@ -156,6 +156,37 @@ class CppParserTests(unittest.TestCase):
             self.assertEqual(summary["excluded_test_file_count"], 1)
             self.assertEqual(summary["excluded_symlink_count"], 1)
 
+    def test_repository_uses_frozen_manifest_files_and_splits(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            project = root / "sample"
+            project.mkdir()
+            for name in ("train.cpp", "test.cpp", "ignored.cpp"):
+                (project / name).write_text(
+                    f"int {name.removesuffix('.cpp')}() {{ return 1; }}\n",
+                    encoding="utf-8",
+                )
+            (root / "dataset-manifest.json").write_text(
+                json.dumps({
+                    "corpus": "project",
+                    "projects": [{
+                        "name": "sample",
+                        "files": [
+                            {"path": "train.cpp", "split": "train"},
+                            {"path": "test.cpp", "split": "test"},
+                        ],
+                    }],
+                }),
+                encoding="utf-8",
+            )
+            output = root / "dataset.pkl"
+
+            parse_repository(str(root), str(output))
+            row = pd.read_pickle(output).iloc[0]
+
+            self.assertEqual(row["cppFile"], ["train.cpp", "test.cpp"])
+            self.assertEqual(row["split"], ["train", "test"])
+
     def test_repository_uses_repo_relative_posix_ids_without_basename_loss(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
@@ -489,7 +520,7 @@ int load_value() {{
             any(candidate.level == "statement" for candidate in selected)
         )
 
-    def test_repository_keeps_four_column_schema_and_writes_file_audit(self):
+    def test_repository_keeps_split_schema_and_writes_file_audit(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
             project = root / "sample"
@@ -515,8 +546,9 @@ int load_value() {{
             data = pd.read_pickle(output)
             self.assertEqual(
                 list(data.columns),
-                ["project", "cppFile", "func_ast", "func_src"],
+                ["project", "cppFile", "func_ast", "func_src", "split"],
             )
+            self.assertEqual(data.iloc[0]["split"], ["train", "train"])
             audit = json.loads(audit_output.read_text(encoding="utf-8"))
             self.assertEqual(audit["summary"]["scanned_file_count"], 3)
             self.assertEqual(audit["summary"]["diagnostic_file_count"], 3)

@@ -4,11 +4,11 @@
 
 ```bash
 .venv/bin/python -m src.idiom_judgment.judge_clusters \
-  --input outputs/cli11/stage2/clusters.pkl \
+  --input outputs/library/cli11/stage2/clusters.pkl \
   --source-root repos/cli11 --require-context \
-  --checkpoint outputs/cli11/stage3/checkpoint.sqlite3 \
-  --output outputs/cli11/stage3/idiom-judgment.pkl \
-  --report outputs/cli11/stage3/report.json
+  --checkpoint outputs/library/cli11/stage3/checkpoint.sqlite3 \
+  --output outputs/library/cli11/stage3/idiom-judgment.pkl \
+  --report outputs/library/cli11/stage3/report.json
 ```
 
 `--require-context` 在源码路径或范围无效时拒绝当前簇。已核验源码上下文同时进入语义与异味审查，但只用于核验代表代码，不替代码段补充缺失操作。调用目标、成员、字段、类型和关键运算符保持不变；仅高频结构角色中的局部变量、参数与低语义字面量可形成提案，并须由语义 Agent 显式批准后写成 `<VAR_n>`、`<LIT_n>`，相同逻辑值复用同一占位符。
@@ -21,9 +21,9 @@
 
 ```bash
 .venv/bin/python -m src.idiom_judgment.replay_judgment \
-  --input outputs/cli11/stage3/idiom-judgment.pkl \
-  --output outputs/cli11/stage3/idiom-judgment-replayed.pkl \
-  --report outputs/cli11/stage3/replay-report.json
+  --input outputs/library/cli11/stage3/idiom-judgment.pkl \
+  --output outputs/library/cli11/stage3/idiom-judgment-replayed.pkl \
+  --report outputs/library/cli11/stage3/replay-report.json
 ```
 
 重放只更新当前规则分区、总分、异味门禁和理由，不重新生成 `is_idiom`、语义分、

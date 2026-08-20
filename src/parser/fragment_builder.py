@@ -14,6 +14,7 @@ from ..common.logging import get_logger
 from ..common.node_kinds import BLOCK_KINDS, FUNCTION_KINDS, STATEMENT_KINDS
 from .candidates import SelectedCandidate, select_candidates
 from .cpp_adapter import CPP_ADAPTER
+from .dataset import select_split
 from .token_budget import TokenBudget, resolve_max_input_tokens
 
 
@@ -313,7 +314,10 @@ def build_fragment_file(
         max_input_tokens=max_input_tokens,
         local_files_only=local_files_only,
     )
-    fragments = prepare_fragment_data(pd.read_pickle(source_path), budget)
+    fragments = prepare_fragment_data(
+        select_split(pd.read_pickle(source_path), "train"),
+        budget,
+    )
     fragments.attrs.update(
         {
             "source_dataset_path": source_path.as_posix(),

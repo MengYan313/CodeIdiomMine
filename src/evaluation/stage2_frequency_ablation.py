@@ -169,7 +169,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="构造 Stage 2 高频聚类消融的 C++ 习语样本"
     )
-    parser.add_argument("--clusters", default="outputs/cli11/stage2/clusters.pkl")
+    parser.add_argument("--clusters", default="outputs/library/cli11/stage2/clusters.pkl")
     parser.add_argument(
         "--output-dir",
         default="results/ablations/stage2-frequency/cli11",

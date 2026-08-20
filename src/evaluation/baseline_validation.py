@@ -276,7 +276,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="评价一个方法并验证固定九项指标")
     parser.add_argument("--method", required=True)
     parser.add_argument("--idiom-dir", required=True)
-    parser.add_argument("--dataset", default="outputs/cli11/stage0/dataset.pkl")
+    parser.add_argument("--dataset", default="outputs/library/cli11/stage0/dataset.pkl")
     parser.add_argument("--clusters", required=True)
     parser.add_argument("--output", default=None)
     parser.add_argument(
@@ -284,9 +284,9 @@ def main() -> None:
     )
     parser.add_argument(
         "--mode",
-        choices=("within_project_kfold",),
+        choices=("haggis_holdout",),
         default=DEFAULT_EVALUATION_MODE,
-        help="仓库内文件五折",
+        help="Haggis 固定 train/test 留出评价",
     )
     parser.add_argument("--folds", type=int, default=5)
     parser.add_argument(

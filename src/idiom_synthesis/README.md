@@ -4,12 +4,12 @@
 
 ```bash
 .venv/bin/python -m src.idiom_synthesis.synthesize_idioms \
-  --input outputs/cli11/stage3/idiom-judgment.pkl \
+  --input outputs/library/cli11/stage3/idiom-judgment.pkl \
   --source-root repos/cli11 \
   --max-plans-per-region 8 \
-  --checkpoint outputs/cli11/stage4/checkpoint.sqlite3 \
-  --output outputs/cli11/stage4/idiom-synthesis.pkl \
-  --report outputs/cli11/stage4/report.json
+  --checkpoint outputs/library/cli11/stage4/checkpoint.sqlite3 \
+  --output outputs/library/cli11/stage4/idiom-synthesis.pkl \
+  --report outputs/library/cli11/stage4/report.json
 ```
 
 完成后将最终库复制到 `results/main/cli11/idiom-synthesis.pkl`，供正式评价和汇总使用。

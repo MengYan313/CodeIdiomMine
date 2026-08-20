@@ -1,5 +1,6 @@
-"""确定性扫描仓库中的 C/C++ 源文件。"""
+"""按冻结清单或目录确定性读取 C/C++ 源文件。"""
 
+import json
 import os
 from pathlib import Path
 import re
@@ -65,6 +66,7 @@ class FileScanner:
         self.projects: List[str] = []
         self.pro_file_list: List[List[str]] = []
         self.base_path: Path | None = None
+        self.file_splits: Dict[str, Dict[str, str]] = {}
         self.last_scan_diagnostics: Dict[str, Any] = {}
     
     def get_projects(
@@ -132,6 +134,10 @@ class FileScanner:
         if not self.projects:
             self.get_projects(base_path)
         
+        manifest_path = Path(base_path) / "dataset-manifest.json"
+        if manifest_path.exists():
+            return self._files_from_manifest(manifest_path)
+
         pro_file_list = []
         project_diagnostics: Dict[str, Any] = {}
         
@@ -179,6 +185,65 @@ class FileScanner:
             },
         }
         return pro_file_list
+
+    def _files_from_manifest(self, manifest_path: Path) -> List[List[str]]:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        corpus = manifest["corpus"]
+        groups = manifest["projects" if corpus == "project" else "targets"]
+        selected = {group["name"]: group for group in groups}
+        project_files: List[List[str]] = []
+        diagnostics: Dict[str, Any] = {}
+        self.file_splits = {}
+
+        for project in self.projects:
+            root = self.base_path / project
+            client_dirs = (
+                {path.name.lower(): path.name for path in root.iterdir() if path.is_dir()}
+                if corpus == "library"
+                else {}
+            )
+            paths: List[str] = []
+            splits: Dict[str, str] = {}
+            for record in selected[project]["files"]:
+                if corpus == "project":
+                    relative = Path(record["path"])
+                else:
+                    client = client_dirs[record["repository"].replace("/", "__").lower()]
+                    relative = Path(client) / record["path"]
+                path = root / relative
+                if not path.is_file():
+                    raise FileNotFoundError(path)
+                relative_posix = relative.as_posix()
+                paths.append(str(path))
+                splits[relative_posix] = record["split"]
+            project_files.append(paths)
+            self.file_splits[project] = splits
+            diagnostics[project] = {
+                "selected_file_count": len(paths),
+                "excluded_directory_count": 0,
+                "excluded_test_file_count": 0,
+                "excluded_generated_file_count": 0,
+                "excluded_symlink_count": 0,
+                "excluded_path_escape_count": 0,
+                "excluded_directories": [],
+                "excluded_files": [],
+            }
+
+        self.pro_file_list = project_files
+        self.last_scan_diagnostics = {
+            "source": manifest_path.as_posix(),
+            "projects": diagnostics,
+            "summary": {
+                "project_count": len(self.projects),
+                "selected_file_count": sum(map(len, project_files)),
+                "excluded_directory_count": 0,
+                "excluded_test_file_count": 0,
+                "excluded_generated_file_count": 0,
+                "excluded_symlink_count": 0,
+                "excluded_path_escape_count": 0,
+            },
+        }
+        return project_files
     
     def _scan_project_files(self, project_path: str) -> List[str]:
         """
@@ -337,7 +402,7 @@ class FileScanner:
             .as_posix()
         )
     
-    def filter_valid_files(self, func_asts: List[List[List[Dict]]], 
+    def filter_valid_files(self, func_asts: List[List[List[Dict]]],
                           func_srcs: List[List[List[str]]]) -> tuple:
         """
         过滤掉没有有效函数的文件
@@ -352,25 +417,33 @@ class FileScanner:
         pro_files = []
         pro_funcs = []
         pro_funcs_src = []
+        pro_splits = []
         
         for i in range(len(self.projects)):
             pro_files_ = []
             pro_funcs_ = []
             pro_funcs_src_ = []
+            pro_splits_ = []
             
             for j in range(len(func_asts[i])):
                 if func_asts[i][j] is not None and len(func_asts[i][j]) != 0:
-                    pro_files_.append(
-                        self.repository_relative_path(
-                            self.projects[i],
-                            self.pro_file_list[i][j],
-                        )
+                    relative_path = self.repository_relative_path(
+                        self.projects[i],
+                        self.pro_file_list[i][j],
                     )
+                    pro_files_.append(relative_path)
                     pro_funcs_.append(func_asts[i][j])
                     pro_funcs_src_.append(func_srcs[i][j])
+                    pro_splits_.append(
+                        self.file_splits.get(self.projects[i], {}).get(
+                            relative_path,
+                            "train",
+                        )
+                    )
             
             pro_files.append(pro_files_)
             pro_funcs.append(pro_funcs_)
             pro_funcs_src.append(pro_funcs_src_)
+            pro_splits.append(pro_splits_)
         
-        return pro_files, pro_funcs, pro_funcs_src
+        return pro_files, pro_funcs, pro_funcs_src, pro_splits

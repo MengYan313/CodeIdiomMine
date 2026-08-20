@@ -121,7 +121,7 @@ def build_mock_idioms(
 def main() -> None:
     parser = argparse.ArgumentParser(description="从冻结的聚类集合构造无排序离线模拟习语")
     parser.add_argument(
-        "--clusters", default="outputs/cli11/stage2/clusters.pkl", help="聚类 PKL"
+        "--clusters", default="outputs/library/cli11/stage2/clusters.pkl", help="聚类 PKL"
     )
     parser.add_argument(
         "--output-dir",

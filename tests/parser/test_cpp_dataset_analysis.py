@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections import Counter
 import json
 from pathlib import Path
 import unittest
@@ -95,9 +94,7 @@ class DatasetClassificationTests(unittest.TestCase):
                 },
             )
 
-    def test_frozen_manifest_classifies_exactly_the_formal_23_projects(
-        self,
-    ) -> None:
+    def test_frozen_manifest_contains_selected_15_plus_15_groups(self) -> None:
         root = Path(__file__).resolve().parents[2]
         selection = json.loads(
             (
@@ -109,42 +106,30 @@ class DatasetClassificationTests(unittest.TestCase):
                 root / "docs/research/cpp-dataset-manifest.json"
             ).read_text(encoding="utf-8")
         )
-        formal_statuses = {"保留", "条件保留"}
-        selection_formal = {
-            project["slug"]: project
-            for project in selection["projects"]
-            if project["status"] in formal_statuses
+        selected_projects = {
+            project["name"]
+            for project in selection["project"]["selected"]
         }
-        manifest_formal = {
-            project["slug"]: project
-            for project in manifest["projects"]
-            if project["selection"]["status"] in formal_statuses
+        selected_libraries = {
+            library["name"]
+            for library in selection["library"]
+        }
+        manifest_projects = {
+            group["name"]
+            for group in manifest["groups"]
+            if group["type"] == "Project"
+        }
+        manifest_libraries = {
+            group["name"]
+            for group in manifest["groups"]
+            if group["type"] == "Library"
         }
 
-        self.assertEqual(len(selection_formal), 23)
-        self.assertEqual(selection_formal.keys(), manifest_formal.keys())
-        self.assertEqual(
-            Counter(
-                project["primary_domain"]
-                for project in selection_formal.values()
-            ),
-            Counter(
-                project["classification"]["primary_domain"]
-                for project in manifest_formal.values()
-            ),
-        )
-        self.assertEqual(
-            Counter(
-                project["classification"]["analysis_complexity"]["tier"]
-                for project in manifest_formal.values()
-            ),
-            {"低": 8, "中": 8, "高": 7},
-        )
-        self.assertTrue(
-            {"cpp-httplib", "entt", "simdjson"}.isdisjoint(
-                manifest_formal
-            )
-        )
+        self.assertEqual(len(selected_projects), 15)
+        self.assertEqual(len(selected_libraries), 15)
+        self.assertEqual(selected_projects, manifest_projects)
+        self.assertEqual(selected_libraries, manifest_libraries)
+        self.assertEqual(manifest["summary"]["group_count"], 30)
 
 
 if __name__ == "__main__":

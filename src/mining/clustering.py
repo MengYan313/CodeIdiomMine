@@ -368,12 +368,12 @@ def main():
     parser = argparse.ArgumentParser(description='代码习语聚类')
     parser.add_argument(
         '--input', '-i',
-        default='outputs/cli11/stage2/embeddings.pkl',
+        default='outputs/library/cli11/stage2/embeddings.pkl',
         help='输入的嵌入数据文件路径'
     )
     parser.add_argument(
         '--output', '-o',
-        default='outputs/cli11/stage2/clusters-raw.pkl',
+        default='outputs/library/cli11/stage2/clusters-raw.pkl',
         help='输出的聚类结果文件路径'
     )
     parser.add_argument(

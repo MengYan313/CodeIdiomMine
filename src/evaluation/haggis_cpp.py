@@ -21,6 +21,7 @@ import pandas as pd
 
 from ..common.logging import get_logger
 from ..common.node_kinds import BLOCK_KINDS, FUNCTION_KINDS, STATEMENT_KINDS
+from ..parser.dataset import select_split
 from .baseline_common import make_idiom_record, write_project_idioms, write_run_manifest
 
 
@@ -362,7 +363,7 @@ def mine_haggis_cpp(
         raise ValueError("max_nodes_per_function 必须为正数或 None")
 
     dataset_path = Path(dataset_path)
-    data = pd.read_pickle(dataset_path)
+    data = select_split(pd.read_pickle(dataset_path), "train")
     burn_in_iterations = math.floor(iterations * burn_in_fraction)
     counts: Dict[str, int] = {}
     project_manifests: List[Dict[str, Any]] = []
@@ -498,6 +499,7 @@ def mine_haggis_cpp(
                 "repository": "https://github.com/mast-group/codemining-treelm",
             },
             "dataset": str(dataset_path),
+            "training_split": "train",
             "parameters": {
                 "iterations": iterations,
                 "burn_in_fraction": burn_in_fraction,
@@ -528,7 +530,7 @@ def mine_haggis_cpp(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="运行 Haggis-CPP DP-pTSG baseline")
-    parser.add_argument("--dataset", default="outputs/cli11/stage0/dataset.pkl")
+    parser.add_argument("--dataset", default="outputs/library/cli11/stage0/dataset.pkl")
     parser.add_argument(
         "--output-dir",
         default="results/baselines/haggis-cpp/cli11",

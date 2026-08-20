@@ -28,6 +28,7 @@ from ..llm import (
 )
 from ..llm.json_output import append_json_output_contract
 from ..llm.utils import count_tokens_approximate
+from ..parser.dataset import select_split
 from .baseline_common import make_idiom_record, write_project_idioms, write_run_manifest
 
 
@@ -500,7 +501,7 @@ async def generate_llm_direct_budget(
     dataset_path = Path(dataset_path)
     output_dir = Path(output_dir)
     checkpoint_path = Path(checkpoint_path or DEFAULT_CHECKPOINT_PATH)
-    data = pd.read_pickle(dataset_path)
+    data = select_split(pd.read_pickle(dataset_path), "train")
     config = LLMConfig.json_mode_config(model=model)
     owns_client = model_client is None
     raw_client = model_client or create_model_client(config)
@@ -820,6 +821,7 @@ async def generate_llm_direct_budget(
             ),
             "token_budget_exhausted": token_budget_exhausted,
             "dataset": str(dataset_path),
+            "training_split": "train",
             "model": model_name,
             "schemas": {
                 "map": _MAP_IDIOM_SCHEMA,
@@ -854,7 +856,7 @@ async def generate_llm_direct_budget(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="运行 LLM-Direct-Budget baseline")
-    parser.add_argument("--dataset", default="outputs/cli11/stage0/dataset.pkl")
+    parser.add_argument("--dataset", default="outputs/library/cli11/stage0/dataset.pkl")
     parser.add_argument(
         "--output-dir",
         default="results/baselines/llm-direct-budget/cli11",

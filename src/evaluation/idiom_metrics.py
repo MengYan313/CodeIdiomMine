@@ -1,20 +1,13 @@
-"""C++ 仓库专属代码习语的仓库内评价指标。
+"""按 Haggis 固定留出协议评价 C++ 代码习语。
 
-每个仓库先使用完整合格源码独立完成习语发现。最终评价阶段把文件按稳定路径
-轮转为五折，每折只用其余文件中的已发现实例构造参考库，并在当前折上测量
-IC 与 ISP。该分区不触发重新解析、嵌入或聚类：
+习语只从冻结 train 文件发现，主指标只在冻结 test 文件测量：
 
-* IC_macro：逐测量函数聚类机会域 AST 节点覆盖率的宏平均；
-* IC_micro：所有测量函数聚类机会域 AST 节点的总体覆盖率；
-* IC_raw/IC：IC_macro 与 IC_micro 的算术平均，不执行数值变换；
-* ISP：具有至少两个独立来源函数域的习语比例；
-* F1：最终 IC 与 ISP 的调和平均；
-* 习语库结构：种类数、簇成员数、跨函数域支持数和完整子树 AvgAST。
+* IC：逐测试文件统计被任一习语覆盖的 AST 节点比例，再对文件取宏平均；
+* ISP：训练所得习语中至少在测试集复现一次的比例；
+* F1：IC 与 ISP 的调和平均。
 
-每折只根据参考文件源码确定性参数化局部标识符和字面量，测量文件不参与模板
-归纳。调用目标、限定名、成员、类型、关键字和关键运算符保持精确；相同占位符
-重复出现时须绑定相同 token。主指标描述最终习语库的可定位覆盖与跨函数支持，
-参考折外推、完整函数 AST 覆盖率和逐折 ISP 作为敏感性指标一并保留。
+现有机会域覆盖、完整函数覆盖、五折外推和习语库结构指标继续作为诊断指标；
+五折仅在 train 文件内轮转，不参与 Haggis 主指标。
 
 """
 
@@ -35,11 +28,12 @@ import pandas as pd
 from ..common.logging import get_logger
 from ..common.progress import progress
 from ..parser.candidates import SelectedCandidate, select_candidates
+from ..parser.dataset import file_indices
 
 logger = get_logger(__name__)
 
 CPP_LANGUAGE = "cpp"
-DEFAULT_EVALUATION_MODE = "within_project_kfold"
+DEFAULT_EVALUATION_MODE = "haggis_holdout"
 SYNTHESIZED_SEQUENCE_KIND = "synthesized_sequence"
 STRUCTURAL_MATCH_THRESHOLD = 0.72
 OpportunityFunctionDomain = Tuple[str, str]
@@ -345,7 +339,10 @@ def load_idiom_artifact(
     return project, records
 
 def load_dataset(dataset_path: str) -> pd.DataFrame:
-    return pd.read_pickle(dataset_path)
+    data = pd.read_pickle(dataset_path)
+    if "split" not in data.columns:
+        raise ValueError("dataset.pkl 缺少冻结 train/test split")
+    return data
 
 
 def load_stage2_clusters(cluster_path: str) -> Dict[str, Dict[str, Any]]:
@@ -707,6 +704,129 @@ def _measurement_evidence(
     return dict(evidence)
 
 
+def _match_sequence_nodes(
+    pattern_index: Mapping[str, Sequence[Tuple[int, str]]],
+    func_ast: Sequence[Dict[str, Any]],
+) -> Tuple[List[Tuple[int, int]], set[int], int]:
+    intervals: List[Tuple[int, int]] = []
+    matched_idioms: set[int] = set()
+    match_count = 0
+    function_code = str(func_ast[0].get("code_snippet") or "")
+    function_start = func_ast[0].get("start_byte")
+    if function_code and isinstance(function_start, int):
+        for idiom_idx, pattern in pattern_index.get(
+            SYNTHESIZED_SEQUENCE_KIND,
+            (),
+        ):
+            for char_start, char_end in _code_match_spans(pattern, function_code):
+                sequence_intervals = _semantic_slice_intervals(
+                    func_ast,
+                    {
+                        "start_byte": function_start
+                        + len(function_code[:char_start].encode("utf-8")),
+                        "end_byte": function_start
+                        + len(function_code[:char_end].encode("utf-8")),
+                    },
+                )
+                if sequence_intervals:
+                    intervals.extend(sequence_intervals)
+                    matched_idioms.add(idiom_idx)
+                    match_count += 1
+    return intervals, matched_idioms, match_count
+
+
+def _matching_idiom_ids(
+    pattern_index: Mapping[str, Sequence[Tuple[int, str]]],
+    kind: str,
+    candidate_code: str,
+) -> set[int]:
+    patterns = list(pattern_index.get(kind, ()))
+    if kind:
+        patterns.extend(pattern_index.get("", ()))
+    return {
+        idiom_idx
+        for idiom_idx, pattern in patterns
+        if _full_code_match(pattern, candidate_code)
+        or _structural_code_match(pattern, candidate_code)
+    }
+
+
+def _match_function_nodes(
+    pattern_index: Mapping[str, Sequence[Tuple[int, str]]],
+    func_ast: Sequence[Dict[str, Any]],
+) -> Tuple[set[int], set[int], int]:
+    """返回单个函数中习语覆盖的 AST 节点、习语 ID 和匹配次数。"""
+    intervals, matched_idioms, match_count = _match_sequence_nodes(
+        pattern_index,
+        func_ast,
+    )
+
+    for candidate in select_candidates(func_ast):
+        node_info = candidate.node_info
+        kind = str(node_info.get("kind") or "")
+        candidate_code = str(node_info.get("code_snippet") or "")
+        if not candidate_code:
+            continue
+        idiom_indices = _matching_idiom_ids(
+            pattern_index,
+            kind,
+            candidate_code,
+        )
+        if not idiom_indices:
+            continue
+        candidate_intervals = _quality_candidate_intervals(func_ast, candidate)
+        if candidate_intervals:
+            matched_idioms.update(idiom_indices)
+            intervals.extend(candidate_intervals)
+            match_count += 1
+    return _covered_node_indices(intervals), matched_idioms, match_count
+
+
+def _match_haggis_function_nodes(
+    pattern_index: Mapping[str, Sequence[Tuple[int, str]]],
+    func_ast: Sequence[Dict[str, Any]],
+) -> Tuple[set[int], set[int], int]:
+    """在完整函数 AST 上匹配训练习语，不重复应用发现阶段候选阈值。"""
+    intervals, matched_idioms, match_count = _match_sequence_nodes(
+        pattern_index,
+        func_ast,
+    )
+
+    for node_index, node_info in enumerate(func_ast):
+        kind = str(node_info.get("kind") or "")
+        candidate_code = str(node_info.get("code_snippet") or "")
+        if not candidate_code:
+            continue
+        idiom_indices = _matching_idiom_ids(
+            pattern_index,
+            kind,
+            candidate_code,
+        )
+        if idiom_indices:
+            matched_idioms.update(idiom_indices)
+            intervals.append((node_index, _subtree_end(func_ast, node_index)))
+            match_count += 1
+
+    for candidate in select_candidates(func_ast):
+        if candidate.origin != "semantic_def_use":
+            continue
+        node_info = candidate.node_info
+        kind = str(node_info.get("kind") or "")
+        candidate_code = str(node_info.get("code_snippet") or "")
+        if not candidate_code:
+            continue
+        idiom_indices = _matching_idiom_ids(
+            pattern_index,
+            kind,
+            candidate_code,
+        )
+        if idiom_indices:
+            matched_idioms.update(idiom_indices)
+            intervals.extend(_quality_candidate_intervals(func_ast, candidate))
+            match_count += 1
+    return _covered_node_indices(intervals), matched_idioms, match_count
+
+
 def compute_coverage_stats(
     idioms: List[Dict[str, Any]],
     data: pd.DataFrame,
@@ -776,66 +896,17 @@ def compute_coverage_stats(
                 files[file_idx],
                 str(func_ast[0].get("extent") or ""),
             )
-            intervals: List[Tuple[int, int]] = []
-            candidates = select_candidates(func_ast)
             evidence_intervals: List[Tuple[int, int]] = []
             for idiom_id, info in (evidence_by_file or {}).get(file_idx, ()):
                 source_intervals = _source_info_intervals(func_ast, info)
                 if source_intervals:
                     evidence_intervals.extend(source_intervals)
                     evidence_matched_idioms.add(idiom_id)
-            function_code = str(func_ast[0].get("code_snippet") or "")
-            function_start = func_ast[0].get("start_byte")
-            if function_code and isinstance(function_start, int):
-                for idiom_idx, pattern in pattern_index.get(
-                    SYNTHESIZED_SEQUENCE_KIND,
-                    (),
-                ):
-                    for char_start, char_end in _code_match_spans(
-                        pattern,
-                        function_code,
-                    ):
-                        sequence_intervals = _semantic_slice_intervals(
-                            func_ast,
-                            {
-                                "start_byte": function_start
-                                + len(function_code[:char_start].encode("utf-8")),
-                                "end_byte": function_start
-                                + len(function_code[:char_end].encode("utf-8")),
-                            },
-                        )
-                        if sequence_intervals:
-                            intervals.extend(sequence_intervals)
-                            matched_idioms.add(idiom_idx)
-                            match_count += 1
-            for candidate in candidates:
-                node_info = candidate.node_info
-                kind = str(node_info.get("kind") or "")
-                candidate_code = str(node_info.get("code_snippet") or "")
-                if not candidate_code:
-                    continue
-                patterns = list(pattern_index.get(kind, ()))
-                if kind:
-                    patterns.extend(pattern_index.get("", ()))
-                idiom_indices = {
-                    idiom_idx
-                    for idiom_idx, pattern in patterns
-                    if _full_code_match(pattern, candidate_code)
-                    or _structural_code_match(pattern, candidate_code)
-                }
-                if not idiom_indices:
-                    continue
-                candidate_intervals = _quality_candidate_intervals(
-                    func_ast,
-                    candidate,
-                )
-                if not candidate_intervals:
-                    continue
-                matched_idioms.update(idiom_indices)
-                intervals.extend(candidate_intervals)
-                match_count += 1
-
-            generalization_indices = _covered_node_indices(intervals)
+            generalization_indices, function_idioms, function_matches = (
+                _match_function_nodes(pattern_index, func_ast)
+            )
+            matched_idioms.update(function_idioms)
+            match_count += function_matches
             covered_indices = generalization_indices | _covered_node_indices(
                 evidence_intervals
             )
@@ -908,6 +979,73 @@ def compute_coverage_stats(
             generalization_coverage_values
         ),
         "evidence_matched_idiom_ids": evidence_matched_idioms,
+    }
+
+
+def compute_haggis_stats(
+    idioms: List[Dict[str, Any]],
+    data: pd.DataFrame,
+    project_name: str,
+    project_idx: int,
+    test_file_indices: set[int],
+) -> Dict[str, Any]:
+    """在冻结 test 文件上计算 Haggis 的 IC、ISP 及派生 F1。"""
+    row = data.iloc[project_idx]
+    if str(row.get("project", row.get("pros_name", ""))) != project_name:
+        raise ValueError(f"数据集项目索引与名称不一致: {project_name}")
+
+    matching_idioms = _restrict_idioms_to_reference_files(
+        idioms,
+        row["cppFile"],
+        file_indices(row, "train"),
+    )
+    pattern_index = _build_pattern_index(matching_idioms)
+    file_coverages: List[float] = []
+    matched_idioms: set[int] = set()
+    covered_nodes = 0
+    total_nodes = 0
+    function_count = 0
+    match_count = 0
+    for file_idx in sorted(test_file_indices):
+        file_covered: set[Tuple[int, int]] = set()
+        file_nodes = 0
+        for function_idx, func_ast in enumerate(row["func_ast"][file_idx]):
+            if not func_ast:
+                continue
+            indices, function_idioms, function_matches = (
+                _match_haggis_function_nodes(pattern_index, func_ast)
+            )
+            file_covered.update((function_idx, index) for index in indices)
+            file_nodes += len(func_ast)
+            matched_idioms.update(
+                idiom_id
+                for idiom_index in function_idioms
+                for idiom_id in matching_idioms[idiom_index]["_evaluation_ids"]
+            )
+            match_count += function_matches
+            function_count += 1
+        if file_nodes:
+            file_coverages.append(len(file_covered) / file_nodes)
+            covered_nodes += len(file_covered)
+            total_nodes += file_nodes
+
+    ic = sum(file_coverages) / len(file_coverages) if file_coverages else 0.0
+    ic_micro = covered_nodes / total_nodes if total_nodes else 0.0
+    isp = len(matched_idioms) / len(idioms) if idioms else 0.0
+    return {
+        "IC_macro": ic,
+        "IC_micro": ic_micro,
+        "IC_raw": ic,
+        "IC": ic,
+        "ISP": isp,
+        "F1": compute_f1(ic, isp),
+        "matched_idiom_indices": matched_idioms,
+        "covered_node_count": covered_nodes,
+        "test_node_count": total_nodes,
+        "test_file_count": len(file_coverages),
+        "test_file_coverage_sum": sum(file_coverages),
+        "test_function_count": function_count,
+        "match_count": match_count,
     }
 
 
@@ -1246,12 +1384,22 @@ def evaluate_project_kfold(
     opportunity_domain: Mapping[OpportunityFunctionDomain, set[int]],
     fold_count: int,
 ) -> Dict[str, Any]:
-    """对全仓发现结果执行仓库内文件五折评价。"""
+    """计算固定 test 主指标，并保留 train 内五折诊断指标。"""
     row = data.iloc[project_idx]
     files = row.get("cppFile", [])
     function_extents = _function_extent_sets(row.get("func_ast", []))
-    folds = _round_robin_file_folds(project_name, files, fold_count)
-    all_files = set(range(len(files)))
+    train_indices = sorted(file_indices(row, "train"))
+    test_indices = file_indices(row, "test")
+    local_folds = _round_robin_file_folds(
+        project_name,
+        [files[index] for index in train_indices],
+        fold_count,
+    )
+    folds = [
+        {train_indices[index] for index in fold}
+        for fold in local_folds
+    ]
+    all_files = set(train_indices)
     fold_results: List[Dict[str, Any]] = []
     evaluable_idiom_ids: set[int] = set()
     matched_idiom_ids: set[int] = set()
@@ -1386,11 +1534,11 @@ def evaluate_project_kfold(
         if fold_evaluated_idiom_count
         else 0.0
     )
-    idiom_count = len(evaluable_idiom_ids)
+    sensitivity_idiom_count = len(evaluable_idiom_ids)
     generalization_matched_idiom_count = len(matched_idiom_ids)
     isp_generalization = (
-        generalization_matched_idiom_count / idiom_count
-        if idiom_count
+        generalization_matched_idiom_count / sensitivity_idiom_count
+        if sensitivity_idiom_count
         else 0.0
     )
     cross_function_supported_ids = {
@@ -1410,10 +1558,14 @@ def evaluate_project_kfold(
             }
         ) >= 2
     }
-    matched_idiom_count = len(
+    support_matched_idiom_count = len(
         cross_function_supported_ids & evaluable_idiom_ids
     )
-    isp = matched_idiom_count / idiom_count if idiom_count else 0.0
+    isp_support = (
+        support_matched_idiom_count / sensitivity_idiom_count
+        if sensitivity_idiom_count
+        else 0.0
+    )
     all_matched_nodes = sum(
         item["all_matched_node_count"] for item in fold_results
     )
@@ -1431,21 +1583,35 @@ def evaluate_project_kfold(
         all_matched_nodes / all_total_nodes if all_total_nodes else 0.0
     )
     ic_all = (ic_all_macro + ic_all_micro) / 2
+    haggis = compute_haggis_stats(
+        project_idioms,
+        data,
+        project_name,
+        project_idx,
+        test_indices,
+    )
     size_stats = compute_idiom_size_stats(project_idioms, data)
     return {
         "project": project_name,
         "training_projects": [project_name],
         "fold_count": len(folds),
         "file_count": len(files),
+        "training_file_count": len(train_indices),
+        "test_file_count": haggis["test_file_count"],
         "folds": fold_results,
-        "IC_macro": round(ic_macro, 4),
-        "IC_micro": round(ic_micro, 4),
-        "IC_raw": round(ic_raw, 4),
-        "IC": round(ic, 4),
-        "ISP": round(isp, 4),
+        "IC_macro": round(haggis["IC_macro"], 4),
+        "IC_micro": round(haggis["IC_micro"], 4),
+        "IC_raw": round(haggis["IC_raw"], 4),
+        "IC": round(haggis["IC"], 4),
+        "ISP": round(haggis["ISP"], 4),
+        "ISP_support": round(isp_support, 4),
         "ISP_generalization": round(isp_generalization, 4),
         "ISP_fold": round(isp_fold, 4),
-        "F1": round(compute_f1(ic, isp), 4),
+        "F1": round(haggis["F1"], 4),
+        "IC_opportunity_macro": round(ic_macro, 4),
+        "IC_opportunity_micro": round(ic_micro, 4),
+        "IC_opportunity": round(ic, 4),
+        "F1_opportunity_support": round(compute_f1(ic, isp_support), 4),
         "IC_generalization_macro": round(ic_generalization_macro, 4),
         "IC_generalization_micro": round(ic_generalization_micro, 4),
         "IC_generalization": round(ic_generalization, 4),
@@ -1459,14 +1625,21 @@ def evaluate_project_kfold(
         "avg_idiom_size": round(size_stats["mean"], 2),
         "median_idiom_size": round(size_stats["median"], 2),
         "idiom_size_iqr": round(size_stats["iqr"], 2),
-        "idiom_count": idiom_count,
-        "matched_idiom_count": matched_idiom_count,
+        "idiom_count": len(project_idioms),
+        "matched_idiom_count": len(haggis["matched_idiom_indices"]),
+        "support_evaluated_idiom_count": sensitivity_idiom_count,
+        "support_matched_idiom_count": support_matched_idiom_count,
         "generalization_matched_idiom_count": (
             generalization_matched_idiom_count
         ),
         "fold_evaluated_idiom_count": fold_evaluated_idiom_count,
         "fold_matched_idiom_count": fold_matched_idiom_count,
-        "covered_node_count": matched_nodes,
+        "covered_node_count": haggis["covered_node_count"],
+        "test_node_count": haggis["test_node_count"],
+        "test_function_count": haggis["test_function_count"],
+        "test_file_coverage_sum": haggis["test_file_coverage_sum"],
+        "test_match_count": haggis["match_count"],
+        "opportunity_covered_node_count": matched_nodes,
         "opportunity_node_count": total_nodes,
         "opportunity_function_count": function_count,
         "opportunity_function_coverage_sum": function_coverage_sum,
@@ -1627,8 +1800,17 @@ def evaluate_cpp(
         payload = {"language": CPP_LANGUAGE, "projects": [], "summary": {}}
     else:
         count = len(project_results)
-        matched_nodes = sum(r["covered_node_count"] for r in project_results)
-        total_nodes = sum(
+        covered_nodes = sum(r["covered_node_count"] for r in project_results)
+        test_nodes = sum(r["test_node_count"] for r in project_results)
+        test_files = sum(r["test_file_count"] for r in project_results)
+        test_functions = sum(r["test_function_count"] for r in project_results)
+        test_file_coverage_sum = sum(
+            r["test_file_coverage_sum"] for r in project_results
+        )
+        opportunity_matched_nodes = sum(
+            r["opportunity_covered_node_count"] for r in project_results
+        )
+        opportunity_nodes = sum(
             r["opportunity_node_count"] for r in project_results
         )
         function_count = sum(
@@ -1639,6 +1821,12 @@ def evaluate_cpp(
         )
         matched_idioms = sum(r["matched_idiom_count"] for r in project_results)
         evaluated_idioms = sum(r["idiom_count"] for r in project_results)
+        support_matched_idioms = sum(
+            r["support_matched_idiom_count"] for r in project_results
+        )
+        support_evaluated_idioms = sum(
+            r["support_evaluated_idiom_count"] for r in project_results
+        )
         fold_matched_idioms = sum(
             r["fold_matched_idiom_count"]
             for r in project_results
@@ -1699,6 +1887,29 @@ def evaluate_cpp(
             "IC": round(sum(r["IC"] for r in project_results) / count, 4),
             "ISP": round(sum(r["ISP"] for r in project_results) / count, 4),
             "F1": round(sum(r["F1"] for r in project_results) / count, 4),
+            "ISP_support": round(
+                sum(r["ISP_support"] for r in project_results) / count,
+                4,
+            ),
+            "IC_opportunity_macro": round(
+                sum(r["IC_opportunity_macro"] for r in project_results)
+                / count,
+                4,
+            ),
+            "IC_opportunity_micro": round(
+                sum(r["IC_opportunity_micro"] for r in project_results)
+                / count,
+                4,
+            ),
+            "IC_opportunity": round(
+                sum(r["IC_opportunity"] for r in project_results) / count,
+                4,
+            ),
+            "F1_opportunity_support": round(
+                sum(r["F1_opportunity_support"] for r in project_results)
+                / count,
+                4,
+            ),
             "ISP_generalization": round(
                 sum(r["ISP_generalization"] for r in project_results)
                 / count,
@@ -1785,15 +1996,31 @@ def evaluate_cpp(
             "AvgAST": round(sum(r["AvgAST"] for r in project_results) / count, 2),
         }
         global_ic_macro = (
+            test_file_coverage_sum / test_files if test_files else 0.0
+        )
+        global_ic_micro = covered_nodes / test_nodes if test_nodes else 0.0
+        global_ic_raw = global_ic_macro
+        global_ic = global_ic_macro
+        global_isp = matched_idioms / evaluated_idioms if evaluated_idioms else 0.0
+        global_isp_support = (
+            support_matched_idioms / support_evaluated_idioms
+            if support_evaluated_idioms
+            else 0.0
+        )
+        global_ic_opportunity_macro = (
             function_coverage_sum / function_count if function_count else 0.0
         )
-        global_ic_micro = matched_nodes / total_nodes if total_nodes else 0.0
-        global_ic_raw = (global_ic_macro + global_ic_micro) / 2
-        global_ic = global_ic_raw
-        global_isp = matched_idioms / evaluated_idioms if evaluated_idioms else 0.0
+        global_ic_opportunity_micro = (
+            opportunity_matched_nodes / opportunity_nodes
+            if opportunity_nodes
+            else 0.0
+        )
+        global_ic_opportunity = (
+            global_ic_opportunity_macro + global_ic_opportunity_micro
+        ) / 2
         global_isp_generalization = (
-            generalization_matched_idioms / evaluated_idioms
-            if evaluated_idioms
+            generalization_matched_idioms / support_evaluated_idioms
+            if support_evaluated_idioms
             else 0.0
         )
         global_ic_generalization_macro = (
@@ -1802,7 +2029,9 @@ def evaluate_cpp(
             else 0.0
         )
         global_ic_generalization_micro = (
-            generalization_matched_nodes / total_nodes if total_nodes else 0.0
+            generalization_matched_nodes / opportunity_nodes
+            if opportunity_nodes
+            else 0.0
         )
         global_ic_generalization = (
             global_ic_generalization_macro + global_ic_generalization_micro
@@ -1827,9 +2056,17 @@ def evaluate_cpp(
             "IC_raw": round(global_ic_raw, 4),
             "IC": round(global_ic, 4),
             "ISP": round(global_isp, 4),
+            "ISP_support": round(global_isp_support, 4),
             "ISP_generalization": round(global_isp_generalization, 4),
             "ISP_fold": round(global_isp_fold, 4),
             "F1": round(compute_f1(global_ic, global_isp), 4),
+            "IC_opportunity_macro": round(global_ic_opportunity_macro, 4),
+            "IC_opportunity_micro": round(global_ic_opportunity_micro, 4),
+            "IC_opportunity": round(global_ic_opportunity, 4),
+            "F1_opportunity_support": round(
+                compute_f1(global_ic_opportunity, global_isp_support),
+                4,
+            ),
             "IC_generalization_macro": round(
                 global_ic_generalization_macro, 4
             ),
@@ -1862,14 +2099,20 @@ def evaluate_cpp(
             ) if measured_ast_types else 0.0,
             "matched_idiom_count": matched_idioms,
             "evaluated_idiom_count": evaluated_idioms,
+            "support_matched_idiom_count": support_matched_idioms,
+            "support_evaluated_idiom_count": support_evaluated_idioms,
             "generalization_matched_idiom_count": (
                 generalization_matched_idioms
             ),
             "fold_matched_idiom_count": fold_matched_idioms,
             "fold_evaluated_idiom_count": fold_evaluated_idioms,
             "total_cluster_instances": cluster_instances,
-            "covered_node_count": matched_nodes,
-            "opportunity_node_count": total_nodes,
+            "covered_node_count": covered_nodes,
+            "test_node_count": test_nodes,
+            "test_file_count": test_files,
+            "test_function_count": test_functions,
+            "opportunity_covered_node_count": opportunity_matched_nodes,
+            "opportunity_node_count": opportunity_nodes,
             "opportunity_function_count": function_count,
             "generalization_covered_node_count": (
                 generalization_matched_nodes
@@ -1888,16 +2131,14 @@ def evaluate_cpp(
             "ISP_support_domain": (
                 "repository_relative_file_and_function_root_extent"
             ),
-            "fold_partition_domain": "file",
+            "split_partition_domain": "dataset_manifest_file_or_client_repository",
+            "fold_partition_domain": "train_file",
             "artifact_stage": artifact_stage,
-            "matcher": "reference_only_role_parameterized_lexical_structure",
+            "matcher": "train_mined_role_parameterized_lexical_structure",
             "primary_metric_definition": {
-                "IC_raw": "arithmetic_mean_of_IC_macro_and_IC_micro",
+                "IC_raw": "mean_test_file_ast_node_union_coverage",
                 "IC": "same_as_IC_raw_without_numeric_transformation",
-                "ISP": (
-                    "library_idiom_with_support_in_at_least_two_"
-                    "validated_function_domains"
-                ),
+                "ISP": "train_mined_idiom_matched_at_least_once_in_test",
                 "F1": "harmonic_mean_of_IC_and_ISP",
             },
             "strict_sensitivity_metrics": [
@@ -1909,6 +2150,9 @@ def evaluate_cpp(
                 "IC_all",
                 "ISP_fold",
                 "F1_all_fold",
+                "IC_opportunity",
+                "ISP_support",
+                "F1_opportunity_support",
             ],
             "projects": project_results,
             "repository_macro": repository_macro,
@@ -1972,7 +2216,7 @@ def main() -> None:
         "--dataset",
         "-d",
         default=None,
-        help="默认 outputs/cli11/stage0/dataset.pkl",
+        help="默认 outputs/library/cli11/stage0/dataset.pkl",
     )
     parser.add_argument(
         "--clusters",
@@ -1995,15 +2239,15 @@ def main() -> None:
     )
     parser.add_argument(
         "--mode",
-        choices=("within_project_kfold",),
+        choices=("haggis_holdout",),
         default=DEFAULT_EVALUATION_MODE,
-        help="仓库内文件五折",
+        help="Haggis 固定 train/test 留出评价",
     )
     parser.add_argument(
         "--folds",
         type=int,
         default=5,
-        help="仓库内轮转折数，默认 5",
+        help="train 内敏感性分析的轮转折数，默认 5",
     )
     args = parser.parse_args()
     run_evaluation(

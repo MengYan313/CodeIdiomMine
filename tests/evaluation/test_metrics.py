@@ -17,6 +17,7 @@ from src.evaluation.idiom_metrics import (
     compute_avg_idiom_size,
     compute_coverage_stats,
     compute_f1,
+    compute_haggis_stats,
     compute_idiom_set_precision,
     compute_idiom_library_stats,
     evaluate_project_kfold,
@@ -155,6 +156,40 @@ class MetricHelperTests(unittest.TestCase):
         self.assertEqual(compute_f1(0.0, 0.0), 0.0)
         self.assertAlmostEqual(compute_f1(0.5, 0.5), 0.5)
 
+    def test_haggis_metrics_use_test_file_macro_and_idiom_recurrence(self):
+        train_ast = _function_ast(1, "source", 1)
+        matched_ast = _function_ast(10, "ready", 2)
+        matched_ast[1]["subtree_size"] = 6
+        unmatched_ast = [{
+            "depth": 0,
+            "extent": "20-0-20-20",
+            "kind": "function_definition",
+            "code_snippet": "void empty() {}",
+        }]
+        data = pd.DataFrame([{
+            "project": "sample",
+            "cppFile": ["train.cpp", "matched.cpp", "empty.cpp"],
+            "func_ast": [[train_ast], [matched_ast], [unmatched_ast]],
+            "func_src": [[train_ast[0]["code_snippet"]],
+                         [matched_ast[0]["code_snippet"]],
+                         [unmatched_ast[0]["code_snippet"]]],
+            "split": ["train", "test", "test"],
+        }])
+        info = ["sample", "train.cpp", train_ast[0]["extent"], train_ast[1]]
+        stats = compute_haggis_stats(
+            [{"center_point": train_ast[1]["code_snippet"],
+              "info": info, "source_infos": [info]}],
+            data,
+            "sample",
+            0,
+            {1, 2},
+        )
+
+        self.assertAlmostEqual(stats["IC"], 3 / 7)
+        self.assertAlmostEqual(stats["IC_micro"], 6 / 8)
+        self.assertEqual(stats["ISP"], 1.0)
+        self.assertAlmostEqual(stats["F1"], compute_f1(3 / 7, 1.0))
+
     def test_coverage_uses_candidate_extent(self):
         train_ast = _function_ast(1, "value", 1)
         test_ast = _function_ast(10, "ready", 2)
@@ -287,14 +322,17 @@ class MetricHelperTests(unittest.TestCase):
         source_ast = _function_ast(1, "source_value", 1)
         repeat_ast = _function_ast(10, "other_value", 2)
         unrelated_ast = _function_ast(20, "unused", 3, operator="while")
-        files = ["a.cpp", "b.cpp", "c.cpp"]
+        test_ast = _function_ast(30, "never", 4, operator="while")
+        files = ["a.cpp", "b.cpp", "c.cpp", "test.cpp"]
         data = pd.DataFrame([{
             "project": "sample",
             "cppFile": files,
-            "func_ast": [[source_ast], [repeat_ast], [unrelated_ast]],
+            "func_ast": [[source_ast], [repeat_ast], [unrelated_ast], [test_ast]],
             "func_src": [[source_ast[0]["code_snippet"]],
                          [repeat_ast[0]["code_snippet"]],
-                         [unrelated_ast[0]["code_snippet"]]],
+                         [unrelated_ast[0]["code_snippet"]],
+                         [test_ast[0]["code_snippet"]]],
+            "split": ["train", "train", "train", "test"],
         }])
         info = ["sample", files[0], source_ast[0]["extent"], source_ast[1]]
         opportunity = _opportunity(
@@ -317,6 +355,7 @@ class MetricHelperTests(unittest.TestCase):
             fold_count=3,
         )
         self.assertEqual(result["ISP"], 0.0)
+        self.assertEqual(result["ISP_support"], 0.0)
         self.assertEqual(result["ISP_generalization"], 1.0)
         self.assertEqual(result["ISP_fold"], 0.5)
 
@@ -324,15 +363,17 @@ class MetricHelperTests(unittest.TestCase):
         first = _function_ast(1, "first_ready", 1)
         second = _function_ast(10, "second_ready", 2)
         unrelated = _function_ast(20, "unused", 3, operator="while")
-        files = ["same.cpp", "other.cpp"]
+        test_match = _function_ast(30, "test_ready", 4)
+        files = ["same.cpp", "other.cpp", "test.cpp"]
         data = pd.DataFrame([{
             "project": "sample",
             "cppFile": files,
-            "func_ast": [[first, second], [unrelated]],
+            "func_ast": [[first, second], [unrelated], [test_match]],
             "func_src": [[
                 first[0]["code_snippet"],
                 second[0]["code_snippet"],
-            ], [unrelated[0]["code_snippet"]]],
+            ], [unrelated[0]["code_snippet"]], [test_match[0]["code_snippet"]]],
+            "split": ["train", "train", "test"],
         }])
         infos = [
             ["sample", files[0], first[0]["extent"], first[1]],
@@ -358,16 +399,20 @@ class MetricHelperTests(unittest.TestCase):
         )
 
         self.assertEqual(result["ISP"], 1.0)
+        self.assertEqual(result["ISP_support"], 1.0)
         self.assertEqual(library["avg_cross_function_support"], 2)
 
     def test_isp_deduplicates_repeated_evidence_in_one_function(self):
         function = _function_ast(1, "ready", 1)
-        files = ["same.cpp", "other.cpp"]
+        test_ast = _function_ast(20, "unused", 3, operator="while")
+        files = ["same.cpp", "other.cpp", "test.cpp"]
         data = pd.DataFrame([{
             "project": "sample",
             "cppFile": files,
-            "func_ast": [[function], [_function_ast(10, "unused", 2)]],
-            "func_src": [[function[0]["code_snippet"]], ["void unused() {}"]],
+            "func_ast": [[function], [_function_ast(10, "unused", 2)], [test_ast]],
+            "func_src": [[function[0]["code_snippet"]], ["void unused() {}"],
+                         [test_ast[0]["code_snippet"]]],
+            "split": ["train", "train", "test"],
         }])
         info = ["sample", files[0], function[0]["extent"], function[1]]
         idiom = {
@@ -390,6 +435,7 @@ class MetricHelperTests(unittest.TestCase):
         )
 
         self.assertEqual(result["ISP"], 0.0)
+        self.assertEqual(result["ISP_support"], 0.0)
         self.assertEqual(library["avg_cross_function_support"], 1)
 
     def test_opportunity_excludes_unclustered_functions_and_candidates(self):
@@ -596,11 +642,9 @@ class MetricHelperTests(unittest.TestCase):
                 "cppFile": files,
                 "func_ast": [[first_ast], [second_ast]],
                 "func_src": [[first_ast[0]["code_snippet"]], [second_ast[0]["code_snippet"]]],
+                "split": ["train", "test"],
             })
-            infos = [
-                [project, files[0], first_ast[0]["extent"], first_ast[1]],
-                [project, files[1], second_ast[0]["extent"], second_ast[1]],
-            ]
+            infos = [[project, files[0], first_ast[0]["extent"], first_ast[1]]]
             idioms_by_project[project] = [{
                 "center_point": first_ast[1]["code_snippet"],
                 "info": infos[0],
@@ -636,14 +680,17 @@ class MetricHelperTests(unittest.TestCase):
                 fold_count=2,
             )
 
-        expected_ic = 1.0
+        expected_ic = round(6 / 7, 4)
         self.assertEqual(result["repository_macro"]["IC_macro"], expected_ic)
         self.assertEqual(result["repository_macro"]["IC_micro"], expected_ic)
         self.assertEqual(result["repository_macro"]["IC_raw"], expected_ic)
         self.assertEqual(result["repository_macro"]["IC"], expected_ic)
-        self.assertEqual(result["repository_macro"]["F1"], 1.0)
+        self.assertEqual(
+            result["repository_macro"]["F1"],
+            round(compute_f1(6 / 7, 1.0), 4),
+        )
         self.assertEqual(result["global"]["idiom_type_count"], 2)
-        self.assertEqual(result["global"]["total_cluster_instances"], 4)
+        self.assertEqual(result["global"]["total_cluster_instances"], 2)
         self.assertNotIn('"rank"', json.dumps(result))
 
     def test_evaluator_reads_recursive_synthesis_artifact(self):
@@ -660,13 +707,11 @@ class MetricHelperTests(unittest.TestCase):
                         [first_ast[0]["code_snippet"]],
                         [second_ast[0]["code_snippet"]],
                     ],
+                    "split": ["train", "test"],
                 }
             ]
         )
-        infos = [
-            ["sample", files[0], first_ast[0]["extent"], first_ast[1]],
-            ["sample", files[1], second_ast[0]["extent"], second_ast[1]],
-        ]
+        infos = [["sample", files[0], first_ast[0]["extent"], first_ast[1]]]
         artifact = {
             "artifact_type": "idiom_synthesis",
             "project": "sample",

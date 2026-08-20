@@ -414,12 +414,12 @@ def main():
     parser = argparse.ArgumentParser(description='生成代码嵌入')
     parser.add_argument(
         '--input', '-i',
-        default='outputs/cli11/stage1/fragments.pkl',
+        default='outputs/library/cli11/stage1/fragments.pkl',
         help='Parser 生成的 model-ready 片段文件'
     )
     parser.add_argument(
         '--output', '-o',
-        default='outputs/cli11/stage2/embeddings.pkl',
+        default='outputs/library/cli11/stage2/embeddings.pkl',
         help='输出的嵌入数据文件路径'
     )
     parser.add_argument(

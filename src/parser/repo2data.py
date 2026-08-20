@@ -35,7 +35,7 @@ def parse_repository(
     
     Args:
         input_path: 输入路径，例如 CodeIdiomMine/repos
-        output_path: 输出路径，例如 outputs/cli11/stage0/dataset.pkl
+        output_path: 输出路径，例如 outputs/library/cli11/stage0/dataset.pkl
         fragment_output_path: 可选的 Parser model-ready 片段输出路径
         projects: 可选的精确项目目录名列表；省略时解析全部项目
     """
@@ -167,12 +167,19 @@ def parse_repository(
     
     # 过滤掉没有有效函数的文件
     logger.info("\n过滤无效文件...")
-    pro_files, pro_funcs, pro_funcs_src = scanner.filter_valid_files(
+    pro_files, pro_funcs, pro_funcs_src, pro_splits = scanner.filter_valid_files(
         pro_func_ast, pro_func_ast_src
     )
     
     # 保存数据
-    save_data(scanner, pro_files, pro_funcs, pro_funcs_src, output_path)
+    save_data(
+        scanner,
+        pro_files,
+        pro_funcs,
+        pro_funcs_src,
+        pro_splits,
+        output_path,
+    )
     resolved_audit_path = audit_output_path or str(
         Path(output_path).with_suffix(".audit.json")
     )
@@ -241,7 +248,7 @@ def save_parse_audit(
     }
     payload = {
         "parser_backend": "tree-sitter-cpp",
-        "dataset_schema": ["project", "cppFile", "func_ast", "func_src"],
+        "dataset_schema": ["project", "cppFile", "func_ast", "func_src", "split"],
         "input_path": input_path,
         "output_path": output_path,
         "projects": projects,
@@ -266,7 +273,8 @@ def save_parse_audit(
 
 def save_data(scanner: FileScanner, pro_files: List[List[str]], 
               pro_funcs: List[List[List[dict]]], 
-              pro_funcs_src: List[List[List[str]]], 
+              pro_funcs_src: List[List[List[str]]],
+              pro_splits: List[List[str]],
               output_path: str):
     """
     保存解析结果到 pickle 文件
@@ -289,7 +297,8 @@ def save_data(scanner: FileScanner, pro_files: List[List[str]],
         'project': scanner.projects,
         'cppFile': pro_files,  # 保持与原项目兼容的列名
         'func_ast': pro_funcs,
-        'func_src': pro_funcs_src
+        'func_src': pro_funcs_src,
+        'split': pro_splits,
     })
     
     total_files = sum(len(files) for files in pro_files)
@@ -335,8 +344,8 @@ def main():
     )
     parser.add_argument(
         '--output', '-o',
-        default='outputs/cli11/stage0/dataset.pkl',
-        help='输出数据文件路径（例如: outputs/cli11/stage0/dataset.pkl）'
+        default='outputs/library/cli11/stage0/dataset.pkl',
+        help='输出数据文件路径（例如: outputs/library/cli11/stage0/dataset.pkl）'
     )
     parser.add_argument(
         '--audit-output',

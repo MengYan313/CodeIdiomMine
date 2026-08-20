@@ -25,9 +25,9 @@ Parser 扫描当前 C/C++ 仓库，用专用 Tree-sitter/C++ Adapter 提取函�
 ```bash
 .venv/bin/python -m src.parser.repo2data \
   --input repos --project cli11 \
-  --output outputs/cli11/stage0/dataset.pkl \
-  --audit-output outputs/cli11/stage0/audit.json \
-  --fragment-output outputs/cli11/stage1/fragments.pkl \
+  --output outputs/library/cli11/stage0/dataset.pkl \
+  --audit-output outputs/library/cli11/stage0/audit.json \
+  --fragment-output outputs/library/cli11/stage1/fragments.pkl \
   --embedding-model unixcoder --local-files-only
 ```
 
