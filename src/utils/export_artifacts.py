@@ -747,7 +747,7 @@ def export_artifacts(
     input_dir: Path,
     output_dir: Path,
     stages: Sequence[str],
-    result_dir: Path = Path("results/main/cli11"),
+    result_dir: Path = Path("results/library/cli11/main"),
     limit: int = 100,
     cluster_top: int = 100,
     text_limit: int = 2000,
@@ -892,12 +892,16 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="将流水线 PKL 导出为全量汇总 JSON 与限量分析预览"
     )
-    parser.add_argument("--input-dir", type=Path, default=Path("outputs/cli11"))
     parser.add_argument(
-        "--output-dir", type=Path, default=Path("outputs/cli11/readables")
+        "--input-dir", type=Path, default=Path("outputs/library/cli11")
     )
     parser.add_argument(
-        "--result-dir", type=Path, default=Path("results/main/cli11")
+        "--output-dir",
+        type=Path,
+        default=Path("outputs/library/cli11/readables"),
+    )
+    parser.add_argument(
+        "--result-dir", type=Path, default=Path("results/library/cli11/main")
     )
     parser.add_argument(
         "--stages",

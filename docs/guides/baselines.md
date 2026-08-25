@@ -1,12 +1,12 @@
 # C++ 习语 baseline 与质量消融
 
 - 状态：当前 baseline 实现与复现规范
-- 生效日期：2026-08-01
+- 生效日期：2026-08-25
 - 适用范围：三条外部 baseline、Stage 2 高频聚类消融、CIMAS-CPP 对照边界和统一验证
 
 当前外部 baseline 固定为 `Haggis-CPP`、`LLM-Direct-Budget` 和
 `IdioMine-CPP`，与本文方法 `CIMAS-CPP` 做同口径自动指标比较。
-`Stage2-Frequency-Ablation` 直接保留 Stage 2 高频簇，与 IC 机会域共享来源，
+`Stage2-Frequency-Ablation` 直接保留 Stage 2 高频簇，
 因此不作为独立 baseline 参加自动指标优劣排名；它与 CIMAS-CPP 的主要比较是
 盲化人工习语质量标注，用于检验 Stage 3 判断和 Stage 4 合成是否提高质量。
 `IdioMine-CPP` 是论文 IdioMine 核心操作、独立 ChatGPT 判断和同区域
@@ -17,7 +17,7 @@
 本文只定义方法、产物和运行入口；九项固定指标的公式与聚合口径以[评价指标规范](evaluation-metrics.md)为唯一事实来源。
 
 三条 baseline、质量消融与本文方法都以单个完整仓库为独立发现单元。各仓库的候选、embedding、聚类和
-方法输出不得混合；发现前不做训练/开发/测试划分。多仓库比较只在各仓独立评价
+方法输出不得混合；所有方法只从固定 70% train 文件发现习语。多仓库比较只在各仓独立评价
 完成后汇总。
 
 ## 1. 三条 baseline、一条质量消融与本文方法
@@ -25,9 +25,9 @@
 | 方法 | 发现输入 | 核心处理 | 明确不使用 |
 |---|---|---|---|
 | Haggis-CPP | 当前函数级 Tree-sitter C++ AST | DP-pTSG、PCFG 基分布、collapsed Gibbs、burn-in 后片段累计 | Embedding、DBSCAN、LLM、Agent、合成 |
-| LLM-Direct-Budget | 机械分块的原始 C++ 函数源码 | 同一模型 map/reduce，严格 JSON Schema，总 token 预算 | AST/CFG、Embedding、聚类、多 Agent |
+| LLM-Direct-Budget | train 文件中的原始 C++ 函数源码 | 同一模型 map/reduce、紧凑证据、占位符规范化去重、总 token 预算 | CFG、Embedding、聚类、多 Agent |
 | Stage2-Frequency-Ablation | 当前 `clusters.pkl` | 簇大小过滤、比例截断、每项目种类上限；保留簇直接作为人工质量对照 | Stage 3 判断、Stage 4 合成 |
-| IdioMine-CPP | 当前 `embeddings.pkl` 中的 `semantic_def_use` 片段 | DCC-lite 候选、预训练代码嵌入、仓库隔离的余弦 DBSCAN、逐簇独立判断、同区域直接合成 | Java DvCFG、精确 DCC、原实现的关联启发式、多 Agent 评分与合成后复审 |
+| IdioMine-CPP | train 文件中的 `semantic_def_use` 与可复用 AST 片段 | DCC-lite/AST 候选、预训练代码嵌入、按候选类型隔离的余弦 DBSCAN、逐簇独立判断、共享区域直接合成 | Java DvCFG、精确 DCC、原实现的关联启发式、多 Agent 评分与合成后复审 |
 | CIMAS-CPP | 当前完整流水线输入 | Tree-sitter、Embedding、DBSCAN、多重可信门控与关联闭环融合 | — |
 
 三条 baseline 分别回答不同问题：Haggis-CPP 衡量概率语法方法在 C++ AST 上的
@@ -320,8 +320,8 @@ manifest 对每个项目保存 `input_cluster_count`、`minimum_size_eligible_co
 
 - 簇大小是唯一原生排序分数，不引入 LLM 评分或 CIMAS 判定结果；
 - 最小簇大小、比例和数量上限必须作为一个整体配置报告；
-- 聚类必须观察该仓库的全部合格候选；最终参考/测量分区不回溯改变 embedding 或聚类；
-- 该消融与主 IC 分母使用同一 Stage 2 聚类来源，IC、ISP、F1 只作为覆盖上界诊断，不能进入外部 baseline 自动指标排名；
+- 聚类只观察该仓库固定 train 中的合格候选；test 不参与 embedding、聚类或选择；
+- 该消融使用统一固定 test 计算 IC、ISP、F1，但结果只作为覆盖上界诊断，不能进入外部 baseline 自动指标排名；
 - 大簇可能来自样板代码或密度塌缩，频率不能直接解释为习语有效性；
 - 主要比较采用与 CIMAS-CPP 等量、分层、隐藏方法名和原生分数的人工样本，两名 C++ 标注者独立判断 `valid_idiom`、`invalid_idiom`、`context_dependent` 和严重异味，分歧由第三人裁决；
 - 报告有效习语率、反模式泄漏率、样本数、置信区间和标注一致性；只有该人工结果可以支持“Stage 3/4 提高习语质量”的结论；
@@ -344,9 +344,9 @@ manifest 对每个项目保存 `input_cluster_count`、`minimum_size_eligible_co
 数量上限、IdioMine-CPP 缺失 DCC-lite/DBSCAN/迁移声明、未按
 “独立判断→同区域直接合成”执行或预算耗尽的配置，以及缺少质量实验定位、
 “最小簇大小→比例→数量上限”组合或比例不小于1的消融配置。随后才调用现有
-`src.evaluation.idiom_metrics`。所有方法必须显式传入同一份 Stage 3 裁决前冻结的
-Stage 2 非噪声聚类产物；IC 的函数和节点分母由该产物固定，不随各方法最终输出
-变化。验证只有在逐项目、仓库宏平均和全局三个层次都
+`src.evaluation.idiom_metrics`。所有方法必须传入同一份固定 70/30 数据集；IC 的
+文件和节点分母来自 test 文件，不随各方法最终输出变化。验证只有在逐项目、仓库
+宏平均和全局三个层次都
 包含下列九个有限数值时才通过：
 
 `IC_macro`、`IC_micro`、`IC`、`ISP`、`F1`、`idiom_type_count`、`avg_cluster_size`、`avg_cross_function_support`、`AvgAST`。
@@ -364,30 +364,30 @@ Stage 2 非噪声聚类产物；IC 的函数和节点分母由该产物固定，
 | `loc_label` | 项目、文件和候选范围组成的稳定位置标签 |
 | `baseline_provenance` / `ablation_provenance` | 外部 baseline / 内部质量消融的方法、参数、适配差异、预算或选择规则 |
 
-评价器允许各方法的 `idiom_type_count` 不同。它不会做公共 Top100、补齐、重排或按最小方法数量对齐；主 IC 和 ISP 统一在固定 test 上测量每个方法的完整有效集合，Stage 2 聚类机会域只保留为诊断字段。Stage 2 消融虽通过同一指标入口进行审计，但其自动数值不得解释为相对外部 baseline 或 CIMAS-CPP 的质量优劣。
+评价器允许各方法的 `idiom_type_count` 不同。它不会做公共 Top100、补齐、重排或按最小方法数量对齐；主 IC 和 ISP 统一在固定 test 上测量每个方法的完整有效集合。Stage 2 消融虽通过同一指标入口进行审计，但其自动数值不得解释为相对外部 baseline 或 CIMAS-CPP 的质量优劣。
 
 ## 7. 复现命令
 
-以下命令以 `leveldb` 展示单仓运行。正式 baseline 使用
-`outputs/project/<repo>/stage0` 和 `outputs/project/<repo>/stage2` 的标准输入，输出到
-`results/baselines/<method>/<repo>`；所有正式结果只追加到
+以下命令以 `leveldb` 展示单仓运行。正式 baseline 统一使用
+`results/project/<repo>/main/dataset-split-70-30.pkl`，需要 embedding 的方法复用
+`outputs/project/<repo>/stage2`，输出到
+`results/project/<repo>/baselines/<method>`；所有正式结果只追加到
 [全仓实验记录](../../results/README.md)。
 
 ### Haggis-CPP
 
 ```bash
 .venv/bin/python -m src.evaluation.haggis_cpp \
-  --dataset outputs/project/leveldb/stage0/dataset.pkl \
-  --output-dir results/baselines/haggis-cpp/leveldb \
+  --dataset results/project/leveldb/main/dataset-split-70-30.pkl \
+  --output-dir results/project/leveldb/baselines/haggis-cpp \
   --iterations 50 --burn-in-fraction 0.75 --alpha 1.0 \
-  --min-posterior-support 0.5 --min-occurrences 3 \
-  --min-files 2 --min-fragment-nodes 3
+  --min-posterior-support 0.25 --min-occurrences 2 \
+  --min-files 1 --min-fragment-nodes 2 --min-candidate-ast-num 3
 
 .venv/bin/python -m src.evaluation.baseline_validation \
   --method haggis-cpp \
-  --idiom-dir results/baselines/haggis-cpp/leveldb \
-  --dataset outputs/project/leveldb/stage0/dataset.pkl \
-  --clusters outputs/project/leveldb/stage2/clusters.pkl
+  --idiom-dir results/project/leveldb/baselines/haggis-cpp \
+  --dataset results/project/leveldb/main/dataset-split-70-30.pkl
 ```
 
 `--max-functions-per-project` 和 `--max-nodes-per-function` 只用于有界 smoke 或资源保护；正式运行必须在 manifest 中说明是否使用。
@@ -396,18 +396,18 @@ Stage 2 非噪声聚类产物；IC 的函数和节点分母由该产物固定，
 
 ```bash
 .venv/bin/python -m src.evaluation.llm_direct_baseline \
-  --dataset outputs/project/leveldb/stage0/dataset.pkl \
-  --output-dir results/baselines/llm-direct-budget/leveldb \
-  --checkpoint outputs/project/leveldb/llm-direct-budget/checkpoint.sqlite3 \
+  --dataset results/project/leveldb/main/dataset-split-70-30.pkl \
+  --output-dir results/project/leveldb/baselines/llm-direct-budget \
+  --checkpoint outputs/project/leveldb/baselines/llm-direct-budget/checkpoint.sqlite3 \
   --token-budget <与CIMAS匹配的总输入输出token预算> \
   --chunk-tokens 3000 --reduce-chunk-tokens 4000 \
   --max-output-tokens 2048
 
 # 中断后使用完全相同的输入、分块和预算续跑
 .venv/bin/python -m src.evaluation.llm_direct_baseline \
-  --dataset outputs/project/leveldb/stage0/dataset.pkl \
-  --output-dir results/baselines/llm-direct-budget/leveldb \
-  --checkpoint outputs/project/leveldb/llm-direct-budget/checkpoint.sqlite3 \
+  --dataset results/project/leveldb/main/dataset-split-70-30.pkl \
+  --output-dir results/project/leveldb/baselines/llm-direct-budget \
+  --checkpoint outputs/project/leveldb/baselines/llm-direct-budget/checkpoint.sqlite3 \
   --resume \
   --token-budget <与CIMAS匹配的总输入输出token预算> \
   --chunk-tokens 3000 --reduce-chunk-tokens 4000 \
@@ -415,9 +415,8 @@ Stage 2 非噪声聚类产物；IC 的函数和节点分母由该产物固定，
 
 .venv/bin/python -m src.evaluation.baseline_validation \
   --method llm-direct-budget \
-  --idiom-dir results/baselines/llm-direct-budget/leveldb \
-  --dataset outputs/project/leveldb/stage0/dataset.pkl \
-  --clusters outputs/project/leveldb/stage2/clusters.pkl
+  --idiom-dir results/project/leveldb/baselines/llm-direct-budget \
+  --dataset results/project/leveldb/main/dataset-split-70-30.pkl
 ```
 
 真实入口会发送源码到配置的模型端点。先用合成代码与 `--max-functions-per-project` 做 smoke，再单独审批公开语料范围、调用数和成本。
@@ -427,15 +426,14 @@ Stage 2 非噪声聚类产物；IC 的函数和节点分母由该产物固定，
 ```bash
 .venv/bin/python -m src.evaluation.stage2_frequency_ablation \
   --clusters outputs/project/leveldb/stage2/clusters.pkl \
-  --output-dir results/ablations/stage2-frequency/leveldb \
+  --output-dir results/project/leveldb/ablations/stage2-frequency \
   --min-cluster-size 3 \
   --selection-ratio <预注册固定值或无监督规则确定值> --max-types 100
 
 .venv/bin/python -m src.evaluation.baseline_validation \
   --method stage2-frequency-ablation \
-  --idiom-dir results/ablations/stage2-frequency/leveldb \
-  --dataset outputs/project/leveldb/stage0/dataset.pkl \
-  --clusters outputs/project/leveldb/stage2/clusters.pkl
+  --idiom-dir results/project/leveldb/ablations/stage2-frequency \
+  --dataset results/project/leveldb/main/dataset-split-70-30.pkl
 ```
 
 运行 manifest 同时记录质量消融定位、原始簇数、最小簇大小过滤后的合格簇数、比例截断数量、数量上限和最终产物数。比例与阈值不得用最终参考/测量指标或人工标签调参；输出进入统一盲化人工质量池。
@@ -445,23 +443,25 @@ Stage 2 非噪声聚类产物；IC 的函数和节点分母由该产物固定，
 ```bash
 .venv/bin/python -m src.evaluation.idiomine_cpp \
   --embeddings outputs/project/leveldb/stage2/embeddings.pkl \
+  --dataset results/project/leveldb/main/dataset-split-70-30.pkl \
   --embedding-model microsoft/unixcoder-base \
-  --eps 0.5 --min-samples 2 \
+  --eps 0.35 --min-samples 2 --min-candidate-ast-num 3 \
   --estimate-only --max-output-tokens 1024 --max-examples-per-judgment 10
 
 .venv/bin/python -m src.evaluation.idiomine_cpp \
   --embeddings outputs/project/leveldb/stage2/embeddings.pkl \
-  --output-dir results/baselines/idiomine-cpp/leveldb \
+  --dataset results/project/leveldb/main/dataset-split-70-30.pkl \
+  --output-dir results/project/leveldb/baselines/idiomine-cpp \
+  --checkpoint outputs/project/leveldb/baselines/idiomine-cpp/checkpoint.sqlite3 \
   --embedding-model microsoft/unixcoder-base \
-  --eps 0.5 --min-samples 2 \
+  --eps 0.35 --min-samples 2 --min-candidate-ast-num 3 \
   --token-budget <审批后的总输入输出token预算> \
   --max-output-tokens 1024 --max-examples-per-judgment 10
 
 .venv/bin/python -m src.evaluation.baseline_validation \
   --method idiomine-cpp \
-  --idiom-dir results/baselines/idiomine-cpp/leveldb \
-  --dataset outputs/project/leveldb/stage0/dataset.pkl \
-  --clusters outputs/project/leveldb/stage2/clusters.pkl
+  --idiom-dir results/project/leveldb/baselines/idiomine-cpp \
+  --dataset results/project/leveldb/main/dataset-split-70-30.pkl
 ```
 
 `--embeddings` 可以重复传入，但每个项目只能出现一次。正式实验应逐仓生成输入并
@@ -483,14 +483,14 @@ Stage 2 非噪声聚类产物；IC 的函数和节点分母由该产物固定，
   --source-root repos/project/leveldb \
   --output outputs/project/leveldb/stage4/idiom-synthesis.pkl
 
-mkdir -p results/main/leveldb
+mkdir -p results/project/leveldb/main
 cp outputs/project/leveldb/stage4/idiom-synthesis.pkl \
-  results/main/leveldb/idiom-synthesis.pkl
+  results/project/leveldb/main/idiom-synthesis.pkl
 
 .venv/bin/python -m src.evaluation.baseline_validation \
-  --method cimas-cpp --idiom-dir results/main/leveldb \
-  --dataset outputs/project/leveldb/stage0/dataset.pkl \
-  --clusters outputs/project/leveldb/stage2/clusters.pkl --allow-main-method
+  --method cimas-cpp --idiom-dir results/project/leveldb/main \
+  --dataset results/project/leveldb/main/dataset-split-70-30.pkl \
+  --stage synthesis --allow-main-method
 ```
 
 阶段4的 `accepted` 是阶段3基础习语与去重后新增合成的最终知识库；

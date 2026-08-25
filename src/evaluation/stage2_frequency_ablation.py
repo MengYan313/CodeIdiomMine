@@ -1,7 +1,7 @@
 """Stage 2 高频聚类消融。
 
 该消融把 Stage 2 DBSCAN 簇直接视为习语种类，不调用 LLM，也不执行 Stage 3
-判断或 Stage 4 合成。它与 IC 机会域共享聚类来源，因此自动覆盖指标只用于诊断
+判断或 Stage 4 合成。它使用统一固定 test 计算自动覆盖指标，但结果只用于诊断
 Stage 2 频率上界；Stage 3/4 的质量增益必须通过盲化人工标注比较。
 """
 
@@ -172,7 +172,7 @@ def main() -> None:
     parser.add_argument("--clusters", default="outputs/library/cli11/stage2/clusters.pkl")
     parser.add_argument(
         "--output-dir",
-        default="results/ablations/stage2-frequency/cli11",
+        default="results/library/cli11/ablations/stage2-frequency",
     )
     parser.add_argument("--min-cluster-size", type=int, default=3)
     parser.add_argument(

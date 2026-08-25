@@ -2,7 +2,7 @@
 
 该 baseline 只保留 IdioMine 中与语言迁移关系最直接的三步：
 
-1. 使用 Parser 已生成的局部 Def-Use 语义片段近似 DCC 子习语；
+1. 使用 Parser 已生成的局部 Def-Use 语义片段和可复用 AST 片段近似 DCC 子习语；
 2. 复用给定 ``embeddings.pkl`` 中的预训练代码嵌入；
 3. 在每个仓库内部独立执行 DBSCAN，并把全部非噪声簇作为习语种类。
 
@@ -23,6 +23,8 @@ from sklearn.cluster import DBSCAN
 from sklearn.metrics import pairwise_distances_argmin_min
 
 from ..common.logging import get_logger
+from ..common.node_kinds import BLOCK_KINDS, STATEMENT_KINDS
+from ..parser.dataset import select_split
 from .baseline_common import (
     is_source_info,
     make_idiom_record,
@@ -36,6 +38,9 @@ logger = get_logger(__name__)
 IDIOMINE_DOI = "10.1145/3597503.3639135"
 IDIOMINE_REFERENCE_REPOSITORY = "https://github.com/Yanming-Yang/idioMine"
 CANDIDATE_ORIGIN = "semantic_def_use"
+AST_CANDIDATE_KINDS = BLOCK_KINDS | STATEMENT_KINDS
+DEFAULT_EPS = 0.35
+DEFAULT_MIN_CANDIDATE_AST_NUM = 3
 
 
 def _as_vector(value: Any) -> np.ndarray:
@@ -53,14 +58,21 @@ def _as_vector(value: Any) -> np.ndarray:
     return vector
 
 
-def _is_dcc_lite_candidate(info: Any) -> bool:
+def _candidate_group(info: Any, min_candidate_ast_num: int) -> str | None:
     if not is_source_info(info):
-        return False
+        return None
     node_info = info[3]
-    return (
-        node_info.get("candidate_origin") == CANDIDATE_ORIGIN
-        and bool(str(node_info.get("code_snippet") or "").strip())
-    )
+    if not str(node_info.get("code_snippet") or "").strip():
+        return None
+    if node_info.get("candidate_origin") == CANDIDATE_ORIGIN:
+        return CANDIDATE_ORIGIN
+    kind = str(node_info.get("kind") or "")
+    if (
+        kind in AST_CANDIDATE_KINDS
+        and int(node_info.get("ast_num", 0) or 0) >= min_candidate_ast_num
+    ):
+        return kind
+    return None
 
 
 def _iter_project_embeddings(
@@ -106,18 +118,24 @@ def _cluster_project(
     sources: Sequence[str],
     embeddings: Sequence[Any],
     infos: Sequence[Any],
+    training_files: set[str],
     embedding_model: str,
     source_embeddings: str,
     eps: float,
     min_samples: int,
-) -> Tuple[List[Dict[str, Any]], Dict[str, int]]:
+    min_candidate_ast_num: int,
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     selected_sources: List[str] = []
     selected_vectors: List[np.ndarray] = []
     selected_infos: List[Sequence[Any]] = []
+    selected_groups: List[str] = []
     invalid_embedding_count = 0
 
     for source, embedding, info in zip(sources, embeddings, infos):
-        if not _is_dcc_lite_candidate(info):
+        group = _candidate_group(info, min_candidate_ast_num)
+        if group is None:
+            continue
+        if str(info[1]) not in training_files:
             continue
         try:
             vector = _as_vector(embedding)
@@ -127,11 +145,13 @@ def _cluster_project(
         selected_sources.append(str(source))
         selected_vectors.append(vector)
         selected_infos.append(info)
+        selected_groups.append(group)
 
     if not selected_vectors:
         return [], {
             "input_candidate_count": len(sources),
-            "dcc_lite_candidate_count": 0,
+            "selected_candidate_count": 0,
+            "candidate_group_counts": {},
             "invalid_embedding_count": invalid_embedding_count,
             "cluster_count": 0,
             "noise_candidate_count": 0,
@@ -142,90 +162,112 @@ def _cluster_project(
         raise ValueError(f"embedding 维度不一致: {sorted(dimensions)}")
 
     matrix = np.stack(selected_vectors)
-    labels = DBSCAN(
-        eps=eps,
-        min_samples=min_samples,
-        metric="cosine",
-    ).fit_predict(matrix)
     idioms: List[Dict[str, Any]] = []
-    cluster_labels = sorted(int(label) for label in set(labels) if label != -1)
-    for label in cluster_labels:
-        indices = np.where(labels == label)[0]
-        points = matrix[indices]
-        centroid = np.mean(points, axis=0)
-        representative_offset, _ = pairwise_distances_argmin_min(
-            np.array([centroid]),
-            points,
+    noise_candidate_count = 0
+    candidate_group_counts = {
+        group: selected_groups.count(group) for group in sorted(set(selected_groups))
+    }
+    for group in sorted(candidate_group_counts):
+        group_indices = np.array(
+            [index for index, value in enumerate(selected_groups) if value == group]
+        )
+        group_matrix = matrix[group_indices]
+        labels = DBSCAN(
+            eps=eps,
+            min_samples=min_samples,
             metric="cosine",
-        )
-        representative_index = int(indices[int(representative_offset[0])])
-        representative_info = selected_infos[representative_index]
-        source_infos = [representative_info]
-        source_infos.extend(
-            selected_infos[int(index)]
-            for index in indices
-            if int(index) != representative_index
-        )
-        idioms.append(
-            make_idiom_record(
-                center_point=selected_sources[representative_index],
-                source_infos=source_infos,
-                provenance={
-                    "method": "idiomine_cpp",
-                    "output_kind": "cluster_candidate",
-                    "source_method": "IdioMine",
-                    "source_doi": IDIOMINE_DOI,
-                    "reference_repository": IDIOMINE_REFERENCE_REPOSITORY,
-                    "embedding_model": embedding_model,
-                    "source_embeddings": source_embeddings,
-                    "cluster_label": label,
-                    "raw_cluster_size": int(len(indices)),
-                    "candidate_representation": (
-                        "semantic_def_use_as_dcc_lite"
-                    ),
-                    "clustering": {
-                        "algorithm": "DBSCAN",
-                        "metric": "cosine",
-                        "eps": eps,
-                        "min_samples": min_samples,
-                    },
-                    "omitted_operations": [
-                        "java_dvcfg",
-                        "exact_dcc",
-                        "heuristic_sub_idiom_association",
-                    ],
-                },
+        ).fit_predict(group_matrix)
+        noise_candidate_count += int(np.sum(labels == -1))
+        for label in sorted(int(value) for value in set(labels) if value != -1):
+            offsets = np.where(labels == label)[0]
+            indices = group_indices[offsets]
+            points = matrix[indices]
+            centroid = np.mean(points, axis=0)
+            representative_offset, _ = pairwise_distances_argmin_min(
+                np.array([centroid]),
+                points,
+                metric="cosine",
             )
-        )
+            representative_index = int(indices[int(representative_offset[0])])
+            representative_info = selected_infos[representative_index]
+            source_infos = [representative_info]
+            source_infos.extend(
+                selected_infos[int(index)]
+                for index in indices
+                if int(index) != representative_index
+            )
+            idioms.append(
+                make_idiom_record(
+                    center_point=selected_sources[representative_index],
+                    source_infos=source_infos,
+                    provenance={
+                        "method": "idiomine_cpp",
+                        "output_kind": "cluster_candidate",
+                        "source_method": "IdioMine",
+                        "source_doi": IDIOMINE_DOI,
+                        "reference_repository": IDIOMINE_REFERENCE_REPOSITORY,
+                        "embedding_model": embedding_model,
+                        "source_embeddings": source_embeddings,
+                        "cluster_group": group,
+                        "cluster_label": label,
+                        "raw_cluster_size": int(len(indices)),
+                        "candidate_representation": (
+                            "semantic_def_use_and_reusable_ast_fragments"
+                        ),
+                        "clustering": {
+                            "algorithm": "DBSCAN",
+                            "metric": "cosine",
+                            "eps": eps,
+                            "min_samples": min_samples,
+                            "partition": "candidate_group",
+                        },
+                        "omitted_operations": [
+                            "java_dvcfg",
+                            "exact_dcc",
+                            "heuristic_sub_idiom_association",
+                        ],
+                    },
+                )
+            )
 
     return idioms, {
         "input_candidate_count": len(sources),
-        "dcc_lite_candidate_count": len(selected_vectors),
+        "selected_candidate_count": len(selected_vectors),
+        "candidate_group_counts": candidate_group_counts,
         "invalid_embedding_count": invalid_embedding_count,
-        "cluster_count": len(cluster_labels),
-        "noise_candidate_count": int(np.sum(labels == -1)),
+        "cluster_count": len(idioms),
+        "noise_candidate_count": noise_candidate_count,
     }
 
 
 def build_idiomine_cpp_candidate_artifacts(
     embedding_paths: Iterable[str | Path],
+    dataset_path: str | Path,
     output_dir: str | Path,
     *,
     embedding_model: str,
-    eps: float = 0.5,
+    eps: float = DEFAULT_EPS,
     min_samples: int = 2,
+    min_candidate_ast_num: int = DEFAULT_MIN_CANDIDATE_AST_NUM,
 ) -> Dict[str, int]:
     """为单一 IdioMine-CPP baseline 构造内部候选簇产物。"""
     if not 0 < eps <= 1:
         raise ValueError("eps 必须位于 (0, 1]")
     if min_samples < 2:
         raise ValueError("min_samples 必须大于等于 2")
+    if min_candidate_ast_num < 1:
+        raise ValueError("候选 AST 节点数阈值必须为正数")
     if not embedding_model.strip():
         raise ValueError("embedding_model 不能为空")
 
     counts: Dict[str, int] = {}
     project_manifest: List[Dict[str, Any]] = []
     source_paths: List[str] = []
+    train = select_split(pd.read_pickle(dataset_path), "train")
+    training_files = {
+        str(row["project"]): {str(path) for path in row["cppFile"]}
+        for _, row in train.iterrows()
+    }
 
     for project, path, sources, embeddings, infos in _iter_project_embeddings(
         embedding_paths
@@ -235,10 +277,12 @@ def build_idiomine_cpp_candidate_artifacts(
             sources=sources,
             embeddings=embeddings,
             infos=infos,
+            training_files=training_files[project],
             embedding_model=embedding_model,
             source_embeddings=str(path),
             eps=eps,
             min_samples=min_samples,
+            min_candidate_ast_num=min_candidate_ast_num,
         )
         output_path = write_project_idioms(output_dir, project, idioms)
         counts[project] = len(idioms)
@@ -251,9 +295,9 @@ def build_idiomine_cpp_candidate_artifacts(
             }
         )
         logger.info(
-            "IdioMine-CPP 候选 %s: DCC-lite=%d, clusters=%d, noise=%d -> %s",
+            "IdioMine-CPP 候选 %s: selected=%d, clusters=%d, noise=%d -> %s",
             project,
-            statistics["dcc_lite_candidate_count"],
+            statistics["selected_candidate_count"],
             len(idioms),
             statistics["noise_candidate_count"],
             output_path,
@@ -266,8 +310,9 @@ def build_idiomine_cpp_candidate_artifacts(
             "artifact_kind": "candidate_clusters",
             "is_mock": False,
             "description": (
-                "使用 C++ Parser 的 semantic_def_use 片段近似 IdioMine DCC，"
-                "复用预先生成的代码嵌入，并按仓库独立执行 DBSCAN；"
+                "使用 C++ Parser 的 semantic_def_use 与可复用 AST 片段近似 "
+                "IdioMine DCC，复用预先生成的代码嵌入，并按仓库和候选类型"
+                "隔离执行 DBSCAN；"
                 "该产物仅是 IdioMine-CPP 内部候选，不构成独立 baseline。"
             ),
             "source_method": {
@@ -276,8 +321,12 @@ def build_idiomine_cpp_candidate_artifacts(
                 "reference_repository": IDIOMINE_REFERENCE_REPOSITORY,
             },
             "source_embeddings": sorted(set(source_paths)),
+            "dataset": str(dataset_path),
+            "training_split": "train",
             "parameters": {
-                "candidate_origin": CANDIDATE_ORIGIN,
+                "candidate_origins": [CANDIDATE_ORIGIN, "reusable_ast_fragment"],
+                "ast_candidate_kinds": sorted(AST_CANDIDATE_KINDS),
+                "min_candidate_ast_num": min_candidate_ast_num,
                 "embedding_model": embedding_model,
                 "eps": eps,
                 "min_samples": min_samples,
@@ -290,8 +339,9 @@ def build_idiomine_cpp_candidate_artifacts(
             "adaptation": {
                 "kept_operations": [
                     "dependency_chain_candidate_extraction",
+                    "reusable_ast_fragment_expansion",
                     "pretrained_code_embedding",
-                    "repository_isolated_dbscan",
+                    "repository_and_candidate_group_isolated_dbscan",
                 ],
                 "omitted_operations": [
                     "java_dvcfg",

@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Dict, Mapping
 
 from ..common.logging import get_logger
+from ._idiomine_cpp_candidates import DEFAULT_EPS, DEFAULT_MIN_CANDIDATE_AST_NUM
 from .baseline_common import is_source_info, validate_metric_payload
 from .idiom_metrics import (
     DEFAULT_EVALUATION_MODE,
@@ -101,29 +102,36 @@ def _validate_output_selection_contract(
         if not isinstance(parameters, Mapping):
             raise ValueError(f"{manifest_path} 缺少 IdioMine-CPP 参数")
         if (
-            parameters.get("candidate_origin") != "semantic_def_use"
+            parameters.get("candidate_origins")
+            != ["semantic_def_use", "reusable_ast_fragment"]
             or parameters.get("metric") != "cosine"
             or not str(parameters.get("embedding_model") or "").strip()
             or parameters.get("region_grouping")
-            != "exact_representative_project_file_function_extent"
+            != "all_supported_project_file_function_extents"
         ):
             raise ValueError("IdioMine-CPP 的候选、embedding 或分组参数无效")
         try:
             eps = float(parameters["eps"])
             min_samples = int(parameters["min_samples"])
+            min_candidate_ast_num = int(parameters["min_candidate_ast_num"])
             token_budget = int(parameters["token_budget"])
             max_output_tokens = int(parameters["max_output_tokens"])
             max_examples = int(parameters["max_examples_per_judgment"])
         except (KeyError, TypeError, ValueError) as error:
             raise ValueError("IdioMine-CPP 参数不完整") from error
         if (
-            eps != 0.5
+            eps != DEFAULT_EPS
             or min_samples != 2
+            or min_candidate_ast_num != DEFAULT_MIN_CANDIDATE_AST_NUM
             or token_budget < 1
             or max_output_tokens < 1
             or max_examples < 1
         ):
-            raise ValueError("IdioMine-CPP 参数无效，正式配置要求 eps=0.5、min_samples=2")
+            raise ValueError(
+                "IdioMine-CPP 参数无效，正式配置要求 "
+                f"eps={DEFAULT_EPS}、min_samples=2、"
+                f"min_candidate_ast_num={DEFAULT_MIN_CANDIDATE_AST_NUM}"
+            )
 
         adaptation = manifest.get("adaptation")
         if (
@@ -140,7 +148,7 @@ def _validate_output_selection_contract(
             pipeline.get("judgment")
             != "one_independent_call_per_candidate_cluster"
             or pipeline.get("synthesis")
-            != "one_attempt_per_same_region_group_of_accepted_idioms"
+            != "one_attempt_per_shared_region_group_of_accepted_idioms"
             or pipeline.get("post_synthesis_judgment") is not False
             or pipeline.get("final_output")
             != "accepted_independent_idioms_plus_direct_syntheses"
@@ -160,6 +168,8 @@ def _validate_output_selection_contract(
             raise ValueError("IdioMine-CPP 内部候选选择合同无效")
         if manifest.get("token_budget_exhausted") is True:
             raise ValueError("IdioMine-CPP token 预算耗尽，产物不完整")
+        if manifest.get("technical_failure_count") != 0:
+            raise ValueError("IdioMine-CPP 含有未恢复的技术失败")
         return dict(output_selection)
 
     return {"policy": "method_specific", "final_idiom_count_cap": None}
@@ -214,11 +224,9 @@ def validate_method_metrics(
     method: str,
     idiom_dir: str | Path,
     dataset_path: str | Path,
-    cluster_path: str | Path,
     output_path: str | Path | None = None,
     artifact_stage: str = "judgment",
     evaluation_mode: str = DEFAULT_EVALUATION_MODE,
-    fold_count: int = 5,
     require_baseline_provenance: bool = True,
 ) -> Dict[str, Any]:
     idiom_dir = Path(idiom_dir)
@@ -243,10 +251,8 @@ def validate_method_metrics(
         str(idiom_dir),
         str(dataset_path),
         str(output_path),
-        str(cluster_path),
         artifact_stage=artifact_stage,
         evaluation_mode=evaluation_mode,
-        fold_count=fold_count,
     )
     metric_contract = validate_metric_payload(payload)
     report = {
@@ -277,7 +283,6 @@ def main() -> None:
     parser.add_argument("--method", required=True)
     parser.add_argument("--idiom-dir", required=True)
     parser.add_argument("--dataset", default="outputs/library/cli11/stage0/dataset.pkl")
-    parser.add_argument("--clusters", required=True)
     parser.add_argument("--output", default=None)
     parser.add_argument(
         "--stage", choices=("judgment", "synthesis"), default="judgment"
@@ -288,7 +293,6 @@ def main() -> None:
         default=DEFAULT_EVALUATION_MODE,
         help="Haggis 固定 train/test 留出评价",
     )
-    parser.add_argument("--folds", type=int, default=5)
     parser.add_argument(
         "--allow-main-method",
         action="store_true",
@@ -299,11 +303,9 @@ def main() -> None:
         method=args.method,
         idiom_dir=args.idiom_dir,
         dataset_path=args.dataset,
-        cluster_path=args.clusters,
         output_path=args.output,
         artifact_stage=args.stage,
         evaluation_mode=args.mode,
-        fold_count=args.folds,
         require_baseline_provenance=not args.allow_main_method,
     )
 

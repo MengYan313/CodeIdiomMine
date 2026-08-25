@@ -5,7 +5,7 @@
 ```bash
 .venv/bin/python -m src.idiom_judgment.judge_clusters \
   --input outputs/library/cli11/stage2/clusters.pkl \
-  --source-root repos/cli11 --require-context \
+  --source-root repos/library/cli11 --require-context \
   --checkpoint outputs/library/cli11/stage3/checkpoint.sqlite3 \
   --output outputs/library/cli11/stage3/idiom-judgment.pkl \
   --report outputs/library/cli11/stage3/report.json

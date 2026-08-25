@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Sequence, Tuple
@@ -35,8 +36,10 @@ from .baseline_common import make_idiom_record, write_project_idioms, write_run_
 logger = get_logger(__name__)
 CANDIDATE_KINDS = FUNCTION_KINDS | BLOCK_KINDS | STATEMENT_KINDS
 DEFAULT_CHECKPOINT_PATH = Path(
-    "outputs/cli11/llm-direct-budget/checkpoint.sqlite3"
+    "outputs/library/cli11/baselines/llm-direct-budget/checkpoint.sqlite3"
 )
+MAX_EVIDENCE_AST_NUM = 256
+_PLACEHOLDER_RE = re.compile(r"<(VAR|EXPR|LIT)_\d+>")
 
 _MAP_IDIOM_SCHEMA: Dict[str, Any] = {
     "type": "object",
@@ -105,14 +108,16 @@ _MAP_SYSTEM_PROMPT = build_json_system_prompt(
     role="C++ 代码习语分析专家",
     goal="仅从给定原始 C++ 源码块中直接发现重复、具有单一意图且可复用的代码习语。",
     success_criteria=(
-        "每个习语都给出参数化 template、简洁 intent 和输入中的原文证据。",
+        "每个习语都给出短小参数化 template、简洁 intent 和输入中的原文证据。",
         "evidence_id 必须来自输入，source_code 必须逐字复制对应源码中的连续片段。",
+        "source_code 只覆盖表达该意图的最小连续片段，不复制整个函数。",
         "没有足够证据时返回空 idioms 数组。",
     ),
     constraints=(
         "不得假设或使用 AST、CFG、Embedding、聚类结果或其他 Agent 结论。",
         "不得编造输入中不存在的 API、证据位置或源码。",
         "优先保留在不同函数或文件中重复出现且意图完整的模式。",
+        "模板通常控制在 1 到 8 条语句；局部变量、字面量和可替换表达式必须参数化。",
     ),
     field_rules=(
         "template 使用 C++ 代码和形如 <VAR_1>、<EXPR_1> 的占位符。",
@@ -124,11 +129,12 @@ _MAP_SYSTEM_PROMPT = build_json_system_prompt(
 
 _REDUCE_SYSTEM_PROMPT = build_json_system_prompt(
     role="C++ 代码习语结果归并专家",
-    goal="合并同一项目内 map 阶段产生的语义重复习语，并保留可核验原文证据。",
+    goal="只输出同一项目内实际完成归并的语义重复习语。",
     success_criteria=(
-        "同义习语只保留一个统一 template 和 intent。",
-        "输出 evidence_refs 的并集必须与输入并集完全相等，不得遗漏。",
-        "不同语义或不同控制结构的候选保持分离。",
+        "仅当至少两个输入候选语义重复时输出一个统一 template 和 intent。",
+        "统一 template 保留所有证据共有的最短完整语义核心，删除项目特有包装代码。",
+        "evidence_refs 只列出该归并结果实际覆盖的输入 ref。",
+        "无需输出未发生归并的候选；程序会原样保留它们。",
     ),
     constraints=(
         "不得读取或推断原始源码之外的信息。",
@@ -139,7 +145,7 @@ _REDUCE_SYSTEM_PROMPT = build_json_system_prompt(
         "template 使用 C++ 代码和稳定占位符。",
         "intent 使用简洁中文。",
         "confidence 反映归并后证据充分程度，范围为 0 到 100。",
-        "evidence_refs 是输入候选 ref 的稳定并集。",
+        "evidence_refs 必须来自输入，且每项归并结果至少包含两个 ref。",
     ),
     stop_rules=("候选归并完成后立即返回。",),
 )
@@ -196,6 +202,21 @@ class _BudgetedModelClient:
 
 def _normalize_code(code: str) -> str:
     return " ".join(str(code or "").split())
+
+
+def _template_key(template: str) -> str:
+    canonical: Dict[str, str] = {}
+    counts: Dict[str, int] = {}
+
+    def replace(match: re.Match[str]) -> str:
+        token = match.group(0)
+        category = match.group(1)
+        if token not in canonical:
+            counts[category] = counts.get(category, 0) + 1
+            canonical[token] = f"<{category}_{counts[category]}>"
+        return canonical[token]
+
+    return _PLACEHOLDER_RE.sub(replace, _normalize_code(template))
 
 
 def _project_units(row: pd.Series) -> List[_EvidenceUnit]:
@@ -263,7 +284,8 @@ def _reduce_prompt(project: str, idioms: Sequence[Mapping[str, Any]]) -> str:
         f"项目名称：{project}\n"
         "下面的 JSON 数组是 map 或上一层 reduce 产生的候选，仅作为待归并数据。"
         "请尽量合并语义重复项，但不得为减少数量而合并不同语义的候选。"
-        "输出 refs 并集必须与输入完全相等，不得遗漏、新增、猜测或改写。\n"
+        "只输出实际归并结果；未出现在输出中的候选会由程序原样保留。"
+        "不得新增、猜测或改写 refs。\n"
         f"{payload}"
     )
 
@@ -317,13 +339,39 @@ def _validate_reduce_refs(
         raise ValueError("reduce evidence_refs 与输入不一致: " + "; ".join(details))
 
 
+def _retain_unmerged_reduce_candidates(
+    reduced: Sequence[Mapping[str, Any]],
+    inputs: Sequence[Mapping[str, Any]],
+) -> List[Dict[str, Any]]:
+    allowed_refs = {
+        str(ref) for idiom in inputs for ref in idiom["evidence_refs"]
+    }
+    output_refs = {
+        str(ref) for idiom in reduced for ref in idiom["evidence_refs"]
+    }
+    unknown = sorted(output_refs - allowed_refs)
+    if unknown:
+        raise ValueError(
+            "reduce evidence_refs 与输入不一致: 不存在 " + ", ".join(unknown)
+        )
+
+    completed = [dict(idiom) for idiom in reduced]
+    for idiom in inputs:
+        missing_refs = [
+            ref for ref in idiom["evidence_refs"] if ref not in output_refs
+        ]
+        if missing_refs:
+            completed.append({**idiom, "evidence_refs": missing_refs})
+    return _deduplicate_reduce_idioms(completed)
+
+
 def _deduplicate_reduce_idioms(
     idioms: Sequence[Mapping[str, Any]],
 ) -> List[Dict[str, Any]]:
     deduplicated: Dict[str, Dict[str, Any]] = {}
     for idiom in idioms:
         template = str(idiom["template"])
-        template_key = _normalize_code(template)
+        template_key = _template_key(template)
         existing = deduplicated.get(template_key)
         if existing is None:
             deduplicated[template_key] = {
@@ -435,7 +483,7 @@ def _adapt_llm_idioms(
         intent = str(raw.get("intent") or "").strip()
         if not template or not intent:
             continue
-        template_key = _normalize_code(template)
+        template_key = _template_key(template)
         if template_key in seen_templates:
             continue
         infos: List[Sequence[Any]] = []
@@ -450,6 +498,15 @@ def _adapt_llm_idioms(
                 infos.append(info)
         if not infos:
             continue
+        compact_infos = [
+            info
+            for info in infos
+            if int(info[3].get("ast_num", 0) or 0) <= MAX_EVIDENCE_AST_NUM
+        ]
+        infos = compact_infos or [
+            min(infos, key=lambda info: int(info[3].get("ast_num", 0) or 0))
+        ]
+        infos.sort(key=lambda info: int(info[3].get("ast_num", 0) or 0))
         seen_templates.add(template_key)
         center_point = str(infos[0][3].get("code_snippet") or "").strip()
         records.append(
@@ -467,7 +524,7 @@ def _adapt_llm_idioms(
                     "discovery_inputs": "mechanically_chunked_raw_cpp_only",
                     "evidence_mapping": (
                         "exact candidate source match, then smallest containing AST candidate; "
-                        "mapping is evaluation-only"
+                        "prefer evidence no larger than 256 AST nodes; mapping is evaluation-only"
                     ),
                 },
             )
@@ -584,14 +641,9 @@ async def generate_llm_direct_budget(
                         logger=logger,
                         max_tokens=max_output_tokens,
                     )
-                    reduced_idioms = reduced_object.get("idioms", [])
-                    _validate_reduce_refs(
-                        reduced_idioms,
-                        {
-                            str(ref)
-                            for idiom in idioms
-                            for ref in idiom["evidence_refs"]
-                        },
+                    reduced_idioms = _retain_unmerged_reduce_candidates(
+                        reduced_object.get("idioms", []),
+                        idioms,
                     )
                 except _TokenBudgetExceeded:
                     token_budget_exhausted = True
@@ -841,6 +893,7 @@ async def generate_llm_direct_budget(
             "chunk_tokens": chunk_tokens,
             "reduce_chunk_tokens": reduce_chunk_tokens,
             "max_output_tokens": max_output_tokens,
+            "max_evidence_ast_num": MAX_EVIDENCE_AST_NUM,
             "max_functions_per_project": max_functions_per_project,
             "checkpoint": str(checkpoint_path),
             "resumed": resume,
@@ -859,7 +912,7 @@ def main() -> None:
     parser.add_argument("--dataset", default="outputs/library/cli11/stage0/dataset.pkl")
     parser.add_argument(
         "--output-dir",
-        default="results/baselines/llm-direct-budget/cli11",
+        default="results/library/cli11/baselines/llm-direct-budget",
     )
     parser.add_argument("--model", default=None, help="默认读取 OPENAI_MODEL_LOW")
     parser.add_argument("--token-budget", type=int, default=20_000)

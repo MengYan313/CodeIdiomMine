@@ -24,10 +24,12 @@ from src.evaluation.llm_direct_baseline import (
     _MAP_IDIOM_SCHEMA,
     _MAP_SYSTEM_PROMPT,
     _chunk_reduce_candidates,
+    _deduplicate_reduce_idioms,
     _map_prompt,
     _project_units,
     _reduce_input_tokens,
     _register_reduce_evidence,
+    _retain_unmerged_reduce_candidates,
     _restore_reduce_evidence,
     _validate_reduce_refs,
     generate_llm_direct_budget,
@@ -239,6 +241,37 @@ class _QueuedJsonClient:
 
 
 class BaselineEndToEndTests(unittest.TestCase):
+    def test_llm_direct_deduplicates_placeholder_numbering_variants(self):
+        idioms = [
+            {
+                "template": "if (<EXPR_1>) { return <VAR_1>; }",
+                "intent": "条件返回",
+                "confidence": 80,
+                "evidence_refs": ["R000001"],
+            },
+            {
+                "template": "if (<EXPR_9>) { return <VAR_3>; }",
+                "intent": "条件返回",
+                "confidence": 90,
+                "evidence_refs": ["R000002"],
+            },
+        ]
+
+        deduplicated = _deduplicate_reduce_idioms(idioms)
+
+        self.assertEqual(len(deduplicated), 1)
+        self.assertEqual(
+            deduplicated[0]["evidence_refs"],
+            ["R000001", "R000002"],
+        )
+        distinct_bindings = _deduplicate_reduce_idioms(
+            [
+                {**idioms[0], "template": "use(<VAR_1>, <VAR_1>);"},
+                {**idioms[1], "template": "use(<VAR_1>, <VAR_2>);"},
+            ]
+        )
+        self.assertEqual(len(distinct_bindings), 2)
+
     def test_output_contract_rejects_invalid_caps(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
@@ -310,13 +343,17 @@ class BaselineEndToEndTests(unittest.TestCase):
                 json.dumps(
                     {
                         "parameters": {
-                            "candidate_origin": "semantic_def_use",
+                            "candidate_origins": [
+                                "semantic_def_use",
+                                "reusable_ast_fragment",
+                            ],
                             "embedding_model": "synthetic",
-                            "eps": 0.5,
+                            "eps": 0.35,
                             "min_samples": 2,
+                            "min_candidate_ast_num": 3,
                             "metric": "cosine",
                             "region_grouping": (
-                                "exact_representative_project_file_function_extent"
+                                "all_supported_project_file_function_extents"
                             ),
                             "token_budget": 10_000,
                             "max_output_tokens": 256,
@@ -338,7 +375,7 @@ class BaselineEndToEndTests(unittest.TestCase):
                                 "one_independent_call_per_candidate_cluster"
                             ),
                             "synthesis": (
-                                "one_attempt_per_same_region_group_of_accepted_idioms"
+                                "one_attempt_per_shared_region_group_of_accepted_idioms"
                             ),
                             "post_synthesis_judgment": False,
                             "final_output": (
@@ -366,13 +403,17 @@ class BaselineEndToEndTests(unittest.TestCase):
                 json.dumps(
                     {
                         "parameters": {
-                            "candidate_origin": "semantic_def_use",
+                            "candidate_origins": [
+                                "semantic_def_use",
+                                "reusable_ast_fragment",
+                            ],
                             "embedding_model": "synthetic",
-                            "eps": 0.5,
+                            "eps": 0.35,
                             "min_samples": 2,
+                            "min_candidate_ast_num": 3,
                             "metric": "cosine",
                             "region_grouping": (
-                                "exact_representative_project_file_function_extent"
+                                "all_supported_project_file_function_extents"
                             ),
                             "token_budget": 10_000,
                             "max_output_tokens": 256,
@@ -394,7 +435,7 @@ class BaselineEndToEndTests(unittest.TestCase):
                                 "one_independent_call_per_candidate_cluster"
                             ),
                             "synthesis": (
-                                "one_attempt_per_same_region_group_of_accepted_idioms"
+                                "one_attempt_per_shared_region_group_of_accepted_idioms"
                             ),
                             "post_synthesis_judgment": True,
                             "final_output": (
@@ -422,7 +463,7 @@ class BaselineEndToEndTests(unittest.TestCase):
             manifest["pipeline"]["post_synthesis_judgment"] = False
             manifest["parameters"]["eps"] = 0.25
             manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-            with self.assertRaisesRegex(ValueError, "eps=0.5"):
+            with self.assertRaisesRegex(ValueError, "eps=0.35"):
                 _validate_output_selection_contract(
                     "idiomine-cpp",
                     root,
@@ -634,7 +675,7 @@ class BaselineEndToEndTests(unittest.TestCase):
                 )
 
         self.assertEqual(DEFAULT_CHECKPOINT_PATH, Path(
-            "outputs/cli11/llm-direct-budget/checkpoint.sqlite3"
+            "outputs/library/cli11/baselines/llm-direct-budget/checkpoint.sqlite3"
         ))
         self.assertEqual(counts, {"alpha": 0})
         self.assertEqual(client.calls, 1)
@@ -872,14 +913,14 @@ class BaselineEndToEndTests(unittest.TestCase):
                     if record["kind"] == "reduce"
                 }
 
-        self.assertEqual(resumed_client.calls, 6)
-        self.assertEqual(counts, {"alpha": 2})
+        self.assertEqual(resumed_client.calls, 4)
+        self.assertEqual(counts, {"alpha": 1})
         self.assertEqual(manifest["projects"][0]["map_call_count"], 1)
-        self.assertEqual(manifest["projects"][0]["reduce_call_count"], 7)
-        self.assertEqual(manifest["call_count"], 8)
-        self.assertEqual(manifest["endpoint_request_count"], 9)
+        self.assertEqual(manifest["projects"][0]["reduce_call_count"], 5)
+        self.assertEqual(manifest["call_count"], 6)
+        self.assertEqual(manifest["endpoint_request_count"], 7)
         self.assertEqual(manifest["reduce_chunk_tokens"], reduce_chunk_tokens)
-        self.assertEqual(len(artifact["accepted"]), 2)
+        self.assertEqual(len(artifact["accepted"]), 1)
         self.assertEqual(
             reduce_keys,
             {
@@ -888,8 +929,6 @@ class BaselineEndToEndTests(unittest.TestCase):
                 ("alpha", 0, 2),
                 ("alpha", 0, 3),
                 ("alpha", 1, 0),
-                ("alpha", 1, 1),
-                ("alpha", 2, 0),
             },
         )
 
@@ -928,6 +967,76 @@ class BaselineEndToEndTests(unittest.TestCase):
             _validate_reduce_refs([], {"R000000"})
         with self.assertRaisesRegex(ValueError, "遗漏 R000001"):
             _validate_reduce_refs(reduced, {"R000000", "R000001"})
+
+    def test_reduce_retains_candidates_not_merged_by_model(self):
+        inputs = [
+            {
+                "template": f"template {index}",
+                "intent": f"intent {index}",
+                "confidence": 90,
+                "evidence_refs": [f"R{index:06d}"],
+            }
+            for index in range(3)
+        ]
+        merged = {
+            "template": "merged template",
+            "intent": "merged intent",
+            "confidence": 95,
+            "evidence_refs": ["R000000", "R000001"],
+        }
+
+        completed = _retain_unmerged_reduce_candidates([merged], inputs)
+
+        self.assertEqual(completed, [merged, inputs[2]])
+        self.assertEqual(
+            _retain_unmerged_reduce_candidates([], inputs),
+            inputs,
+        )
+        with self.assertRaisesRegex(ValueError, "不存在 R999999"):
+            _retain_unmerged_reduce_candidates(
+                [{**merged, "evidence_refs": ["R999999"]}],
+                inputs,
+            )
+
+    def test_llm_budget_accepts_empty_reduce_and_keeps_map_candidates(self):
+        data, _, evidence_code = _fixture()
+        data = data.iloc[[0]].reset_index(drop=True)
+        map_candidate = {
+            "template": "if (<EXPR_1>) { return <EXPR_2>; }",
+            "intent": "条件满足时返回。",
+            "confidence": 90,
+            "evidence": [
+                {
+                    "evidence_id": "E00000-00000",
+                    "source_code": evidence_code["alpha"],
+                }
+            ],
+        }
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            dataset_path = root / "dataset.pkl"
+            output_dir = root / "llm"
+            data.to_pickle(dataset_path)
+
+            counts = asyncio.run(
+                generate_llm_direct_budget(
+                    dataset_path,
+                    output_dir,
+                    model="fake-low",
+                    token_budget=30_000,
+                    chunk_tokens=3_000,
+                    max_output_tokens=256,
+                    model_client=_QueuedJsonClient(
+                        [{"idioms": [map_candidate]}, {"idioms": []}]
+                    ),
+                    checkpoint_path=output_dir / "checkpoint.sqlite3",
+                )
+            )
+            with (output_dir / "alpha_idiom.pkl").open("rb") as file:
+                artifact = pickle.load(file)
+
+        self.assertEqual(counts, {"alpha": 1})
+        self.assertEqual(len(artifact["accepted"]), 1)
 
     def test_llm_budget_checkpoints_usage_when_reduce_returns_unknown_ref(self):
         data, _, evidence_code = _fixture()
@@ -1028,6 +1137,14 @@ class BaselineEndToEndTests(unittest.TestCase):
                     {"idioms": map_candidates},
                     {"idioms": [candidates[0]]},
                     {"idioms": [candidates[1]]},
+                    {
+                        "idioms": [
+                            {
+                                **candidates[0],
+                                "evidence_refs": ["R000000", "R000001"],
+                            }
+                        ]
+                    },
                 ]
             )
 
@@ -1055,10 +1172,10 @@ class BaselineEndToEndTests(unittest.TestCase):
                     if record["kind"] == "project"
                 ]
 
-        self.assertEqual(client.calls, 3)
-        self.assertEqual(counts, {"alpha": 2})
-        self.assertEqual(len(artifact["accepted"]), 2)
-        self.assertTrue(all(item["cnt"] == 1 for item in artifact["accepted"]))
+        self.assertEqual(client.calls, 4)
+        self.assertEqual(counts, {"alpha": 1})
+        self.assertEqual(len(artifact["accepted"]), 1)
+        self.assertEqual(artifact["accepted"][0]["cnt"], 2)
         self.assertEqual(len(completed), 1)
 
     def test_llm_budget_deduplicates_before_deciding_reduce_progress(self):
@@ -1230,14 +1347,16 @@ class BaselineEndToEndTests(unittest.TestCase):
                 asyncio.run(
                     run_idiomine_cpp_baseline(
                         [embeddings_path],
+                        dataset_path,
                         idiomine_dir,
                         embedding_model="synthetic-test-embedding",
-                        eps=0.5,
+                        eps=0.35,
                         min_samples=2,
                         model="fake-low",
                         token_budget=30_000,
                         max_output_tokens=256,
                         model_client=idiomine_client,
+                        checkpoint_path=idiomine_dir / "checkpoint.sqlite3",
                     )
                 ),
                 {"alpha": 1, "beta": 1, "gamma": 1},
@@ -1286,7 +1405,6 @@ class BaselineEndToEndTests(unittest.TestCase):
                     method=method,
                     idiom_dir=idiom_dir,
                     dataset_path=dataset_path,
-                    cluster_path=clusters_path,
                     require_baseline_provenance=require_provenance,
                 )
                 self.assertEqual(report["status"], "passed")

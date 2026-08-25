@@ -6,8 +6,9 @@
 
 ```bash
 .venv/bin/python -m src.utils.export_artifacts \
-  --input-dir outputs/cli11 --output-dir outputs/cli11/readables --limit 100 \
-  --result-dir results/main/cli11
+  --input-dir outputs/library/cli11 \
+  --output-dir outputs/library/cli11/readables --limit 100 \
+  --result-dir results/library/cli11/main
 
 .venv/bin/python -m src.utils.pkl2csv --help
 ```

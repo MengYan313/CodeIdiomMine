@@ -8,19 +8,15 @@
 - F1: 最终 IC 与 ISP 的调和平均数
 - 习语库结构: 种类数、平均簇大小、平均跨函数支持数和 AvgAST
 
-习语发现只读取冻结 train 文件，主指标只读取冻结 test 文件。原有机会域、
-跨函数支持、完整函数覆盖和 train 内轮转五折继续作为诊断指标。
+习语发现只读取冻结 train 文件，主指标只读取冻结 test 文件。
 """
 
 from importlib import import_module
 
 __all__ = [
-    "compute_idiom_coverage",
-    "compute_idiom_set_precision",
     "compute_f1",
-    "compute_avg_idiom_size",
     "compute_idiom_library_stats",
-    "evaluate_project_kfold",
+    "evaluate_project",
     "evaluate_cpp",
 ]
 

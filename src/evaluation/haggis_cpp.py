@@ -285,7 +285,10 @@ class _PointwiseCollapsedGibbsSampler:
             self._sample_at(node)
 
 
-def _eligible_occurrences(trees: Sequence[_Node]) -> Dict[FragmentKey, List[Sequence[Any]]]:
+def _eligible_occurrences(
+    trees: Sequence[_Node],
+    min_candidate_ast_num: int,
+) -> Dict[FragmentKey, List[Sequence[Any]]]:
     occurrences: Dict[FragmentKey, List[Sequence[Any]]] = defaultdict(list)
     for tree in trees:
         for node in _iter_nodes(tree):
@@ -294,7 +297,11 @@ def _eligible_occurrences(trees: Sequence[_Node]) -> Dict[FragmentKey, List[Sequ
             kind = str(node.node_info.get("kind") or "")
             ast_num = int(node.node_info.get("ast_num", 0) or 0)
             code = str(node.node_info.get("code_snippet") or "").strip()
-            if kind not in CANDIDATE_KINDS or ast_num < 5 or not code:
+            if (
+                kind not in CANDIDATE_KINDS
+                or ast_num < min_candidate_ast_num
+                or not code
+            ):
                 continue
             occurrences[_fragment_key(node)].append(node.source_info)
     return occurrences
@@ -340,10 +347,11 @@ def mine_haggis_cpp(
     alpha: float = 1.0,
     seed: int = 0,
     percent_roots_init: float = 0.9,
-    min_posterior_support: float = 0.5,
-    min_occurrences: int = 3,
-    min_files: int = 2,
-    min_fragment_nodes: int = 3,
+    min_posterior_support: float = 0.25,
+    min_occurrences: int = 2,
+    min_files: int = 1,
+    min_fragment_nodes: int = 2,
+    min_candidate_ast_num: int = 3,
     max_functions_per_project: int | None = None,
     max_nodes_per_function: int | None = None,
 ) -> Dict[str, int]:
@@ -357,6 +365,8 @@ def mine_haggis_cpp(
         raise ValueError("min_posterior_support 必须位于 [0, 1]")
     if min_occurrences < 1 or min_files < 1 or min_fragment_nodes < 1:
         raise ValueError("出现次数、文件数和片段节点数阈值必须为正数")
+    if min_candidate_ast_num < 1:
+        raise ValueError("候选 AST 节点数阈值必须为正数")
     if max_functions_per_project is not None and max_functions_per_project < 1:
         raise ValueError("max_functions_per_project 必须为正数或 None")
     if max_nodes_per_function is not None and max_nodes_per_function < 1:
@@ -394,7 +404,7 @@ def mine_haggis_cpp(
             if iteration < burn_in_iterations:
                 continue
             collected_samples += 1
-            occurrences = _eligible_occurrences(trees)
+            occurrences = _eligible_occurrences(trees, min_candidate_ast_num)
             for fragment, infos in occurrences.items():
                 presence[fragment] += 1
                 occurrence_sum[fragment] += len(infos)
@@ -462,7 +472,7 @@ def mine_haggis_cpp(
                             "逐点 collapsed Gibbs 替代原命令的 type-blocked 混合加速",
                             "按有序子节点编码，未复用 JDT property binarization",
                             "标识符和字面量按 Tree-sitter 节点类别抽象",
-                            "输出投影仅保留函数/块/语句根且 ast_num>=5 的当前评价候选",
+                            "输出投影保留函数/块/语句根且满足候选 AST 节点数阈值",
                         ],
                     },
                 )
@@ -510,6 +520,7 @@ def mine_haggis_cpp(
                 "min_occurrences": min_occurrences,
                 "min_files": min_files,
                 "min_fragment_nodes": min_fragment_nodes,
+                "min_candidate_ast_num": min_candidate_ast_num,
                 "max_functions_per_project": max_functions_per_project,
                 "max_nodes_per_function": max_nodes_per_function,
             },
@@ -519,7 +530,7 @@ def mine_haggis_cpp(
             },
             "cpp_candidate_projection": {
                 "root_kind_groups": ["function", "block", "statement"],
-                "minimum_ast_num": 5,
+                "minimum_ast_num": min_candidate_ast_num,
                 "requires_nonempty_source": True,
             },
             "projects": project_manifests,
@@ -533,17 +544,18 @@ def main() -> None:
     parser.add_argument("--dataset", default="outputs/library/cli11/stage0/dataset.pkl")
     parser.add_argument(
         "--output-dir",
-        default="results/baselines/haggis-cpp/cli11",
+        default="results/library/cli11/baselines/haggis-cpp",
     )
     parser.add_argument("--iterations", type=int, default=50)
     parser.add_argument("--burn-in-fraction", type=float, default=0.75)
     parser.add_argument("--alpha", type=float, default=1.0)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--percent-roots-init", type=float, default=0.9)
-    parser.add_argument("--min-posterior-support", type=float, default=0.5)
-    parser.add_argument("--min-occurrences", type=int, default=3)
-    parser.add_argument("--min-files", type=int, default=2)
-    parser.add_argument("--min-fragment-nodes", type=int, default=3)
+    parser.add_argument("--min-posterior-support", type=float, default=0.25)
+    parser.add_argument("--min-occurrences", type=int, default=2)
+    parser.add_argument("--min-files", type=int, default=1)
+    parser.add_argument("--min-fragment-nodes", type=int, default=2)
+    parser.add_argument("--min-candidate-ast-num", type=int, default=3)
     parser.add_argument(
         "--max-functions-per-project",
         type=int,
@@ -569,6 +581,7 @@ def main() -> None:
         min_occurrences=args.min_occurrences,
         min_files=args.min_files,
         min_fragment_nodes=args.min_fragment_nodes,
+        min_candidate_ast_num=args.min_candidate_ast_num,
         max_functions_per_project=(
             None if args.max_functions_per_project == 0 else args.max_functions_per_project
         ),
